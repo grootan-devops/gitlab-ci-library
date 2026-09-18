@@ -243,7 +243,7 @@ flowchart TD
 > **Candidate Resolution & Direct Promotion:**
 > 1. `Common:Init` on `master` queries GitLab API (`/projects/:id/repository/commits/:sha/merge_requests`) to discover the upstream MR and its latest successful verification pipeline `#<UPSTREAM_PIPELINE_ID>`.
 > 2. It exports the exact pre-built dev candidate version: `DEV_CANDIDATE_VERSION="${RELEASE_VERSION}-rc.${UPSTREAM_PIPELINE_ID}-${MR_IID}"`.
-> 3. `Image:Promote` uses **Crane** for layerless OCI promotion: pulls the candidate manifest directly from `registry.ezto.io/ezto/<project>/dev:<DEV_CANDIDATE_VERSION>`, mutates the version label to `${TAG}`, and pushes to `registry.ezto.io/ezto/<project>:${TAG}` along with `latest`, `${MAJOR_VERSION}`, and `${MINOR_VERSION}` tags.
+> 3. `Image:Promote` uses **Crane** for layerless OCI promotion: pulls the candidate manifest directly from `registry.example.com/acme/<project>/dev:<DEV_CANDIDATE_VERSION>`, mutates the version label to `${TAG}`, and pushes to `registry.example.com/acme/<project>:${TAG}` along with `latest`, `${MAJOR_VERSION}`, and `${MINOR_VERSION}` tags.
 > 4. `Chart:Promote` pulls the candidate chart from the GitLab Helm Package Registry `dev` channel (`<chart>:${DEV_CANDIDATE_CHART_VERSION}`), re-packages with production `${TAG}`, and publishes it to the `stable` channel.
 > 5. `Release:Upload` restores verification artifacts from the upstream MR pipeline once using `$CI_JOB_TOKEN` and publishes release assets to the Generic Package Registry.
 > 6. `Release` creates the official GitLab Release page and Git tag `${TAG}`.
@@ -897,14 +897,14 @@ include:
     inputs:
       environment: production                            # (required)
       gitops_repo_url: https://gitlab.example.com/devops/gitops/website-gitops.git # (required)
-      gitops_branch: zentre/prod                         # (required)
+      gitops_branch: myapp/prod                         # (required)
       gitops_chart_values_file: values.yaml              # (required for Helm)
       gitops_chart_app_yq_path: .apps.web                # (mandatory when chart_values_file is set)
       # Optional image values overrides:
       # gitops_image_values_file: values/web.yaml        # (optional)
       # gitops_image_repo_yq_path: .image.repository     # (mandatory if image_values_file is set)
       # gitops_image_tag_yq_path: .image.tag             # (mandatory if image_values_file is set)
-      argocd_apps: ezto-scaleway-zentre-prod-root ezto-scaleway-zentre-web-prod # (required)
+      argocd_apps: acme-cloud-myapp-prod-root acme-cloud-myapp-web-prod # (required)
       # Server URL and token default to CI/CD variables (ARGOCD_SERVER, ARGOCD_TOKEN). Uncomment to override:
       # argocd_server: https://argocd.example.com
       # argocd_token: "$ARGOCD_TOKEN"
@@ -919,10 +919,10 @@ include:
     inputs:
       environment: production                            # (required)
       gitops_repo_url: https://gitlab.example.com/devops/gitops/website-gitops.git # (required)
-      gitops_branch: zentre/prod                         # (required)
+      gitops_branch: myapp/prod                         # (required)
       gitops_manifest_file: extras/manifests/clamav/deployment.yaml # (required for Manifest)
       gitops_new_image: clamav/clamav:1.4.0              # (mandatory when manifest_file is set)
-      argocd_apps: ezto-scaleway-zentre-extras-prod-clamav # (required)
+      argocd_apps: acme-cloud-myapp-extras-prod-clamav # (required)
       # Server URL and token default to CI/CD variables (ARGOCD_SERVER, ARGOCD_TOKEN). Uncomment to override:
       # argocd_server: https://argocd.example.com
       # argocd_token: "$ARGOCD_TOKEN"
@@ -1201,7 +1201,7 @@ include:
     inputs:
       environment: production
       gitops_repo_url: https://gitlab.example.com/devops/gitops/website-gitops.git
-      gitops_branch: zentre/prod
+      gitops_branch: myapp/prod
       gitops_chart_values_file: values.yaml
       gitops_chart_app_yq_path: .apps.web
       # Server URL and token default to CI/CD variables (ARGOCD_SERVER, ARGOCD_TOKEN). Uncomment to override:
