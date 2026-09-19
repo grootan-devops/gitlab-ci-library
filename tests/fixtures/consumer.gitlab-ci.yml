@@ -1,0 +1,15 @@
+include:
+  - {project: grootan-devops/gitlab-ci-library, ref: 1.0.0, file: /common/.gitlab-ci.yml}
+  - {project: grootan-devops/gitlab-ci-library, ref: 1.0.0, file: /nodejs/.gitlab-ci.yml}
+  - {project: grootan-devops/gitlab-ci-library, ref: 1.0.0, file: /python/.gitlab-ci.yml}
+  - {project: grootan-devops/gitlab-ci-library, ref: 1.0.0, file: /golang/.gitlab-ci.yml}
+  - {project: grootan-devops/gitlab-ci-library, ref: 1.0.0, file: /java/.gitlab-ci.yml}
+  - {project: grootan-devops/gitlab-ci-library, ref: 1.0.0, file: /image/.gitlab-ci.yml}
+  - {project: grootan-devops/gitlab-ci-library, ref: 1.0.0, file: /chart/.gitlab-ci.yml}
+  - {project: grootan-devops/gitlab-ci-library, ref: 1.0.0, file: /terraform/.gitlab-ci.yml}
+  - {project: grootan-devops/gitlab-ci-library, ref: 1.0.0, file: /sonarqube/.gitlab-ci.yml}
+  - {project: grootan-devops/gitlab-ci-library, ref: 1.0.0, file: /secret-scanning/.gitlab-ci.yml}
+  - {project: grootan-devops/gitlab-ci-library, ref: 1.0.0, file: /license/.gitlab-ci.yml}
+  - {project: grootan-devops/gitlab-ci-library, ref: 1.0.0, file: /sbom/.gitlab-ci.yml}
+  - {project: grootan-devops/gitlab-ci-library, ref: 1.0.0, file: /mono/.gitlab-ci.yml}
+  - {project: grootan-devops/gitlab-ci-library, ref: 1.0.0, file: /release/.gitlab-ci.yml}

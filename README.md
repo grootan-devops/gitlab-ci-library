@@ -1,5 +1,7 @@
 # Gitlab CI/CD Library
 
+Release `1.0.0` · [Compatibility](https://github.com/grootan-devops/ai-skills/blob/main/COMPATIBILITY.md) · [Security](./SECURITY.md) · [Contributing](./CONTRIBUTING.md)
+
 Shared GitLab CI/CD library
 
 ---
@@ -61,7 +63,7 @@ Include the shared templates from the library repository in your project's `.git
 ```yaml
 include:
   - project: 'devops/ci-templates'
-    ref: 2.0.0/dev
+    ref: 1.0.0
     file:
       - common/.gitlab-ci.yml                   # Required by every pipeline
       - nodejs/.gitlab-ci.yml                   # Language runtime & build
@@ -243,7 +245,7 @@ flowchart TD
 > **Candidate Resolution & Direct Promotion:**
 > 1. `Common:Init` on `master` queries GitLab API (`/projects/:id/repository/commits/:sha/merge_requests`) to discover the upstream MR and its latest successful verification pipeline `#<UPSTREAM_PIPELINE_ID>`.
 > 2. It exports the exact pre-built dev candidate version: `DEV_CANDIDATE_VERSION="${RELEASE_VERSION}-rc.${UPSTREAM_PIPELINE_ID}-${MR_IID}"`.
-> 3. `Image:Promote` uses **Crane** for layerless OCI promotion: pulls the candidate manifest directly from `registry.example.com/acme/<project>/dev:<DEV_CANDIDATE_VERSION>`, mutates the version label to `${TAG}`, and pushes to `registry.example.com/acme/<project>:${TAG}` along with `latest`, `${MAJOR_VERSION}`, and `${MINOR_VERSION}` tags.
+> 3. `Image:Promote` uses **Crane** for layerless OCI promotion: pulls the candidate manifest directly from `registry.contoso.com/acme/<project>/dev:<DEV_CANDIDATE_VERSION>`, mutates the version label to `${TAG}`, and pushes to `registry.contoso.com/acme/<project>:${TAG}` along with `latest`, `${MAJOR_VERSION}`, and `${MINOR_VERSION}` tags.
 > 4. `Chart:Promote` pulls the candidate chart from the GitLab Helm Package Registry `dev` channel (`<chart>:${DEV_CANDIDATE_CHART_VERSION}`), re-packages with production `${TAG}`, and publishes it to the `stable` channel.
 > 5. `Release:Upload` restores verification artifacts from the upstream MR pipeline once using `$CI_JOB_TOKEN` and publishes release assets to the Generic Package Registry.
 > 6. `Release` creates the official GitLab Release page and Git tag `${TAG}`.
@@ -778,12 +780,12 @@ publish job to maintain: the git ref *is* the version.
 
 ```hcl
 module "vpc" {
-  source = "git::git@gitlab.example.com:infra/terraform-modules.git//modules/vpc?ref=2.1.0"
+  source = "git::git@gitlab.contoso.com:infra/terraform-modules.git//modules/vpc?ref=1.0.0"
 }
 
 module "eks" {
   # git::<repo_url>//<sub_folder>?ref=<tag | branch | commit>
-  source = "git::git@gitlab.example.com:infra/terraform-modules.git//modules/eks?ref=b4f8d29"
+  source = "git::git@gitlab.contoso.com:infra/terraform-modules.git//modules/eks?ref=b4f8d29"
 }
 ```
 
@@ -868,21 +870,21 @@ Deploys container images to Komodo stacks via GitOps Docker Compose updates and 
 ```yaml
 include:
   - project: 'devops/ci-templates'
-    ref: '7.0.0'
+    ref: '1.0.0'
     file: deploy/gitops/.komodo.gitlab-ci.yml
     inputs:
       environment: staging                               # (required, e.g. dev, staging, production)
-      gitops_repo_url: https://gitlab.example.com/devops/gitops/komodo.git # (required)
+      gitops_repo_url: https://gitlab.contoso.com/devops/gitops/komodo.git # (required)
       gitops_branch: environments/staging                # (required, target branch in gitops repo)
       gitops_compose_file: app/docker-compose.yml        # (optional, defaults to docker-compose.yml)
       gitops_service_image_yq_path: .services.web.image # (required, yq path to service image)
       komodo_stack_name: web-app-staging                 # (required, exact stack name in Komodo)
       # Server URL and API credentials default to CI/CD variables (KOMODO_SERVER, KOMODO_API_KEY, KOMODO_API_SECRET). Uncomment to override:
-      # komodo_server: https://komodo.example.com
+      # komodo_server: https://komodo.contoso.com
       # komodo_api_key: "$KOMODO_API_KEY"
       # komodo_api_secret: "$KOMODO_API_SECRET"
       komodo_sync_timeout: 600                           # (optional, defaults to 600s)
-      environment_url: https://staging.example.com       # (optional, registers deployment URL on GitLab)
+      environment_url: https://staging.contoso.com       # (optional, registers deployment URL on GitLab)
 ```
 
 #### ArgoCD Deployment Component (`deploy/gitops/.argocd.gitlab-ci.yml`)
@@ -892,11 +894,11 @@ Supports both **Helm-based** (App-of-Apps values) and **Manifest-based** (raw Ku
 ```yaml
 include:
   - project: 'devops/ci-templates'
-    ref: '7.0.0'
+    ref: '1.0.0'
     file: deploy/gitops/.argocd.gitlab-ci.yml
     inputs:
       environment: production                            # (required)
-      gitops_repo_url: https://gitlab.example.com/devops/gitops/website-gitops.git # (required)
+      gitops_repo_url: https://gitlab.contoso.com/devops/gitops/website-gitops.git # (required)
       gitops_branch: myapp/prod                         # (required)
       gitops_chart_values_file: values.yaml              # (required for Helm)
       gitops_chart_app_yq_path: .apps.web                # (mandatory when chart_values_file is set)
@@ -906,7 +908,7 @@ include:
       # gitops_image_tag_yq_path: .image.tag             # (mandatory if image_values_file is set)
       argocd_apps: acme-cloud-myapp-prod-root acme-cloud-myapp-web-prod # (required)
       # Server URL and token default to CI/CD variables (ARGOCD_SERVER, ARGOCD_TOKEN). Uncomment to override:
-      # argocd_server: https://argocd.example.com
+      # argocd_server: https://argocd.contoso.com
       # argocd_token: "$ARGOCD_TOKEN"
 ```
 
@@ -914,17 +916,17 @@ include:
 ```yaml
 include:
   - project: 'devops/ci-templates'
-    ref: '7.0.0'
+    ref: '1.0.0'
     file: deploy/gitops/.argocd.gitlab-ci.yml
     inputs:
       environment: production                            # (required)
-      gitops_repo_url: https://gitlab.example.com/devops/gitops/website-gitops.git # (required)
+      gitops_repo_url: https://gitlab.contoso.com/devops/gitops/website-gitops.git # (required)
       gitops_branch: myapp/prod                         # (required)
       gitops_manifest_file: extras/manifests/clamav/deployment.yaml # (required for Manifest)
       gitops_new_image: clamav/clamav:1.4.0              # (mandatory when manifest_file is set)
       argocd_apps: acme-cloud-myapp-extras-prod-clamav # (required)
       # Server URL and token default to CI/CD variables (ARGOCD_SERVER, ARGOCD_TOKEN). Uncomment to override:
-      # argocd_server: https://argocd.example.com
+      # argocd_server: https://argocd.contoso.com
       # argocd_token: "$ARGOCD_TOKEN"
 ```
 
@@ -939,12 +941,12 @@ include:
 ```yaml
 include:
   - project: 'devops/ci-templates'
-    ref: 2.0.0/dev
+    ref: 1.0.0
     file: deploy/gitlab/.gitlab-ci.yml
     inputs:
       environment: production
       environment_name: production
-      environment_url: https://myapp.example.com
+      environment_url: https://myapp.contoso.com
       script:
         - echo "Deploying to production..."
         - ./deploy-script.sh
@@ -979,7 +981,7 @@ The `readme/.migration-guide.gitlab.yml` module provides automated migration gui
 ```yaml
 include:
   - project: 'devops/ci-templates'
-    ref: 2.0.0/dev
+    ref: 1.0.0
     file:
       - common/.gitlab-ci.yml
       - readme/.migration-guide.gitlab.yml
@@ -1158,7 +1160,7 @@ variables:
 include:
   # 1. Base Shared Pipeline Templates
   - project: 'devops/ci-templates'
-    ref: 2.0.0/dev
+    ref: 1.0.0
     file:
       - common/.gitlab-ci.yml
       - chart/.gitlab-ci.yml
@@ -1173,22 +1175,22 @@ include:
 
   # 2. Komodo Deployments
   - project: 'devops/ci-templates'
-    ref: '7.0.0'
+    ref: '1.0.0'
     file: deploy/gitops/.komodo.gitlab-ci.yml
     inputs:
       environment: dev
-      gitops_repo_url: https://gitlab.example.com/devops/gitops/komodo.git
+      gitops_repo_url: https://gitlab.contoso.com/devops/gitops/komodo.git
       gitops_branch: environments/dev
       gitops_compose_file: app/docker-compose.yml
       gitops_service_image_yq_path: .services.web.image
       komodo_stack_name: web-app-dev
 
   - project: 'devops/ci-templates'
-    ref: '7.0.0'
+    ref: '1.0.0'
     file: deploy/gitops/.komodo.gitlab-ci.yml
     inputs:
       environment: staging
-      gitops_repo_url: https://gitlab.example.com/devops/gitops/komodo.git
+      gitops_repo_url: https://gitlab.contoso.com/devops/gitops/komodo.git
       gitops_branch: environments/staging
       gitops_compose_file: app/docker-compose.yml
       gitops_service_image_yq_path: .services.web.image
@@ -1196,16 +1198,16 @@ include:
 
   # 3. ArgoCD Deployments
   - project: 'devops/ci-templates'
-    ref: '7.0.0'
+    ref: '1.0.0'
     file: deploy/gitops/.argocd.gitlab-ci.yml
     inputs:
       environment: production
-      gitops_repo_url: https://gitlab.example.com/devops/gitops/website-gitops.git
+      gitops_repo_url: https://gitlab.contoso.com/devops/gitops/website-gitops.git
       gitops_branch: myapp/prod
       gitops_chart_values_file: values.yaml
       gitops_chart_app_yq_path: .apps.web
       # Server URL and token default to CI/CD variables (ARGOCD_SERVER, ARGOCD_TOKEN). Uncomment to override:
-      # argocd_server: https://argocd.example.com
+      # argocd_server: https://argocd.contoso.com
       # argocd_token: "$ARGOCD_TOKEN"
       argocd_apps: web-app-production
 
@@ -1269,7 +1271,7 @@ variables:
 
 include:
   - project: 'devops/ci-templates'
-    ref: 2.0.0/dev
+    ref: 1.0.0
     file:
       - common/.gitlab-ci.yml
       - python/.gitlab-ci.yml
@@ -1375,7 +1377,7 @@ variables:
 
 include:
   - project: 'devops/ci-templates'
-    ref: 2.0.0/dev
+    ref: 1.0.0
     file:
       - common/.gitlab-ci.yml
       - golang/.gitlab-ci.yml
@@ -1419,7 +1421,7 @@ variables:
 
 include:
   - project: 'devops/ci-templates'
-    ref: 2.0.0/dev
+    ref: 1.0.0
     file:
       - common/.gitlab-ci.yml
       - java/.gitlab-ci.yml
@@ -1477,7 +1479,7 @@ variables:
 
 include:
   - project: 'devops/ci-templates'
-    ref: 2.0.0/dev
+    ref: 1.0.0
     file:
       - common/.gitlab-ci.yml
       - chart/.gitlab-ci.yml
@@ -1493,12 +1495,12 @@ include:
 # .gitlab-ci.yml
 variables:
   PROJECT_CACHE_KEY: tf-vpc-module
-  RELEASE_VERSION: 2.1.0
+  RELEASE_VERSION: 1.0.0
   TF_STATE_NAME: vpc-infrastructure
 
 include:
   - project: 'devops/ci-templates'
-    ref: 2.0.0/dev
+    ref: 1.0.0
     file:
       - common/.gitlab-ci.yml
       - terraform/.gitlab-ci.yml
@@ -1511,7 +1513,7 @@ The release tags the repository; consumers pin that tag with `?ref=`:
 
 ```hcl
 module "vpc" {
-  source = "git::git@gitlab.example.com:infra/terraform-modules.git//modules/vpc?ref=2.1.0"
+  source = "git::git@gitlab.contoso.com:infra/terraform-modules.git//modules/vpc?ref=1.0.0"
 }
 ```
 
@@ -1523,7 +1525,7 @@ module "vpc" {
 ```yaml
 include:
   - project: 'devops/ci-templates'
-    ref: 2.0.0/dev
+    ref: 1.0.0
     file:
       - mono/.gitlab-ci.yml
 
@@ -1562,7 +1564,7 @@ frontend:
 ```yaml
 include:
   - project: 'devops/ci-templates'
-    ref: 2.0.0/dev
+    ref: 1.0.0
     file:
       - common/.mono.gitlab-ci.yml
       - nodejs/.gitlab-ci.yml
@@ -1616,7 +1618,7 @@ variables:
 
 include:
   - project: 'devops/ci-templates'
-    ref: 2.0.0/dev
+    ref: 1.0.0
     file:
       - common/.gitlab-ci.yml
       - nodejs/.gitlab-ci.yml
@@ -1639,7 +1641,7 @@ variables:
 
 include:
   - project: 'devops/ci-templates'
-    ref: 2.0.0/dev
+    ref: 1.0.0
     file:
       - common/.gitlab-ci.yml
       - nodejs/.gitlab-ci.yml
@@ -1692,7 +1694,7 @@ variables:
 
 include:
   - project: 'devops/ci-templates'
-    ref: 2.0.0/dev
+    ref: 1.0.0
     file:
       - common/.gitlab-ci.yml
       - chart/.gitlab-ci.yml
@@ -1718,211 +1720,14 @@ Project:Version:Init:
 
 ---
 
-## Migration Guide & Standard
+## Migration Guide
 
-This section defines the **Migration Standard** for the GitLab CI/CD Library and documents breaking changes across all **major releases**.
+The initial public release is `1.0.0`. No migration is required. Future breaking releases will document consumer actions in [`MIGRATION.md`](./MIGRATION.md).
 
-This standard is designed specifically to be consumed by **AI Coding Assistants & Migration Skills** (e.g., Google Antigravity, Cursor, Claude Code, custom CLI migration agents) as well as platform engineers upgrading consumer repositories from one major version to another.
+## License
 
----
+Copyright 2026 Grootan Technologies Pvt Ltd.
 
-### 1. Migration Specification & Standard
-
-#### 1.1. Scope & Semantic Versioning Policy
-In adherence with [Semantic Versioning 2.0.0](https://semver.org/):
-- **Patch (`x.y.Z`) & Minor (`x.Y.z`) Releases**: Strictly backward-compatible. No breaking changes are permitted. Entries in `MIGRATION.md` are **not** required, and CI checks will automatically pass.
-- **Major Releases (`X.0.0`)**: Permitted to introduce breaking changes (e.g. variable renames, job/stage restructuring, dropped toolchains, changed default behaviors). A comprehensive entry in `MIGRATION.md` is **strictly mandatory** and enforced by the `Migration:Check Existence` CI pipeline job.
-
-#### 1.2. Section Header Format
-Each major migration block MUST be introduced with an H2 (`##`) heading in `MIGRATION.md` adhering to one of the following canonical patterns:
-
-```markdown
-## [PREVIOUS_VERSION...NEW_VERSION] - YYYY-MM-DD
-```
-*Examples:*
-- `## [1.0.0...2.0.0] - 2026-09-13`
-- `## [1.8.1...2.0.0] - 2026-09-13`
-- `## [1.x...2.0.0] - 2026-09-13`
-
-> [!NOTE]
-> The automated CI check parser (`Migration:Check Existence`) accepts exact version ranges (`1.8.1...2.0.0`), major range wildcards (`1.x...2.0.0`), and base major spans (`1.0.0...2.0.0`).
-
-#### 1.3. Required Content Structure for Major Releases
-Every migration entry MUST include the following structured subsections so that both humans and AI skills can reliably parse and execute the migration:
-
-1. **Executive Summary**: Brief narrative describing the architectural rationale of the breaking changes.
-2. **Variable & Configuration Renames ("Change this from that")**: A markdown table documenting old variable names, new variable names, their defaults, and replacement actions.
-3. **Stage, Job & Template Relabeling ("Relabel like this")**: A markdown table detailing renamed, relocated, split, or consolidated CI jobs, hidden anchor templates, and stages.
-4. **Step-by-Step Consumer Migration Playbook**: Actionable numbered list of tasks to perform in client projects.
-5. **Before & After Code Diffs**: Side-by-side diff blocks contrasting `.gitlab-ci.yml`, Dockerfiles, or Helm `values.yaml` before and after migration.
-6. **AI Agent Machine-Actionable Migration Directives**: A fenced YAML block (`language: yaml, identifier: ai-migration-directives`) providing exact search-and-replace regex rules, AST transformations, and file globs for autonomous AI agents.
-7. **Post-Migration Verification Checklist**: Exact commands to run to ensure the consumer project pipeline passes validation.
-
----
-
-### 2. Sample Migration Guide Standard (Demonstration Specification)
-
-> [!IMPORTANT]
-> **Demonstration Standard Only**: The following `[1.0.0...2.0.0]` section is a **sample reference standard** illustrating how breaking changes, variable renames, and migration playbooks must be structured and documented. It is **not** the actual migration history of this repository.
->
-> The actual, authoritative migration guide for this library is maintained dynamically in [`MIGRATION.md`](file:///Users/kirankumar/Downloads/takween/ai/library/cicd/ci-templates/MIGRATION.md). AI coding agents, migration skills, and developers must always consult `MIGRATION.md` directly for actual upgrade steps and breaking changes.
-
-### [Sample] [1.0.0...2.0.0] - Example Specification
-
-#### 1. Executive Summary (Example)
-Version `2.0.0` modernizes the CI/CD core engine:
-- Consolidates scattered scanning variables into unified namespaces.
-- Standardizes container and Helm registry suffix naming.
-- Deprecates legacy hidden anchor names in favor of semantic base templates.
-- Updates default stages to align with GitLab CI enterprise recommendations.
-
----
-
-#### 2. Variable & Configuration Renames ("Change this from that")
-
-The following variables have been renamed or restructured. Update all instances in consumer `.gitlab-ci.yml`, GitLab CI/CD Project Variables, or Group Variables:
-
-| Old Variable ("Change this") | New Variable ("To that") | Scope | Default Value | Notes / Action |
-|---|---|---|---|---|
-| `IMAGE_DEV_REPOSITORY_SUFFIX` | `CONTAINER_DEV_REGISTRY_SUFFIX` | Container Push | `/dev` | Changed prefix from `IMAGE_` to `CONTAINER_` for consistency across OCI artifacts. |
-| `CHART_DEV_REPOSITORY_SUFFIX` | `HELM_DEV_REGISTRY_SUFFIX` | Helm Push | `/dev` | Standardized to `HELM_` namespace. |
-| `SKIP_CVE_SCAN` | `SECURITY_VULN_SCAN_ENABLED` | Security | `"true"` | Inverted boolean flag. Old `SKIP_CVE_SCAN="true"` becomes `SECURITY_VULN_SCAN_ENABLED="false"`. |
-| `MD_LINT_IGNORE_RULE` | `MARKDOWNLINT_EXCLUDE_RULES` | Lint | `"MD013 MD024"` | Space-separated list of disabled markdownlint rules. |
-| `SONAR_EXTERNAL_URL` | `SONARQUBE_HOST_URL` | QA | `${SONAR_URL}` | Standardized on official SonarQube naming convention. |
-| `RELEASE_MESSAGE_TEAMS_WORKFLOWS_URL` | `TEAMS_WEBHOOK_URL` | Notifications | `""` | Shortened variable name. Supports comma-separated webhook URLs. |
-
----
-
-#### 3. Stage, Job & Template Relabeling ("Relabel like this")
-
-The following job and template names have been renamed, split, or relabeled. Update all `extends` references and custom job overrides:
-
-| Old Job / Anchor ("Relabel this") | New Job / Anchor ("Like this") | Stage | Description / Migration Action |
-|---|---|---|---|
-| `.check-job-common` | `.verification-base` | `check` | Renamed base anchor to avoid confusion with `check` stage naming. Replace `extends: [.check-job-common]` with `extends: [.verification-base]`. |
-| `Changelog:Check Existence` | `Changelog:Check:Existence` | `check` | Relabeled with colon separator hierarchy. |
-| `Tag:Tag Existence` | `Tag:Check:Existence` | `check` | Relabeled with colon separator hierarchy. |
-| `Release:Notification:Teams` | `Notification:Teams:AdaptiveCard` | `notify` | Shifted to top-level `Notification:` namespace. |
-| `Docker:Lint` | `Container:Lint:Hadolint` | `lint` | Clarified tool in job name. |
-| `Git:Secret:Scan` | `Secret:Scan:Trivy` | `security` | Standardized to `<Domain>:<Action>:<Tool>` pattern. |
-
----
-
-#### 4. Step-by-Step Consumer Migration Playbook
-
-Follow these steps to upgrade an existing microservice or application repository to `ci-library` `v2.0.0`:
-
-1. **Update CI Include Reference**:
-   Open `.gitlab-ci.yml` and update the `ref:` targeting `devops/ci-templates` from `v1.x.y` to `2.0.0` (or the `v2.0.0` commit SHA).
-2. **Rename CI/CD Variables**:
-   Inspect `.gitlab-ci.yml` `variables:` block. Rename variables according to [Section 2: Variable & Configuration Renames](#2-variable--configuration-renames-change-this-from-that).
-3. **Invert Vulnerability Scan Flag (if customized)**:
-   If your pipeline set `SKIP_CVE_SCAN: "true"`, remove it and set `SECURITY_VULN_SCAN_ENABLED: "false"`.
-4. **Relabel Job Extends**:
-   Search for `.check-job-common` in your repository. Replace with `.verification-base`.
-5. **Relabel Overridden Notification Jobs**:
-   If you override or extend `Release:Notification:Teams`, update the job name to `Notification:Teams:AdaptiveCard`.
-6. **Lint & Verify Pipeline**:
-   Validate your modified `.gitlab-ci.yml` using the GitLab CI Lint API or `yamllint`.
-
----
-
-#### 5. Before vs. After Code Diffs
-
-##### `.gitlab-ci.yml` - Variables & Includes
-```diff
-  include:
-    - project: 'devops/ci-templates'
--     ref: 1.8.1
-+     ref: 2.0.0
-      file:
-        - common/.gitlab-ci.yml
-        - release/.gitlab-ci.yml
-
-  variables:
-    RELEASE_VERSION: 2.0.0
--   IMAGE_DEV_REPOSITORY_SUFFIX: "/staging"
-+   CONTAINER_DEV_REGISTRY_SUFFIX: "/staging"
--   SKIP_CVE_SCAN: "false"
-+   SECURITY_VULN_SCAN_ENABLED: "true"
--   RELEASE_MESSAGE_TEAMS_WORKFLOWS_URL: "https://outlook.office.com/webhook/..."
-+   TEAMS_WEBHOOK_URL: "https://outlook.office.com/webhook/..."
-```
-
-##### `.gitlab-ci.yml` - Job Extends & Overrides
-```diff
-  Custom:Preflight:Check:
-    stage: check
-    extends:
--     - .check-job-common
-+     - .verification-base
-    script:
-      - echo "Running preflight check..."
-
-- Release:Notification:Teams:
-+ Notification:Teams:AdaptiveCard:
-    variables:
-      TEAMS_COLOR: "0076D7"
-```
-
----
-
-#### 6. AI Agent Machine-Actionable Migration Directives
-
-```yaml
-# Schema: ai-migration-directives/v1
-version: "2.0.0"
-target_files:
-  - ".gitlab-ci.yml"
-  - "**/*.gitlab-ci.yml"
-
-transformations:
-  variable_renames:
-    - old: "IMAGE_DEV_REPOSITORY_SUFFIX"
-      new: "CONTAINER_DEV_REGISTRY_SUFFIX"
-    - old: "CHART_DEV_REPOSITORY_SUFFIX"
-      new: "HELM_DEV_REGISTRY_SUFFIX"
-    - old: "MD_LINT_IGNORE_RULE"
-      new: "MARKDOWNLINT_EXCLUDE_RULES"
-    - old: "SONAR_EXTERNAL_URL"
-      new: "SONARQUBE_HOST_URL"
-    - old: "RELEASE_MESSAGE_TEAMS_WORKFLOWS_URL"
-      new: "TEAMS_WEBHOOK_URL"
-
-  boolean_inversions:
-    - old_key: "SKIP_CVE_SCAN"
-      new_key: "SECURITY_VULN_SCAN_ENABLED"
-      mapping:
-        "true": "false"
-        "false": "true"
-
-  yaml_extends_renames:
-    - old: ".check-job-common"
-      new: ".verification-base"
-
-  job_name_renames:
-    - old: "Release:Notification:Teams"
-      new: "Notification:Teams:AdaptiveCard"
-    - old: "Docker:Lint"
-      new: "Container:Lint:Hadolint"
-    - old: "Git:Secret:Scan"
-      new: "Secret:Scan:Trivy"
-
-  regex_replacements:
-    - pattern: 'ref:\s+["\x27]?(?:1\.[0-9]+\.[0-9]+|v?1\.[0-9]+|master)["\x27]?'
-      replacement: 'ref: 2.0.0'
-      description: "Upgrade CI include ref to 2.0.0"
-
-post_migration_validation:
-  commands:
-    - "yamllint -s .gitlab-ci.yml"
-```
-
----
-
-#### 7. Post-Migration Verification Checklist
-
-- [ ] `.gitlab-ci.yml` passes YAML linting (`yamllint -s .gitlab-ci.yml`).
-- [ ] No references to deprecated `.check-job-common` exist in any pipeline files (`git grep "\\.check-job-common"` returns empty).
-- [ ] No references to legacy variables (`IMAGE_DEV_REPOSITORY_SUFFIX`, `SKIP_CVE_SCAN`, etc.) remain.
-- [ ] Merge Request pipeline triggers successfully and passes all stages: `.pre`, `init`, `lint`, `check`, `test`, `build`.
+Licensed under the [GNU Affero General Public License v3.0](./LICENSE.md)
+(`AGPL-3.0-only`). External contributions are not accepted; see
+[CONTRIBUTING.md](./CONTRIBUTING.md) for bug and security reporting.
