@@ -97,34 +97,36 @@ variables:
   # --- Notifications: Microsoft Teams Adaptive Cards ---
   # RELEASE_MESSAGE_TEAMS_WORKFLOWS_URL: ""
 
-  MICRO_ROOT_MICRO_BASE_IMAGE_REPO: registry-1.docker.io/grootantech/toolkit
-  MICRO_ROOT_BASE_IMAGE_TAG: verify-v2
-  NGINX_MICRO_BASE_IMAGE_REPO: registry-1.docker.io/grootantech/toolkit
-  NGINX_MICRO_BASE_IMAGE_TAG: verify-v2
-  PYTHON_312_MICRO_BASE_IMAGE_REPO: registry-1.docker.io/grootantech/toolkit
-  PYTHON_312_MICRO_BASE_IMAGE_TAG: verify-v2
-  JAVA_25_MICRO_BASE_IMAGE_REPO: registry-1.docker.io/grootantech/toolkit
-  JAVA_25_MICRO_BASE_IMAGE_TAG: verify-v2
-  NODE_JS_24_MICRO_BASE_IMAGE_REPO: registry-1.docker.io/grootantech/toolkit
-  NODE_JS_24_MICRO_BASE_IMAGE_TAG: verify-v2
+  MICRO_ROOT_MICRO_BASE_IMAGE_REPO: registry-1.docker.io/grootantech/micro-root
+  MICRO_ROOT_BASE_IMAGE_TAG: 1.0.0
+  NGINX_MICRO_BASE_IMAGE_REPO: registry-1.docker.io/grootantech/micro-nginx
+  NGINX_MICRO_BASE_IMAGE_TAG: 1.0.0
+  PYTHON_312_MICRO_BASE_IMAGE_REPO: registry-1.docker.io/grootantech/python-3-12
+  PYTHON_312_MICRO_BASE_IMAGE_TAG: 1.0.0
+  JAVA_25_MICRO_BASE_IMAGE_REPO: registry-1.docker.io/grootantech/java-25
+  JAVA_25_MICRO_BASE_IMAGE_TAG: 1.0.0
+  NODE_JS_24_MICRO_BASE_IMAGE_REPO: registry-1.docker.io/grootantech/node-24
+  NODE_JS_24_MICRO_BASE_IMAGE_TAG: 1.0.0
 
   DOCKER_DIND_IMAGE_REPO: ${CI_DEPENDENCY_PROXY_GROUP_IMAGE_PREFIX}/docker
   DOCKER_DIND_IMAGE_TAG: "29.3.1-dind"
-  MD_LINT_IMAGE_REPO: registry-1.docker.io/grootantech/toolkit
-  MD_LINT_IMAGE_TAG: verify-v2
-  SONAR_SCANNER_CLI_IMAGE_REPO: registry-1.docker.io/grootantech/toolkit
-  SONAR_SCANNER_CLI_IMAGE_TAG: verify-v2
   BUILDKIT_IMAGE_REPO: ${CI_DEPENDENCY_PROXY_GROUP_IMAGE_PREFIX}/moby/buildkit
   BUILDKIT_IMAGE_TAG: v0.29.0
 
-  TOOLKIT_BUILD_IMAGE_REPO: registry-1.docker.io/grootantech/toolkit
-  TOOLKIT_BUILD_IMAGE_TAG: verify-v2
-  GO_BUILD_IMAGE_REPO: registry-1.docker.io/grootantech/toolkit
-  GO_BUILD_IMAGE_TAG: verify-v2
-  BUILDAH_BUILD_IMAGE_REPO: registry-1.docker.io/grootantech/toolkit
-  BUILDAH_BUILD_IMAGE_TAG: verify-v2
-  JAVA25_BUILD_IMAGE_REPO: registry-1.docker.io/grootantech/toolkit
-  JAVA25_BUILD_IMAGE_TAG: verify-v2
+  TOOLKIT_IMAGE_REPO: registry-1.docker.io/grootantech/toolkit
+  TOOLKIT_IMAGE_TAG: verify-v2
+  MD_LINT_IMAGE_REPO: ${TOOLKIT_IMAGE_REPO}
+  MD_LINT_IMAGE_TAG: ${TOOLKIT_IMAGE_TAG}
+  SONAR_SCANNER_CLI_IMAGE_REPO: ${TOOLKIT_IMAGE_REPO}
+  SONAR_SCANNER_CLI_IMAGE_TAG: ${TOOLKIT_IMAGE_TAG}
+  TOOLKIT_BUILD_IMAGE_REPO: ${TOOLKIT_IMAGE_REPO}
+  TOOLKIT_BUILD_IMAGE_TAG: ${TOOLKIT_IMAGE_TAG}
+  GO_BUILD_IMAGE_REPO: ${TOOLKIT_IMAGE_REPO}
+  GO_BUILD_IMAGE_TAG: ${TOOLKIT_IMAGE_TAG}
+  BUILDAH_BUILD_IMAGE_REPO: ${TOOLKIT_IMAGE_REPO}
+  BUILDAH_BUILD_IMAGE_TAG: ${TOOLKIT_IMAGE_TAG}
+  JAVA25_BUILD_IMAGE_REPO: ${TOOLKIT_IMAGE_REPO}
+  JAVA25_BUILD_IMAGE_TAG: ${TOOLKIT_IMAGE_TAG}
 
   # KSV-0011: CPU not limited
   # KSV-0014: Root file system is not read-only
