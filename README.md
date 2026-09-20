@@ -62,7 +62,7 @@ Include the shared templates from the library repository in your project's `.git
 
 ```yaml
 include:
-  - project: 'devops/ci-templates'
+  - project: 'devops/library/cicd'
     ref: 1.0.0
     file:
       - common/.gitlab-ci.yml                   # Required by every pipeline
@@ -949,7 +949,7 @@ flowchart LR
 Deploys container images to Komodo stacks via GitOps Docker Compose updates and triggers the Komodo API:
 ```yaml
 include:
-  - project: 'devops/ci-templates'
+  - project: 'devops/library/cicd'
     ref: '1.0.0'
     file: deploy/gitops/.komodo.gitlab-ci.yml
     inputs:
@@ -973,7 +973,7 @@ Supports both **Helm-based** (App-of-Apps values) and **Manifest-based** (raw Ku
 ##### Option A: Helm-Based Deployment
 ```yaml
 include:
-  - project: 'devops/ci-templates'
+  - project: 'devops/library/cicd'
     ref: '1.0.0'
     file: deploy/gitops/.argocd.gitlab-ci.yml
     inputs:
@@ -995,7 +995,7 @@ include:
 ##### Option B: Manifest-Based Deployment
 ```yaml
 include:
-  - project: 'devops/ci-templates'
+  - project: 'devops/library/cicd'
     ref: '1.0.0'
     file: deploy/gitops/.argocd.gitlab-ci.yml
     inputs:
@@ -1020,7 +1020,7 @@ include:
 #### Direct GitLab Deployment Component (`deploy/gitlab/.gitlab-ci.yml`)
 ```yaml
 include:
-  - project: 'devops/ci-templates'
+  - project: 'devops/library/cicd'
     ref: 1.0.0
     file: deploy/gitlab/.gitlab-ci.yml
     inputs:
@@ -1060,7 +1060,7 @@ The `readme/.migration-guide.gitlab.yml` module provides automated migration gui
 
 ```yaml
 include:
-  - project: 'devops/ci-templates'
+  - project: 'devops/library/cicd'
     ref: 1.0.0
     file:
       - common/.gitlab-ci.yml
@@ -1239,7 +1239,7 @@ variables:
 
 include:
   # 1. Base Shared Pipeline Templates
-  - project: 'devops/ci-templates'
+  - project: 'devops/library/cicd'
     ref: 1.0.0
     file:
       - common/.gitlab-ci.yml
@@ -1254,7 +1254,7 @@ include:
       - release/.gitlab-ci.yml
 
   # 2. Komodo Deployments
-  - project: 'devops/ci-templates'
+  - project: 'devops/library/cicd'
     ref: '1.0.0'
     file: deploy/gitops/.komodo.gitlab-ci.yml
     inputs:
@@ -1265,7 +1265,7 @@ include:
       gitops_service_image_yq_path: .services.web.image
       komodo_stack_name: web-app-dev
 
-  - project: 'devops/ci-templates'
+  - project: 'devops/library/cicd'
     ref: '1.0.0'
     file: deploy/gitops/.komodo.gitlab-ci.yml
     inputs:
@@ -1277,7 +1277,7 @@ include:
       komodo_stack_name: web-app-staging
 
   # 3. ArgoCD Deployments
-  - project: 'devops/ci-templates'
+  - project: 'devops/library/cicd'
     ref: '1.0.0'
     file: deploy/gitops/.argocd.gitlab-ci.yml
     inputs:
@@ -1350,7 +1350,7 @@ variables:
   CHART_REPOSITORY: myorg/helm
 
 include:
-  - project: 'devops/ci-templates'
+  - project: 'devops/library/cicd'
     ref: 1.0.0
     file:
       - common/.gitlab-ci.yml
@@ -1458,7 +1458,7 @@ variables:
   ADDITIONAL_RELEASE_ARTIFACT: ${BINARY_NAME}
 
 include:
-  - project: 'devops/ci-templates'
+  - project: 'devops/library/cicd'
     ref: 1.0.0
     file:
       - common/.gitlab-ci.yml
@@ -1502,7 +1502,7 @@ variables:
   CHART_REPOSITORY: myorg/helm
 
 include:
-  - project: 'devops/ci-templates'
+  - project: 'devops/library/cicd'
     ref: 1.0.0
     file:
       - common/.gitlab-ci.yml
@@ -1560,7 +1560,7 @@ variables:
   # HELM_CHANNEL is optional — defaults to dev for RC builds, stable for releases
 
 include:
-  - project: 'devops/ci-templates'
+  - project: 'devops/library/cicd'
     ref: 1.0.0
     file:
       - common/.gitlab-ci.yml
@@ -1581,7 +1581,7 @@ variables:
   TF_STATE_NAME: vpc-infrastructure
 
 include:
-  - project: 'devops/ci-templates'
+  - project: 'devops/library/cicd'
     ref: 1.0.0
     file:
       - common/.gitlab-ci.yml
@@ -1606,7 +1606,7 @@ module "vpc" {
 **Root `.gitlab-ci.yml`:**
 ```yaml
 include:
-  - project: 'devops/ci-templates'
+  - project: 'devops/library/cicd'
     ref: 1.0.0
     file:
       - mono/.gitlab-ci.yml
@@ -1645,7 +1645,7 @@ frontend:
 **`backend/.gitlab-ci.yml` (Child pipeline):**
 ```yaml
 include:
-  - project: 'devops/ci-templates'
+  - project: 'devops/library/cicd'
     ref: 1.0.0
     file:
       - common/.mono.gitlab-ci.yml
@@ -1699,7 +1699,7 @@ variables:
   PROJECT_CACHE_KEY: audit-repo
 
 include:
-  - project: 'devops/ci-templates'
+  - project: 'devops/library/cicd'
     ref: 1.0.0
     file:
       - common/.gitlab-ci.yml
@@ -1722,7 +1722,7 @@ variables:
   PROJECT_CACHE_KEY: myapp-build-test
 
 include:
-  - project: 'devops/ci-templates'
+  - project: 'devops/library/cicd'
     ref: 1.0.0
     file:
       - common/.gitlab-ci.yml
@@ -1775,7 +1775,7 @@ variables:
   CHART_REPOSITORY: myorg/helm
 
 include:
-  - project: 'devops/ci-templates'
+  - project: 'devops/library/cicd'
     ref: 1.0.0
     file:
       - common/.gitlab-ci.yml
