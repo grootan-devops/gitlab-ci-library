@@ -111,7 +111,7 @@ Image:Build:
         /etc/pam.d /etc/security /usr/lib/security \
         /usr/bin/{dnf,yum,microdnf,rpm}
       "
-    - buildah config --user 10001 "${BASE_CONTAINER}"
+    - buildah config --user 10001:10001 "${BASE_CONTAINER}"
     - buildah umount "${BASE_CONTAINER}"
     - buildah commit --squash "${BASE_CONTAINER}" "${IMAGE_NAME}"
     - podman save "${IMAGE_NAME}" | gzip > "${IMAGE_TAR_FILE_NAME}"

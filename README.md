@@ -483,6 +483,7 @@ Every container image built by this platform adheres strictly to the **Packaging
 1. **Packaging-Only Standard (Zero Compilation in Dockerfile)**:
    - All compiling, bundling, transpile steps (`npm run build`, `mvn package`, `go build`, `uv build`), linting, and tests **MUST** execute strictly in GitLab CI stages (`prepare`, `build`, `test`).
    - The `Dockerfile` serves purely as an artifact packaging manifest. It copies pre-built artifacts emitted by `Project:Build`.
+   - Where an interpreted stack must install dependencies, it installs **offline** from the CI package cache, bind-mounted by BuildKit — never resolving over the network, which would re-resolve what the pipeline already pinned and scanned. The `--mount` source must name the directory the pipeline actually cached (`.uv`, `.npm`), and `.dockerignore` must admit it.
 2. **Non-Root User & Group (10001:10001)**:
    - For security compliance, containers must never execute as `root` (UID `0`).
    - Every Dockerfile declares `USER 10001:10001`.
@@ -490,15 +491,37 @@ Every container image built by this platform adheres strictly to the **Packaging
    - If the application writes logs, cache, or PID files at runtime, ensure the target directories exist and are owned by `10001:10001` before the `USER` directive.
    - Non-privileged listening port: standard application port is `EXPOSE 8080`.
 3. **Automatic CI Build-Arg Base Images**:
-   The `image/.docker.gitlab-ci.yml` builder automatically resolves and injects the following build-args into `docker build`:
+   The `image/.docker.gitlab-ci.yml` builder automatically resolves and injects the following build-args into `docker build`. A Dockerfile pins nothing itself — bumping a base image is a change to one CI/CD variable pair in `common/.gitlab-ci.yml`.
 
-| Tech Stack | Injected CI Build-Arg | Central Base Image Repository & Tag | Description |
+| Tech Stack | Injected CI Build-Arg | Variable pair | Current default |
 |---|---|---|---|
-| **Java** | `JAVA_25_MICRO_BASE_IMAGE` | `${CI_REGISTRY}/devops/base-images/micro-jre-25:1.0.3` | Minimal hardened Java 25 JRE runtime |
-| **Golang** | `MICRO_ROOT_BASE_IMAGE` | `${CI_REGISTRY}/devops/base-images/micro-root-image:2.7.1` | Distroless minimal root container for static binaries |
-| **Python** | `PYTHON_312_MICRO_BASE_IMAGE` | `${CI_REGISTRY}/devops/base-images/micro-python3:5.6.0` | Minimal Python 3.12 micro runtime |
-| **Node.js Backend** | `NODE_JS_24_MICRO_BASE_IMAGE` | `${CI_REGISTRY}/devops/base-images/micro-nodejs-24:1.2.0` | Minimal Node.js 24 micro runtime |
-| **Node.js Frontend** | `NGINX_MICRO_BASE_IMAGE` | `${CI_REGISTRY}/devops/base-images/micro-nginx:2.11.1` | Non-root Nginx reverse proxy / static SPA server |
+| **Java** | `JAVA_25_MICRO_BASE_IMAGE` | `JAVA_25_MICRO_BASE_IMAGE_REPO` / `_TAG` | `registry-1.docker.io/grootantech/java-25:1.0.0` |
+| **Golang** | `MICRO_ROOT_BASE_IMAGE` | `MICRO_ROOT_BASE_IMAGE_REPO` / `_TAG` | `registry-1.docker.io/grootantech/micro-root:1.0.0` |
+| **Python** | `PYTHON_312_MICRO_BASE_IMAGE` | `PYTHON_312_MICRO_BASE_IMAGE_REPO` / `_TAG` | `registry-1.docker.io/grootantech/python-3-12:1.0.0` |
+| **Node.js Backend** | `NODE_JS_24_MICRO_BASE_IMAGE` | `NODE_JS_24_MICRO_BASE_IMAGE_REPO` / `_TAG` | `registry-1.docker.io/grootantech/node-24:1.0.0` |
+| **Node.js Frontend** | `NGINX_MICRO_BASE_IMAGE` | `NGINX_MICRO_BASE_IMAGE_REPO` / `_TAG` | `registry-1.docker.io/grootantech/micro-nginx:1.0.0` |
+| **Multi-stage builder** | `TOOLKIT_BUILD_IMAGE` | `TOOLKIT_BUILD_IMAGE_REPO` / `_TAG` | `registry-1.docker.io/grootantech/toolkit:verify-v2` |
+| **All** | `VERSION` | — | `${APP_PUSH_VERSION}` |
+
+   GitLab additionally injects `CI_DEPENDENCY_PROXY_GROUP_IMAGE_PREFIX` (with a trailing `/`), so a public base image is written `FROM ${CI_DEPENDENCY_PROXY_GROUP_IMAGE_PREFIX}redhat/ubi9-minimal:${TAG}` with no separator. **GitHub has no Dependency Proxy and injects no equivalent** — a Dockerfile shared between the two platforms must give that ARG a default.
+
+4. **Base image selection**:
+   Use the runtime image matching the project language; fall back to `MICRO_ROOT_BASE_IMAGE` when no language image fits. **A runtime stage is never built `FROM` a build image.** A `*_BUILD_IMAGE` carries compilers, package managers and credential helpers, all of which would ship to production — it belongs in a builder stage only.
+
+5. **Tags are pinned, never floating**:
+   No `:latest`, and no untagged reference. A literal image carries an explicit tag with a `# renovate:` annotation on the line above so the bot can bump it. A `FROM ${VAR}` reference needs no tag: CI resolves it from the variable pair above.
+
+6. **Runtime instructions**:
+   - `EXPOSE` is required on a service image. It is the image's only self-describing contract, and the chart's `containerPort` is unverifiable without it.
+   - **Prefer `CMD`.** It states the default command while leaving an operator free to override it with `docker run <image> <cmd>`.
+   - Use `ENTRYPOINT` only to invoke a pre-start shim — a script that must substitute configuration before the service starts. If that shim `exec`s the service as its last action it becomes PID 1 and needs nothing further. If it forks, or leaves children running, `exec` through `dumb-init` so signals and zombie reaping work: `exec /usr/bin/dumb-init -- nginx -g "daemon off;"`.
+
+7. **Layout: the `USER` bracket, grouping and layers**:
+   - `USER 0` immediately after the runtime stage's `FROM`, opening the root setup phase. `USER 10001:10001` closes it, before the runtime instructions. A builder stage is discarded and needs no `USER 0` — declaring one there trips hadolint `DL3002` ("last USER should not be root"), which is evaluated per stage and gates `Docker:Lint`.
+   - Group by instruction kind and separate groups with one blank line. Instructions that form a single unit — a run of `COPY`s, one install-and-chown `RUN` — stay together with no blank line between them, under one comment saying what the group is for.
+   - **Merge consecutive `RUN`s.** Each one is a layer, and a layer keeps whatever the previous one left behind. Chain with `&& \` instead.
+   - Group related `ARG`s into one continued statement. The exception is a version pin: an `ARG` carrying a `# renovate:` annotation stays on its own line, because the annotation binds to the line below it.
+   - Copy source **after** the dependency install, never before, or every source edit invalidates the dependency layer.
 
 ---
 
@@ -513,6 +536,8 @@ Every container image built by this platform adheres strictly to the **Packaging
 ARG JAVA_25_MICRO_BASE_IMAGE
 FROM ${JAVA_25_MICRO_BASE_IMAGE}
 
+USER 0
+
 WORKDIR /app
 
 # Copy pre-compiled executable JAR from CI Project:Build stage with non-root ownership
@@ -521,7 +546,7 @@ COPY --chown=10001:10001 target/*.jar /app/app.jar
 USER 10001:10001
 EXPOSE 8080
 
-ENTRYPOINT ["java", "-XX:+UseContainerSupport", "-XX:MaxRAMPercentage=75.0", "-jar", "/app/app.jar"]
+CMD ["java", "-XX:+UseContainerSupport", "-XX:MaxRAMPercentage=75.0", "-jar", "/app/app.jar"]
 ```
 
 ```dockerignore
@@ -546,6 +571,8 @@ ENTRYPOINT ["java", "-XX:+UseContainerSupport", "-XX:MaxRAMPercentage=75.0", "-j
 ARG MICRO_ROOT_BASE_IMAGE
 FROM ${MICRO_ROOT_BASE_IMAGE}
 
+USER 0
+
 WORKDIR /app
 
 # Copy statically linked binary from CI Project:Build stage with non-root ownership
@@ -554,7 +581,7 @@ COPY --chown=10001:10001 bin/api-service /app/api-service
 USER 10001:10001
 EXPOSE 8080
 
-ENTRYPOINT ["/app/api-service"]
+CMD ["/app/api-service"]
 ```
 
 ```dockerignore
@@ -581,11 +608,13 @@ ENTRYPOINT ["/app/api-service"]
 ARG PYTHON_312_MICRO_BASE_IMAGE
 FROM ${PYTHON_312_MICRO_BASE_IMAGE}
 
+USER 0
+
 WORKDIR /app
 ENV PATH="/app/.venv/bin:$PATH"
 
 # Copy locked dependency manifests
-COPY pyproject.toml uv.lock ./
+COPY --chown=10001:10001 pyproject.toml uv.lock ./
 
 # Mount pre-warmed CI cache via Buildx, install production dependencies offline, set ownership
 RUN --mount=type=bind,source=.uv,target=/tmp/.uv \
@@ -624,7 +653,7 @@ CMD ["uvicorn", "src.main:app", "--host", "0.0.0.0", "--port", "8080"]
 ##### 4. Node.js Backend (NestJS, Strapi, Express)
 
 - **Base Image**: `${NODE_JS_24_MICRO_BASE_IMAGE}`
-- **Build Artifacts Copied**: Pre-compiled TypeScript output (`dist/`), production `node_modules/` (prepared with `npm prune --production` in `Project:Build`), and `package.json`.
+- **Build Artifacts Copied**: Pre-compiled TypeScript output (`dist/`) and `package*.json`. Production dependencies are installed **offline in the image** from the `.npm` cache `Dependency:Download` warmed — `node_modules/` is cached, never artifacted.
 - **File Ownership & Permissions**: `COPY --chown=10001:10001 ...`
 - **Runtime Environment**: `ENV NODE_ENV=production PORT=8080`
 
@@ -632,13 +661,22 @@ CMD ["uvicorn", "src.main:app", "--host", "0.0.0.0", "--port", "8080"]
 ARG NODE_JS_24_MICRO_BASE_IMAGE
 FROM ${NODE_JS_24_MICRO_BASE_IMAGE}
 
+USER 0
+
 WORKDIR /app
 ENV NODE_ENV=production \
     PORT=8080
 
-# Copy production node_modules and pre-compiled dist/ with non-root ownership
+# Copy locked dependency manifests
 COPY --chown=10001:10001 package*.json /app/
-COPY --chown=10001:10001 node_modules/ /app/node_modules/
+
+# Mount the pre-warmed CI cache via Buildx, install production dependencies offline,
+# and set ownership
+RUN --mount=type=bind,source=.npm,target=/tmp/.npm,rw \
+    npm ci --omit=dev --offline --no-audit --no-fund --cache /tmp/.npm && \
+    chown -R 10001:10001 /app
+
+# Copy pre-compiled dist/ with non-root ownership
 COPY --chown=10001:10001 dist/ /app/dist/
 
 USER 10001:10001
@@ -653,8 +691,8 @@ CMD ["node", "dist/main.js"]
 *
 
 !package*.json
-!node_modules/
-!node_modules/**
+!.npm
+!.npm/**
 !dist/
 !dist/**
 ```
@@ -678,6 +716,8 @@ CMD ["node", "dist/main.js"]
 ```dockerfile
 ARG NGINX_MICRO_BASE_IMAGE
 FROM ${NGINX_MICRO_BASE_IMAGE}
+
+USER 0
 
 # Copy pre-compiled static distribution and SPA nginx configuration with non-root ownership
 COPY --chown=10001:10001 dist/ /usr/share/nginx/html/
@@ -703,6 +743,46 @@ CMD ["nginx", "-g", "daemon off;"]
 
 ---
 
+##### 6. Multi-Stage (only when the pipeline cannot produce the artifact)
+
+Most images need no builder stage: `Project:Build` produces the artifact and the Dockerfile
+copies it. Where a builder stage is genuinely needed, it uses `${TOOLKIT_BUILD_IMAGE}` and
+the runtime stage copies out of it — the runtime stage itself is always a micro base image.
+
+- **Builder Stage**: `${TOOLKIT_BUILD_IMAGE}`, discarded after the build. No `USER 0` here — hadolint `DL3002` is evaluated per stage.
+- **Runtime Stage**: the language micro base image, or `${MICRO_ROOT_BASE_IMAGE}` as fallback.
+- **File Ownership & Permissions**: `COPY --from=builder --chown=10001:10001 ...`
+
+```dockerfile
+ARG TOOLKIT_BUILD_IMAGE \
+    MICRO_ROOT_BASE_IMAGE
+
+FROM ${TOOLKIT_BUILD_IMAGE} AS builder
+
+WORKDIR /src
+
+COPY . .
+
+RUN make build
+
+FROM ${MICRO_ROOT_BASE_IMAGE}
+
+USER 0
+
+WORKDIR /app
+
+# Copy only the built artifact out of the builder stage
+COPY --from=builder --chown=10001:10001 /src/bin/app /app/app
+
+USER 10001:10001
+
+EXPOSE 8080
+
+CMD ["/app/app"]
+```
+
+---
+
 #### The Inverted `.dockerignore` Allowlist Standard (Default Deny)
 
 To enforce strict packaging hygiene, minimize Docker build context transfer to under 100 KB, and guarantee that zero sensitive local files (`.git/`, `.env`, secrets, test caches, local virtual environments) leak into image builds, all projects must employ an **Inverted Allowlist `.dockerignore`**:
@@ -718,7 +798,7 @@ To enforce strict packaging hygiene, minimize Docker build context transfer to u
 | **Java** (Spring Boot Fat JAR) | Maven (`target/*.jar`) or Gradle (`build/libs/*.jar`) | `**`<br/>`*`<br/>`!target/*.jar`<br/>`!build/libs/*.jar` |
 | **Golang** (Static Binary) | Pre-compiled binary (`bin/`) | `**`<br/>`*`<br/>`!bin/`<br/>`!bin/*` |
 | **Node.js Frontend** (Nginx SPA) | Static bundle (`dist/`), `nginx.conf` | `**`<br/>`*`<br/>`!dist/`<br/>`!dist/**`<br/>`!nginx.conf` |
-| **Node.js Backend** (Express / NestJS) | `dist/`, production `node_modules/`, `package*.json` | `**`<br/>`*`<br/>`!dist/`<br/>`!dist/**`<br/>`!package.json`<br/>`!package-lock.json`<br/>`!node_modules/`<br/>`!node_modules/**` |
+| **Node.js Backend** (Express / NestJS) | `dist/`, `.npm` cache, `package*.json` | `**`<br/>`*`<br/>`!dist/`<br/>`!dist/**`<br/>`!package.json`<br/>`!package-lock.json`<br/>`!.npm`<br/>`!.npm/**` |
 
 ---
 
@@ -1323,6 +1403,8 @@ Image:Build:
 # Dockerfile (Packaging-Only - Pattern A Cache-Only with BuildKit Bind Mount)
 ARG PYTHON_312_MICRO_BASE_IMAGE
 FROM ${PYTHON_312_MICRO_BASE_IMAGE}
+
+USER 0
 
 WORKDIR /app
 ENV PATH="/app/.venv/bin:$PATH"

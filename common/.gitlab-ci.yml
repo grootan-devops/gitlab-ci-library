@@ -97,7 +97,7 @@ variables:
   # --- Notifications: Microsoft Teams Adaptive Cards ---
   # RELEASE_MESSAGE_TEAMS_WORKFLOWS_URL: ""
 
-  MICRO_ROOT_MICRO_BASE_IMAGE_REPO: registry-1.docker.io/grootantech/micro-root
+  MICRO_ROOT_BASE_IMAGE_REPO: registry-1.docker.io/grootantech/micro-root
   MICRO_ROOT_BASE_IMAGE_TAG: 1.0.0
   NGINX_MICRO_BASE_IMAGE_REPO: registry-1.docker.io/grootantech/micro-nginx
   NGINX_MICRO_BASE_IMAGE_TAG: 1.0.0
