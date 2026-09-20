@@ -62,20 +62,37 @@ Include the shared templates from the library repository in your project's `.git
 
 ```yaml
 include:
-  - project: 'devops/library/cicd'
-    ref: 1.0.0
-    file:
-      - common/.gitlab-ci.yml
-      - nodejs/.gitlab-ci.yml
-      - image/.docker.gitlab-ci.yml
-      - image/.gitlab-ci.yml
-      - chart/.gitlab-ci.yml
-      - sbom/.gitlab-ci.yml
-      - sonarqube/.gitlab-ci.yml
-      - secret-scanning/.gitlab-ci.yml
-      - license/.gitlab-ci.yml
-      - release/.gitlab-ci.yml
+  - remote: 'https://raw.githubusercontent.com/grootan-devops/gitlab-ci-library/1.0.0/common/.gitlab-ci.yml'
+  - remote: 'https://raw.githubusercontent.com/grootan-devops/gitlab-ci-library/1.0.0/nodejs/.gitlab-ci.yml'
+  - remote: 'https://raw.githubusercontent.com/grootan-devops/gitlab-ci-library/1.0.0/image/.docker.gitlab-ci.yml'
+  - remote: 'https://raw.githubusercontent.com/grootan-devops/gitlab-ci-library/1.0.0/image/.gitlab-ci.yml'
+  - remote: 'https://raw.githubusercontent.com/grootan-devops/gitlab-ci-library/1.0.0/chart/.gitlab-ci.yml'
+  - remote: 'https://raw.githubusercontent.com/grootan-devops/gitlab-ci-library/1.0.0/sbom/.gitlab-ci.yml'
+  - remote: 'https://raw.githubusercontent.com/grootan-devops/gitlab-ci-library/1.0.0/sonarqube/.gitlab-ci.yml'
+  - remote: 'https://raw.githubusercontent.com/grootan-devops/gitlab-ci-library/1.0.0/secret-scanning/.gitlab-ci.yml'
+  - remote: 'https://raw.githubusercontent.com/grootan-devops/gitlab-ci-library/1.0.0/license/.gitlab-ci.yml'
+  - remote: 'https://raw.githubusercontent.com/grootan-devops/gitlab-ci-library/1.0.0/release/.gitlab-ci.yml'
 ```
+
+> [!IMPORTANT]
+> This library is hosted on GitHub, so it is included with `remote:` and a raw URL — **not**
+> `project:`. `include: project:` only resolves against another project on the same GitLab
+> instance; pointed at a GitHub path it fails at resolution. `remote:` takes one URL per
+> entry, so a multi-file include becomes one line per file.
+
+> [!IMPORTANT]
+> The `1.0.0` segment in these URLs is the **git ref**, and it is illustrative — this
+> repository has published no tags, so that exact URL returns 404 today. Replace it with a
+> ref that exists; `git ls-remote --tags --heads` lists them. At the time of writing the
+> templates live on `dev` only — `main` holds nothing but the README — so a working include
+> reads `.../gitlab-ci-library/dev/common/.gitlab-ci.yml`. A branch ref moves under you;
+> switch to a tag as soon as one is cut.
+
+> [!NOTE]
+> `include: remote:` supports **no authentication**, so every file it fetches must be
+> publicly readable. This repository is public, which is what makes the URLs above work. If
+> it is ever made private, `remote:` stops working and the templates have to be mirrored to
+> a project on your own GitLab instance and included with `project:` instead.
 
 ---
 
@@ -949,9 +966,7 @@ flowchart LR
 Deploys container images to Komodo stacks via GitOps Docker Compose updates and triggers the Komodo API:
 ```yaml
 include:
-  - project: 'devops/library/cicd'
-    ref: '1.0.0'
-    file: deploy/gitops/.komodo.gitlab-ci.yml
+  - remote: 'https://raw.githubusercontent.com/grootan-devops/gitlab-ci-library/1.0.0/deploy/gitops/.komodo.gitlab-ci.yml'
     inputs:
       environment: staging
       gitops_repo_url: https://gitlab.contoso.com/devops/gitops/komodo.git
@@ -969,9 +984,7 @@ Supports both **Helm-based** (App-of-Apps values) and **Manifest-based** (raw Ku
 ##### Option A: Helm-Based Deployment
 ```yaml
 include:
-  - project: 'devops/library/cicd'
-    ref: '1.0.0'
-    file: deploy/gitops/.argocd.gitlab-ci.yml
+  - remote: 'https://raw.githubusercontent.com/grootan-devops/gitlab-ci-library/1.0.0/deploy/gitops/.argocd.gitlab-ci.yml'
     inputs:
       environment: production
       gitops_repo_url: https://gitlab.contoso.com/devops/gitops/website-gitops.git
@@ -984,9 +997,7 @@ include:
 ##### Option B: Manifest-Based Deployment
 ```yaml
 include:
-  - project: 'devops/library/cicd'
-    ref: '1.0.0'
-    file: deploy/gitops/.argocd.gitlab-ci.yml
+  - remote: 'https://raw.githubusercontent.com/grootan-devops/gitlab-ci-library/1.0.0/deploy/gitops/.argocd.gitlab-ci.yml'
     inputs:
       environment: production
       gitops_repo_url: https://gitlab.contoso.com/devops/gitops/website-gitops.git
@@ -1002,13 +1013,10 @@ include:
 - **Helm Mode**: If `gitops_chart_values_file` is specified, `gitops_chart_app_yq_path` is strictly mandatory. If `gitops_image_values_file` is also provided, `gitops_image_repo_yq_path` and `gitops_image_tag_yq_path` are both mandatory.
 - **Manifest Mode**: If `gitops_manifest_file` is specified, `gitops_new_image` is strictly mandatory. Direct container image update occurs without container name filtering.
 
-
 #### Direct GitLab Deployment Component (`deploy/gitlab/.gitlab-ci.yml`)
 ```yaml
 include:
-  - project: 'devops/library/cicd'
-    ref: 1.0.0
-    file: deploy/gitlab/.gitlab-ci.yml
+  - remote: 'https://raw.githubusercontent.com/grootan-devops/gitlab-ci-library/1.0.0/deploy/gitlab/.gitlab-ci.yml'
     inputs:
       environment: production
       environment_name: production
@@ -1046,12 +1054,9 @@ The `readme/.migration-guide.gitlab.yml` module provides automated migration gui
 
 ```yaml
 include:
-  - project: 'devops/library/cicd'
-    ref: 1.0.0
-    file:
-      - common/.gitlab-ci.yml
-      - readme/.migration-guide.gitlab.yml
-      - release/.gitlab-ci.yml
+  - remote: 'https://raw.githubusercontent.com/grootan-devops/gitlab-ci-library/1.0.0/common/.gitlab-ci.yml'
+  - remote: 'https://raw.githubusercontent.com/grootan-devops/gitlab-ci-library/1.0.0/readme/.migration-guide.gitlab.yml'
+  - remote: 'https://raw.githubusercontent.com/grootan-devops/gitlab-ci-library/1.0.0/release/.gitlab-ci.yml'
 ```
 
 ---
@@ -1224,23 +1229,18 @@ variables:
     description: "Target platform and environment when running the 'deploy' workflow."
 
 include:
-  - project: 'devops/library/cicd'
-    ref: 1.0.0
-    file:
-      - common/.gitlab-ci.yml
-      - chart/.gitlab-ci.yml
-      - nodejs/.gitlab-ci.yml
-      - image/.gitlab-ci.yml
-      - image/.docker.gitlab-ci.yml
-      - sonarqube/.gitlab-ci.yml
-      - secret-scanning/.gitlab-ci.yml
-      - license/.gitlab-ci.yml
-      - sbom/.gitlab-ci.yml
-      - release/.gitlab-ci.yml
+  - remote: 'https://raw.githubusercontent.com/grootan-devops/gitlab-ci-library/1.0.0/common/.gitlab-ci.yml'
+  - remote: 'https://raw.githubusercontent.com/grootan-devops/gitlab-ci-library/1.0.0/chart/.gitlab-ci.yml'
+  - remote: 'https://raw.githubusercontent.com/grootan-devops/gitlab-ci-library/1.0.0/nodejs/.gitlab-ci.yml'
+  - remote: 'https://raw.githubusercontent.com/grootan-devops/gitlab-ci-library/1.0.0/image/.gitlab-ci.yml'
+  - remote: 'https://raw.githubusercontent.com/grootan-devops/gitlab-ci-library/1.0.0/image/.docker.gitlab-ci.yml'
+  - remote: 'https://raw.githubusercontent.com/grootan-devops/gitlab-ci-library/1.0.0/sonarqube/.gitlab-ci.yml'
+  - remote: 'https://raw.githubusercontent.com/grootan-devops/gitlab-ci-library/1.0.0/secret-scanning/.gitlab-ci.yml'
+  - remote: 'https://raw.githubusercontent.com/grootan-devops/gitlab-ci-library/1.0.0/license/.gitlab-ci.yml'
+  - remote: 'https://raw.githubusercontent.com/grootan-devops/gitlab-ci-library/1.0.0/sbom/.gitlab-ci.yml'
+  - remote: 'https://raw.githubusercontent.com/grootan-devops/gitlab-ci-library/1.0.0/release/.gitlab-ci.yml'
 
-  - project: 'devops/library/cicd'
-    ref: '1.0.0'
-    file: deploy/gitops/.komodo.gitlab-ci.yml
+  - remote: 'https://raw.githubusercontent.com/grootan-devops/gitlab-ci-library/1.0.0/deploy/gitops/.komodo.gitlab-ci.yml'
     inputs:
       environment: dev
       gitops_repo_url: https://gitlab.contoso.com/devops/gitops/komodo.git
@@ -1249,9 +1249,7 @@ include:
       gitops_service_image_yq_path: .services.web.image
       komodo_stack_name: web-app-dev
 
-  - project: 'devops/library/cicd'
-    ref: '1.0.0'
-    file: deploy/gitops/.komodo.gitlab-ci.yml
+  - remote: 'https://raw.githubusercontent.com/grootan-devops/gitlab-ci-library/1.0.0/deploy/gitops/.komodo.gitlab-ci.yml'
     inputs:
       environment: staging
       gitops_repo_url: https://gitlab.contoso.com/devops/gitops/komodo.git
@@ -1260,9 +1258,7 @@ include:
       gitops_service_image_yq_path: .services.web.image
       komodo_stack_name: web-app-staging
 
-  - project: 'devops/library/cicd'
-    ref: '1.0.0'
-    file: deploy/gitops/.argocd.gitlab-ci.yml
+  - remote: 'https://raw.githubusercontent.com/grootan-devops/gitlab-ci-library/1.0.0/deploy/gitops/.argocd.gitlab-ci.yml'
     inputs:
       environment: production
       gitops_repo_url: https://gitlab.contoso.com/devops/gitops/website-gitops.git
@@ -1329,19 +1325,16 @@ variables:
   CHART_REPOSITORY: myorg/helm
 
 include:
-  - project: 'devops/library/cicd'
-    ref: 1.0.0
-    file:
-      - common/.gitlab-ci.yml
-      - python/.gitlab-ci.yml
-      - image/.docker.gitlab-ci.yml
-      - image/.gitlab-ci.yml
-      - chart/.gitlab-ci.yml
-      - sonarqube/.gitlab-ci.yml
-      - secret-scanning/.gitlab-ci.yml
-      - license/.gitlab-ci.yml
-      - sbom/.gitlab-ci.yml
-      - release/.gitlab-ci.yml
+  - remote: 'https://raw.githubusercontent.com/grootan-devops/gitlab-ci-library/1.0.0/common/.gitlab-ci.yml'
+  - remote: 'https://raw.githubusercontent.com/grootan-devops/gitlab-ci-library/1.0.0/python/.gitlab-ci.yml'
+  - remote: 'https://raw.githubusercontent.com/grootan-devops/gitlab-ci-library/1.0.0/image/.docker.gitlab-ci.yml'
+  - remote: 'https://raw.githubusercontent.com/grootan-devops/gitlab-ci-library/1.0.0/image/.gitlab-ci.yml'
+  - remote: 'https://raw.githubusercontent.com/grootan-devops/gitlab-ci-library/1.0.0/chart/.gitlab-ci.yml'
+  - remote: 'https://raw.githubusercontent.com/grootan-devops/gitlab-ci-library/1.0.0/sonarqube/.gitlab-ci.yml'
+  - remote: 'https://raw.githubusercontent.com/grootan-devops/gitlab-ci-library/1.0.0/secret-scanning/.gitlab-ci.yml'
+  - remote: 'https://raw.githubusercontent.com/grootan-devops/gitlab-ci-library/1.0.0/license/.gitlab-ci.yml'
+  - remote: 'https://raw.githubusercontent.com/grootan-devops/gitlab-ci-library/1.0.0/sbom/.gitlab-ci.yml'
+  - remote: 'https://raw.githubusercontent.com/grootan-devops/gitlab-ci-library/1.0.0/release/.gitlab-ci.yml'
 
 Project:Version:Init:
   extends: .Python:Project:Version:Init
@@ -1434,19 +1427,16 @@ variables:
   ADDITIONAL_RELEASE_ARTIFACT: ${BINARY_NAME}
 
 include:
-  - project: 'devops/library/cicd'
-    ref: 1.0.0
-    file:
-      - common/.gitlab-ci.yml
-      - golang/.gitlab-ci.yml
-      - image/.docker.gitlab-ci.yml
-      - image/.gitlab-ci.yml
-      - chart/.gitlab-ci.yml
-      - sonarqube/.gitlab-ci.yml
-      - secret-scanning/.gitlab-ci.yml
-      - license/.gitlab-ci.yml
-      - sbom/.gitlab-ci.yml
-      - release/.gitlab-ci.yml
+  - remote: 'https://raw.githubusercontent.com/grootan-devops/gitlab-ci-library/1.0.0/common/.gitlab-ci.yml'
+  - remote: 'https://raw.githubusercontent.com/grootan-devops/gitlab-ci-library/1.0.0/golang/.gitlab-ci.yml'
+  - remote: 'https://raw.githubusercontent.com/grootan-devops/gitlab-ci-library/1.0.0/image/.docker.gitlab-ci.yml'
+  - remote: 'https://raw.githubusercontent.com/grootan-devops/gitlab-ci-library/1.0.0/image/.gitlab-ci.yml'
+  - remote: 'https://raw.githubusercontent.com/grootan-devops/gitlab-ci-library/1.0.0/chart/.gitlab-ci.yml'
+  - remote: 'https://raw.githubusercontent.com/grootan-devops/gitlab-ci-library/1.0.0/sonarqube/.gitlab-ci.yml'
+  - remote: 'https://raw.githubusercontent.com/grootan-devops/gitlab-ci-library/1.0.0/secret-scanning/.gitlab-ci.yml'
+  - remote: 'https://raw.githubusercontent.com/grootan-devops/gitlab-ci-library/1.0.0/license/.gitlab-ci.yml'
+  - remote: 'https://raw.githubusercontent.com/grootan-devops/gitlab-ci-library/1.0.0/sbom/.gitlab-ci.yml'
+  - remote: 'https://raw.githubusercontent.com/grootan-devops/gitlab-ci-library/1.0.0/release/.gitlab-ci.yml'
 
 Project:Build:
   extends: .Go
@@ -1478,19 +1468,16 @@ variables:
   CHART_REPOSITORY: myorg/helm
 
 include:
-  - project: 'devops/library/cicd'
-    ref: 1.0.0
-    file:
-      - common/.gitlab-ci.yml
-      - java/.gitlab-ci.yml
-      - image/.docker.gitlab-ci.yml
-      - image/.gitlab-ci.yml
-      - chart/.gitlab-ci.yml
-      - sonarqube/.gitlab-ci.yml
-      - secret-scanning/.gitlab-ci.yml
-      - license/.gitlab-ci.yml
-      - sbom/.gitlab-ci.yml
-      - release/.gitlab-ci.yml
+  - remote: 'https://raw.githubusercontent.com/grootan-devops/gitlab-ci-library/1.0.0/common/.gitlab-ci.yml'
+  - remote: 'https://raw.githubusercontent.com/grootan-devops/gitlab-ci-library/1.0.0/java/.gitlab-ci.yml'
+  - remote: 'https://raw.githubusercontent.com/grootan-devops/gitlab-ci-library/1.0.0/image/.docker.gitlab-ci.yml'
+  - remote: 'https://raw.githubusercontent.com/grootan-devops/gitlab-ci-library/1.0.0/image/.gitlab-ci.yml'
+  - remote: 'https://raw.githubusercontent.com/grootan-devops/gitlab-ci-library/1.0.0/chart/.gitlab-ci.yml'
+  - remote: 'https://raw.githubusercontent.com/grootan-devops/gitlab-ci-library/1.0.0/sonarqube/.gitlab-ci.yml'
+  - remote: 'https://raw.githubusercontent.com/grootan-devops/gitlab-ci-library/1.0.0/secret-scanning/.gitlab-ci.yml'
+  - remote: 'https://raw.githubusercontent.com/grootan-devops/gitlab-ci-library/1.0.0/license/.gitlab-ci.yml'
+  - remote: 'https://raw.githubusercontent.com/grootan-devops/gitlab-ci-library/1.0.0/sbom/.gitlab-ci.yml'
+  - remote: 'https://raw.githubusercontent.com/grootan-devops/gitlab-ci-library/1.0.0/release/.gitlab-ci.yml'
 
 Project:Version:Init:
   extends: .Java:Project:Version:Init
@@ -1533,13 +1520,10 @@ variables:
   CHART_DIR: .
 
 include:
-  - project: 'devops/library/cicd'
-    ref: 1.0.0
-    file:
-      - common/.gitlab-ci.yml
-      - chart/.gitlab-ci.yml
-      - secret-scanning/.gitlab-ci.yml
-      - release/.gitlab-ci.yml
+  - remote: 'https://raw.githubusercontent.com/grootan-devops/gitlab-ci-library/1.0.0/common/.gitlab-ci.yml'
+  - remote: 'https://raw.githubusercontent.com/grootan-devops/gitlab-ci-library/1.0.0/chart/.gitlab-ci.yml'
+  - remote: 'https://raw.githubusercontent.com/grootan-devops/gitlab-ci-library/1.0.0/secret-scanning/.gitlab-ci.yml'
+  - remote: 'https://raw.githubusercontent.com/grootan-devops/gitlab-ci-library/1.0.0/release/.gitlab-ci.yml'
 ```
 
 ---
@@ -1554,14 +1538,11 @@ variables:
   TF_STATE_NAME: vpc-infrastructure
 
 include:
-  - project: 'devops/library/cicd'
-    ref: 1.0.0
-    file:
-      - common/.gitlab-ci.yml
-      - terraform/.gitlab-ci.yml
-      - terraform/.test.gitlab-ci.yml
-      - secret-scanning/.gitlab-ci.yml
-      - release/.gitlab-ci.yml
+  - remote: 'https://raw.githubusercontent.com/grootan-devops/gitlab-ci-library/1.0.0/common/.gitlab-ci.yml'
+  - remote: 'https://raw.githubusercontent.com/grootan-devops/gitlab-ci-library/1.0.0/terraform/.gitlab-ci.yml'
+  - remote: 'https://raw.githubusercontent.com/grootan-devops/gitlab-ci-library/1.0.0/terraform/.test.gitlab-ci.yml'
+  - remote: 'https://raw.githubusercontent.com/grootan-devops/gitlab-ci-library/1.0.0/secret-scanning/.gitlab-ci.yml'
+  - remote: 'https://raw.githubusercontent.com/grootan-devops/gitlab-ci-library/1.0.0/release/.gitlab-ci.yml'
 ```
 
 The release tags the repository; consumers pin that tag with `?ref=`:
@@ -1579,10 +1560,7 @@ module "vpc" {
 **Root `.gitlab-ci.yml`:**
 ```yaml
 include:
-  - project: 'devops/library/cicd'
-    ref: 1.0.0
-    file:
-      - mono/.gitlab-ci.yml
+  - remote: 'https://raw.githubusercontent.com/grootan-devops/gitlab-ci-library/1.0.0/mono/.gitlab-ci.yml'
 
 backend:
   stage: trigger
@@ -1618,17 +1596,14 @@ frontend:
 **`backend/.gitlab-ci.yml` (Child pipeline):**
 ```yaml
 include:
-  - project: 'devops/library/cicd'
-    ref: 1.0.0
-    file:
-      - common/.mono.gitlab-ci.yml
-      - nodejs/.gitlab-ci.yml
-      - image/.docker.gitlab-ci.yml
-      - image/.gitlab-ci.yml
-      - sonarqube/.gitlab-ci.yml
-      - secret-scanning/.gitlab-ci.yml
-      - license/.gitlab-ci.yml
-      - release/.gitlab-ci.yml
+  - remote: 'https://raw.githubusercontent.com/grootan-devops/gitlab-ci-library/1.0.0/common/.mono.gitlab-ci.yml'
+  - remote: 'https://raw.githubusercontent.com/grootan-devops/gitlab-ci-library/1.0.0/nodejs/.gitlab-ci.yml'
+  - remote: 'https://raw.githubusercontent.com/grootan-devops/gitlab-ci-library/1.0.0/image/.docker.gitlab-ci.yml'
+  - remote: 'https://raw.githubusercontent.com/grootan-devops/gitlab-ci-library/1.0.0/image/.gitlab-ci.yml'
+  - remote: 'https://raw.githubusercontent.com/grootan-devops/gitlab-ci-library/1.0.0/sonarqube/.gitlab-ci.yml'
+  - remote: 'https://raw.githubusercontent.com/grootan-devops/gitlab-ci-library/1.0.0/secret-scanning/.gitlab-ci.yml'
+  - remote: 'https://raw.githubusercontent.com/grootan-devops/gitlab-ci-library/1.0.0/license/.gitlab-ci.yml'
+  - remote: 'https://raw.githubusercontent.com/grootan-devops/gitlab-ci-library/1.0.0/release/.gitlab-ci.yml'
 
 variables:
   PROJECT_CACHE_KEY: myapp-backend
@@ -1672,15 +1647,12 @@ variables:
   PROJECT_CACHE_KEY: audit-repo
 
 include:
-  - project: 'devops/library/cicd'
-    ref: 1.0.0
-    file:
-      - common/.gitlab-ci.yml
-      - nodejs/.gitlab-ci.yml
-      - sonarqube/.gitlab-ci.yml
-      - secret-scanning/.gitlab-ci.yml
-      - license/.gitlab-ci.yml
-      - sbom/.gitlab-ci.yml
+  - remote: 'https://raw.githubusercontent.com/grootan-devops/gitlab-ci-library/1.0.0/common/.gitlab-ci.yml'
+  - remote: 'https://raw.githubusercontent.com/grootan-devops/gitlab-ci-library/1.0.0/nodejs/.gitlab-ci.yml'
+  - remote: 'https://raw.githubusercontent.com/grootan-devops/gitlab-ci-library/1.0.0/sonarqube/.gitlab-ci.yml'
+  - remote: 'https://raw.githubusercontent.com/grootan-devops/gitlab-ci-library/1.0.0/secret-scanning/.gitlab-ci.yml'
+  - remote: 'https://raw.githubusercontent.com/grootan-devops/gitlab-ci-library/1.0.0/license/.gitlab-ci.yml'
+  - remote: 'https://raw.githubusercontent.com/grootan-devops/gitlab-ci-library/1.0.0/sbom/.gitlab-ci.yml'
 ```
 
 ---
@@ -1695,11 +1667,8 @@ variables:
   PROJECT_CACHE_KEY: myapp-build-test
 
 include:
-  - project: 'devops/library/cicd'
-    ref: 1.0.0
-    file:
-      - common/.gitlab-ci.yml
-      - nodejs/.gitlab-ci.yml
+  - remote: 'https://raw.githubusercontent.com/grootan-devops/gitlab-ci-library/1.0.0/common/.gitlab-ci.yml'
+  - remote: 'https://raw.githubusercontent.com/grootan-devops/gitlab-ci-library/1.0.0/nodejs/.gitlab-ci.yml'
 
 Project:Version:Init:
   extends: .Node:Project:Version:Init
@@ -1748,12 +1717,9 @@ variables:
   CHART_REPOSITORY: myorg/helm
 
 include:
-  - project: 'devops/library/cicd'
-    ref: 1.0.0
-    file:
-      - common/.gitlab-ci.yml
-      - chart/.gitlab-ci.yml
-      - image/.gitlab-ci.yml
+  - remote: 'https://raw.githubusercontent.com/grootan-devops/gitlab-ci-library/1.0.0/common/.gitlab-ci.yml'
+  - remote: 'https://raw.githubusercontent.com/grootan-devops/gitlab-ci-library/1.0.0/chart/.gitlab-ci.yml'
+  - remote: 'https://raw.githubusercontent.com/grootan-devops/gitlab-ci-library/1.0.0/image/.gitlab-ci.yml'
 
 Project:Version:Init:
   extends: .Node:Project:Version:Init
