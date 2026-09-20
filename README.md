@@ -65,16 +65,16 @@ include:
   - project: 'devops/library/cicd'
     ref: 1.0.0
     file:
-      - common/.gitlab-ci.yml                   # Required by every pipeline
-      - nodejs/.gitlab-ci.yml                   # Language runtime & build
-      - image/.docker.gitlab-ci.yml             # Docker builder
-      - image/.gitlab-ci.yml                    # Image lifecycle (push, scan)
-      - chart/.gitlab-ci.yml                    # Helm chart lifecycle
-      - sbom/.gitlab-ci.yml                     # CycloneDX SBOM generation & scan
-      - sonarqube/.gitlab-ci.yml                # SonarQube quality gate
-      - secret-scanning/.gitlab-ci.yml          # Betterleaks history audit
-      - license/.gitlab-ci.yml                  # Trivy repo license compliance
-      - release/.gitlab-ci.yml                  # GitLab Release, Package Registry & Teams notifications
+      - common/.gitlab-ci.yml
+      - nodejs/.gitlab-ci.yml
+      - image/.docker.gitlab-ci.yml
+      - image/.gitlab-ci.yml
+      - chart/.gitlab-ci.yml
+      - sbom/.gitlab-ci.yml
+      - sonarqube/.gitlab-ci.yml
+      - secret-scanning/.gitlab-ci.yml
+      - license/.gitlab-ci.yml
+      - release/.gitlab-ci.yml
 ```
 
 ---
@@ -953,18 +953,14 @@ include:
     ref: '1.0.0'
     file: deploy/gitops/.komodo.gitlab-ci.yml
     inputs:
-      environment: staging                               # (required, e.g. dev, staging, production)
-      gitops_repo_url: https://gitlab.contoso.com/devops/gitops/komodo.git # (required)
-      gitops_branch: environments/staging                # (required, target branch in gitops repo)
-      gitops_compose_file: app/docker-compose.yml        # (optional, defaults to docker-compose.yml)
-      gitops_service_image_yq_path: .services.web.image # (required, yq path to service image)
-      komodo_stack_name: web-app-staging                 # (required, exact stack name in Komodo)
-      # Server URL and API credentials default to CI/CD variables (KOMODO_SERVER, KOMODO_API_KEY, KOMODO_API_SECRET). Uncomment to override:
-      # komodo_server: https://komodo.contoso.com
-      # komodo_api_key: "$KOMODO_API_KEY"
-      # komodo_api_secret: "$KOMODO_API_SECRET"
-      komodo_sync_timeout: 600                           # (optional, defaults to 600s)
-      environment_url: https://staging.contoso.com       # (optional, registers deployment URL on GitLab)
+      environment: staging
+      gitops_repo_url: https://gitlab.contoso.com/devops/gitops/komodo.git
+      gitops_branch: environments/staging
+      gitops_compose_file: app/docker-compose.yml
+      gitops_service_image_yq_path: .services.web.image
+      komodo_stack_name: web-app-staging
+      komodo_sync_timeout: 600
+      environment_url: https://staging.contoso.com
 ```
 
 #### ArgoCD Deployment Component (`deploy/gitops/.argocd.gitlab-ci.yml`)
@@ -977,19 +973,12 @@ include:
     ref: '1.0.0'
     file: deploy/gitops/.argocd.gitlab-ci.yml
     inputs:
-      environment: production                            # (required)
-      gitops_repo_url: https://gitlab.contoso.com/devops/gitops/website-gitops.git # (required)
-      gitops_branch: myapp/prod                         # (required)
-      gitops_chart_values_file: values.yaml              # (required for Helm)
-      gitops_chart_app_yq_path: .apps.web                # (mandatory when chart_values_file is set)
-      # Optional image values overrides:
-      # gitops_image_values_file: values/web.yaml        # (optional)
-      # gitops_image_repo_yq_path: .image.repository     # (mandatory if image_values_file is set)
-      # gitops_image_tag_yq_path: .image.tag             # (mandatory if image_values_file is set)
-      argocd_apps: acme-cloud-myapp-prod-root acme-cloud-myapp-web-prod # (required)
-      # Server URL and token default to CI/CD variables (ARGOCD_SERVER, ARGOCD_TOKEN). Uncomment to override:
-      # argocd_server: https://argocd.contoso.com
-      # argocd_token: "$ARGOCD_TOKEN"
+      environment: production
+      gitops_repo_url: https://gitlab.contoso.com/devops/gitops/website-gitops.git
+      gitops_branch: myapp/prod
+      gitops_chart_values_file: values.yaml
+      gitops_chart_app_yq_path: .apps.web
+      argocd_apps: acme-cloud-myapp-prod-root acme-cloud-myapp-web-prod
 ```
 
 ##### Option B: Manifest-Based Deployment
@@ -999,15 +988,12 @@ include:
     ref: '1.0.0'
     file: deploy/gitops/.argocd.gitlab-ci.yml
     inputs:
-      environment: production                            # (required)
-      gitops_repo_url: https://gitlab.contoso.com/devops/gitops/website-gitops.git # (required)
-      gitops_branch: myapp/prod                         # (required)
-      gitops_manifest_file: extras/manifests/clamav/deployment.yaml # (required for Manifest)
-      gitops_new_image: clamav/clamav:1.4.0              # (mandatory when manifest_file is set)
-      argocd_apps: acme-cloud-myapp-extras-prod-clamav # (required)
-      # Server URL and token default to CI/CD variables (ARGOCD_SERVER, ARGOCD_TOKEN). Uncomment to override:
-      # argocd_server: https://argocd.contoso.com
-      # argocd_token: "$ARGOCD_TOKEN"
+      environment: production
+      gitops_repo_url: https://gitlab.contoso.com/devops/gitops/website-gitops.git
+      gitops_branch: myapp/prod
+      gitops_manifest_file: extras/manifests/clamav/deployment.yaml
+      gitops_new_image: clamav/clamav:1.4.0
+      argocd_apps: acme-cloud-myapp-extras-prod-clamav
 ```
 
 ##### Strict Parameter & Validation Rules (Hard Fail)
@@ -1200,7 +1186,7 @@ Images use the **OCI container registry** — not the Package Registry. `IMAGE_R
 Chart:UnitTest:
   extends: .Chart:UnitTest
   variables:
-    MOCK_CHART: test        # default; the mock consumer chart under ${CHART_DIR}
+    MOCK_CHART: test
 ```
 
 It renders a mock consumer chart with [helm-unittest](https://github.com/helm-unittest/helm-unittest)
@@ -1238,7 +1224,6 @@ variables:
     description: "Target platform and environment when running the 'deploy' workflow."
 
 include:
-  # 1. Base Shared Pipeline Templates
   - project: 'devops/library/cicd'
     ref: 1.0.0
     file:
@@ -1253,7 +1238,6 @@ include:
       - sbom/.gitlab-ci.yml
       - release/.gitlab-ci.yml
 
-  # 2. Komodo Deployments
   - project: 'devops/library/cicd'
     ref: '1.0.0'
     file: deploy/gitops/.komodo.gitlab-ci.yml
@@ -1276,7 +1260,6 @@ include:
       gitops_service_image_yq_path: .services.web.image
       komodo_stack_name: web-app-staging
 
-  # 3. ArgoCD Deployments
   - project: 'devops/library/cicd'
     ref: '1.0.0'
     file: deploy/gitops/.argocd.gitlab-ci.yml
@@ -1286,12 +1269,8 @@ include:
       gitops_branch: myapp/prod
       gitops_chart_values_file: values.yaml
       gitops_chart_app_yq_path: .apps.web
-      # Server URL and token default to CI/CD variables (ARGOCD_SERVER, ARGOCD_TOKEN). Uncomment to override:
-      # argocd_server: https://argocd.contoso.com
-      # argocd_token: "$ARGOCD_TOKEN"
       argocd_apps: web-app-production
 
-# Application Build & Test Jobs
 Project:Version:Init:
   extends: .Node:Project:Version:Init
 
@@ -1369,9 +1348,6 @@ Project:Version:Init:
 
 Python:Dependency:Download:
   extends:
-    # Image anchor first: `extends` merges with the last entry winning, so listing
-    # .Python:12 second would override this job's `cache: policy: pull-push` with
-    # `pull` and nothing would ever populate the cache.
     - .Python:12
     - .Python:Dependency:Download
 
@@ -1517,7 +1493,6 @@ include:
       - release/.gitlab-ci.yml
 
 Project:Version:Init:
-  # Reads the POM with yq in the toolkit image - no JDK needed for version discovery.
   extends: .Java:Project:Version:Init
 
 Java:Dependency:Download:
@@ -1556,8 +1531,6 @@ For repositories containing only Helm charts (no application code or Dockerfile)
 # .gitlab-ci.yml
 variables:
   CHART_DIR: .
-  # CHART_REPOSITORY is optional — defaults to ${CI_PROJECT_PATH}/helm
-  # HELM_CHANNEL is optional — defaults to dev for RC builds, stable for releases
 
 include:
   - project: 'devops/library/cicd'
