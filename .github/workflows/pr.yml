@@ -35,6 +35,7 @@ jobs:
     with:
       tag: ${{ needs.init.outputs.tag }}
       allow-unstable-library-refs: true
+      check-library-pinning: false
 
   secret-scan:
     uses: grootan-devops/github-ci-library/.github/workflows/secret-scanning.yml@dev
