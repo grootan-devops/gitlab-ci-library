@@ -73,7 +73,6 @@ variables:
   # RELEASE_VERSION: ""
   # HELM_TEST_VALUES: ""
   # ADDITIONAL_RELEASE_ARTIFACT: ""
-  # MD_LINT_IGNORE_RULE: ""
   #
   # --- GitOps Deployment: ArgoCD ---
   # ARGOCD_SERVER: "https://argocd.example.com"
@@ -1581,10 +1580,6 @@ Trivy:Cache:Warm:
       exclude_rule 'MD007'\n\
       exclude_rule 'MD047'" \
       > markdownlint.rb
-    - |
-      for RULE in ${MD_LINT_IGNORE_RULE}; do
-        echo -e "exclude_rule '${RULE}'" >> markdownlint.rb
-      done
     - mdl --config .markdownlintrc ${LINT_MD_FILES}
 
 .YAML:Lint:
