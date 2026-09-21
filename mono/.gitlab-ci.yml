@@ -1,0 +1,18 @@
+include:
+  - local: 'common/.gitlab-ci.yml'
+
+Common:Init:
+  rules:
+    - when: never
+
+Changelog:Lint:
+  rules:
+    - when: never
+
+Changelog:Check Existence:
+  rules:
+    - when: never
+
+Tag:Tag Existence:
+  rules:
+    - when: never

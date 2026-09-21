@@ -1,0 +1,129 @@
+.Go:
+  stage: build
+  image: ${GO_BUILD_IMAGE_REPO}:${GO_BUILD_IMAGE_TAG}
+  variables:
+    GOPATH: ${CI_PROJECT_DIR}/${PROJECT_PATH}/.cache
+  cache:
+    key:
+      files:
+        - go.sum
+      prefix: ${PROJECT_CACHE_KEY}
+    policy: pull
+    when: always
+    paths:
+      - ${CI_PROJECT_DIR}/${PROJECT_PATH}/.cache
+  needs:
+    - job: Common:Init
+      artifacts: true
+      optional: true
+    - job: Go:Dependency:Download
+      artifacts: false
+      optional: false
+
+.go-lint-common:
+  stage: lint
+  extends:
+    - .lint-workflow-rules
+  needs:
+    - job: Go:Dependency:Download
+      artifacts: false
+      optional: true
+
+Go:Dependency:Download:
+  stage: prepare
+  extends:
+    - .Go
+    - .build-test-rules
+  script:
+    - go mod download
+  cache:
+    policy: pull-push
+  needs:
+    - job: Common:Init
+      artifacts: true
+      optional: true
+
+Go:Fmt:
+  extends:
+    - .Go
+    - .go-lint-common
+  script:
+    - go fmt ./...
+    - |
+      if [ -n "$(git --no-pager diff)" ]; then
+        echo "Please run 'go fmt' and 'go mod tidy' locally and push the changes"
+        exit 1
+      else
+        echo "Code formatting and dependencies check passed successfully."
+      fi
+
+Go:Vet:
+  extends:
+    - .Go
+    - .go-lint-common
+  script:
+    - GO_VET_OUTPUT=$(go vet ./... 2>&1 || true)
+    - GO_VET_FILTERED_OUTPUT=""
+    - |
+      while IFS= read -r LINE; do
+        if [[ "${LINE}" =~ ^#\  ]] || [[ "${LINE}" =~ ^\[[^]]+\] ]]; then
+          continue
+        fi
+
+        if [[ "${LINE}" =~ ^([^:]+):([0-9]+): ]]; then
+          GO_VET_FILE=${BASH_REMATCH[1]}
+          GO_VET_LINE_NO=${BASH_REMATCH[2]}
+
+          GO_VET_PREV_LINE_NUM=$((GO_VET_LINE_NO - 1))
+          GO_VET_PREV_LINE=$(sed "${GO_VET_PREV_LINE_NUM}q;d" "${GO_VET_FILE}" 2>/dev/null | tr -d '\r')
+
+          if [[ "${GO_VET_PREV_LINE}" =~ ^[[:space:]]*//[[:space:]]*govet:ignore ]]; then
+            continue
+          fi
+        fi
+
+        GO_VET_FILTERED_OUTPUT+="${LINE}"$'\n'
+      done <<< "${GO_VET_OUTPUT}"
+    - |
+      if [[ -n "$(echo "${GO_VET_FILTERED_OUTPUT}" | grep -v '^[[:space:]]*$')" ]]; then
+        printf "%s" "${GO_VET_FILTERED_OUTPUT}" >&2
+        exit 1
+      fi
+
+Go:Lint:
+  extends:
+    - .Go
+    - .go-lint-common
+  script:
+    - golangci-lint run --timeout 60m
+
+Go:Security:Scan:
+  extends:
+    - .Go
+    - .go-lint-common
+  script:
+    - gosec -exclude-generated -exclude-dir=.cache ./...
+
+.Go:Test:Unit:
+  stage: test
+  extends:
+    - .Go
+    - .build-test-rules
+  cache:
+    policy: pull
+  needs:
+    - job: Common:Init
+      artifacts: true
+      optional: true
+    - job: Go:Dependency:Download
+      artifacts: false
+      optional: false
+  artifacts:
+    name: Unit Test Report
+    expose_as: Unit Test Report
+    when: always
+    expire_in: 1 week
+    paths:
+      - ${TEST_REPORT_DIR}/
+    reports:
+      junit: ${TEST_REPORT_DIR}/junit.xml

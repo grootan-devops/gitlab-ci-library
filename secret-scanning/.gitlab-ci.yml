@@ -1,0 +1,20 @@
+Git:Secret:Scan:
+  stage: security
+  extends:
+    - .secret-scan-workflow-rules
+  variables:
+    GIT_DEPTH: 0
+  script:
+    - RANGE_ARGS=()
+    - |
+      if [[ "${CI_PIPELINE_SOURCE}" == "merge_request_event" && -n "${CI_MERGE_REQUEST_DIFF_BASE_SHA}" ]]; then
+        echo "Scanning merge request range ${CI_MERGE_REQUEST_DIFF_BASE_SHA}..HEAD"
+        RANGE_ARGS=(--log-opts "${CI_MERGE_REQUEST_DIFF_BASE_SHA}..HEAD")
+      else
+        echo "Scanning full history"
+      fi
+    - betterleaks git . "${RANGE_ARGS[@]}" --redact --verbose --no-banner --no-color --platform gitlab --ignore-gitleaks-allow
+  needs:
+    - job: Common:Init
+      artifacts: false
+      optional: true

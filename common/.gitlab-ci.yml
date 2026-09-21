@@ -1,0 +1,2004 @@
+stages:
+  - .pre
+  - init
+  - prepare
+  - lint
+  - check
+  - test
+  - build
+  - push
+  - security
+  - qa
+  - report
+  - deploy
+  - release
+  - notify
+  - trigger
+  - destroy
+  - .post
+
+variables:
+  # Workflow Selector for Web / API manual dispatch
+  WORKFLOW:
+    value: "full-pipeline"
+    options:
+      - "full-pipeline"
+      - "build"
+      - "check"
+      - "deploy"
+      - "sonarqube"
+      - "secret-scanning"
+      - "license-scanning"
+      - "sbom-scanning"
+      - "lint"
+      - "image-build-and-push"
+      - "image-scan"
+      - "chart-build-and-push"
+      - "chart-scan"
+    description: "Select the workflow to execute. (Active during manual Web / API runs)"
+
+  # Target Semantic Version / Image Tag / Artifact Version Override
+  TARGET_VERSION:
+    value: ""
+    description: "Target version or tag (e.g. 1.8.0, latest). Used as: deployment version override in 'deploy', image tag in 'image-scan', or manual release version override."
+
+  GIT_DEPTH: 1
+
+  PROJECT_PATH: "."
+  PROJECT_CACHE_KEY: ""
+  MASTER_BRANCH_REGEX: /^.*\/master$/
+
+  SKIP_CVE_SCAN: "false"
+
+  CHANGELOG_FILE_NAME: ./CHANGELOG.md
+  RELEASE_CHANGELOG_FILE_NAME: RELEASE_CHANGELOG.md
+  RELEASE_CHANGELOG_CARD_FILE_NAME: RELEASE_CHANGELOG_CARD.json
+
+  MIGRATION_FILE_NAME: ./MIGRATION.md
+  RELEASE_MIGRATION_FILE_NAME: RELEASE_MIGRATION.md
+
+  ## ---------------------------------------------------------------------------
+  ## External Service Configuration (Configure in GitLab CI/CD Variables or Project or global)
+  ## ---------------------------------------------------------------------------
+  # --- Container & Helm Registry ---
+  # IMAGE_REGISTRY: ""
+  # IMAGE_REGISTRY_USERNAME: ""
+  # IMAGE_REGISTRY_PASSWORD: ""
+  # CHART_REGISTRY: ""
+  # CHART_REGISTRY_USERNAME: ""
+  # CHART_REGISTRY_PASSWORD: ""
+  # IMAGE_REPOSITORY: ""
+  # CHART_REPOSITORY: ""
+  # RELEASE_VERSION_SUFFIX: ""
+  # RELEASE_VERSION: ""
+  # HELM_TEST_VALUES: ""
+  # ADDITIONAL_RELEASE_ARTIFACT: ""
+  # MD_LINT_IGNORE_RULE: ""
+  #
+  # --- GitOps Deployment: ArgoCD ---
+  # ARGOCD_SERVER: "https://argocd.example.com"
+  # ARGOCD_TOKEN: ""
+  # GITOPS_REPO_URL: "https://gitlab.example.com/devops/gitops/app-gitops.git"
+  # GITOPS_BRANCH: "main"
+  #
+  # --- GitOps Deployment: Komodo ---
+  # KOMODO_SERVER: "https://komodo.example.com"
+  # KOMODO_API_KEY: ""
+  # KOMODO_API_SECRET: ""
+  #
+  # --- Code Quality: SonarQube ---
+  # SONAR_URL: "http://sonarqube-sonarqube.sonarqube:9000"
+  # SONAR_EXTERNAL_URL: "https://sonarqube.example.com"
+  # SONARQUBE_TOKEN: ""
+
+  # --- Security: Trivy Remote Scanner ---
+  # TRIVY_HOST: "http://trivy.trivy:4954"
+  #
+  # --- Notifications: Microsoft Teams Adaptive Cards ---
+  # RELEASE_MESSAGE_TEAMS_WORKFLOWS_URL: ""
+
+  MICRO_ROOT_BASE_IMAGE_REPO: registry-1.docker.io/grootantech/micro-root
+  MICRO_ROOT_BASE_IMAGE_TAG: verify-v1
+  NGINX_MICRO_BASE_IMAGE_REPO: registry-1.docker.io/grootantech/micro-nginx
+  NGINX_MICRO_BASE_IMAGE_TAG: verify-v1
+  PYTHON_312_MICRO_BASE_IMAGE_REPO: registry-1.docker.io/grootantech/micro-python-3-12
+  PYTHON_312_MICRO_BASE_IMAGE_TAG: verify-v1
+  JAVA_25_MICRO_BASE_IMAGE_REPO: registry-1.docker.io/grootantech/micro-java-25
+  JAVA_25_MICRO_BASE_IMAGE_TAG: verify-v1
+  NODE_JS_24_MICRO_BASE_IMAGE_REPO: registry-1.docker.io/grootantech/micro-node-24
+  NODE_JS_24_MICRO_BASE_IMAGE_TAG: verify-v1
+
+  DOCKER_DIND_IMAGE_REPO: ${CI_DEPENDENCY_PROXY_GROUP_IMAGE_PREFIX}/docker
+  DOCKER_DIND_IMAGE_TAG: "29.3.1-dind"
+  BUILDKIT_IMAGE_REPO: ${CI_DEPENDENCY_PROXY_GROUP_IMAGE_PREFIX}/moby/buildkit
+  BUILDKIT_IMAGE_TAG: v0.29.0
+
+  TOOLKIT_IMAGE_REPO: registry-1.docker.io/grootantech/toolkit
+  TOOLKIT_IMAGE_TAG: verify-v2
+  MD_LINT_IMAGE_REPO: ${TOOLKIT_IMAGE_REPO}
+  MD_LINT_IMAGE_TAG: ${TOOLKIT_IMAGE_TAG}
+  SONAR_SCANNER_CLI_IMAGE_REPO: ${TOOLKIT_IMAGE_REPO}
+  SONAR_SCANNER_CLI_IMAGE_TAG: ${TOOLKIT_IMAGE_TAG}
+  TOOLKIT_BUILD_IMAGE_REPO: ${TOOLKIT_IMAGE_REPO}
+  TOOLKIT_BUILD_IMAGE_TAG: ${TOOLKIT_IMAGE_TAG}
+  GO_BUILD_IMAGE_REPO: ${TOOLKIT_IMAGE_REPO}
+  GO_BUILD_IMAGE_TAG: ${TOOLKIT_IMAGE_TAG}
+  BUILDAH_BUILD_IMAGE_REPO: ${TOOLKIT_IMAGE_REPO}
+  BUILDAH_BUILD_IMAGE_TAG: ${TOOLKIT_IMAGE_TAG}
+  JAVA25_BUILD_IMAGE_REPO: ${TOOLKIT_IMAGE_REPO}
+  JAVA25_BUILD_IMAGE_TAG: ${TOOLKIT_IMAGE_TAG}
+
+  # KSV-0011: CPU not limited
+  # KSV-0014: Root file system is not read-only
+  # KSV-0015: CPU requests not specified
+  # KSV-0016: Memory requests not specified
+  # KSV-0018: Memory not limited
+  # KSV-0110: Workloads in the default namespace
+  # KSV-0113: Role in the default namespace
+  # KSV-0125: Use trusted registry
+  TRIVY_IGNORE_CVES: "KSV-0011 KSV-0014 KSV-0015 KSV-0016 KSV-0018 KSV-0110 KSV-0113 KSV-0125"
+  # https://trivy.dev/docs/latest/scanner/license/
+  TRIVY_IGNORED_LICENSE_CLASSIFICATIONS: "notice,permissive,unencumbered"
+
+  TRIVY_TIMEOUT: 60m
+  TRIVY_IGNORE_CONFIG_FILE: ignored-cves.yml
+  TRIVY_ENABLE_JAVA_SCAN: "false"
+  TRIVY_JUNIT_TEMPLATE:
+    expand: false
+    value: |
+      <?xml version="1.0" ?>
+      <testsuites name="trivy">
+      {{- range . -}}
+          {{- $failures := len .Vulnerabilities }}
+          {{- if gt $failures 0 }}
+          <testsuite tests="{{ $failures }}" failures="{{ $failures }}" name="{{ .Target }} (Vulnerabilities)" errors="0" skipped="0" time="">
+          {{- if not (eq .Type "") }}
+              <properties>
+                  <property name="type" value="{{ .Type }}"></property>
+              </properties>
+          {{- end }}
+          {{- range .Vulnerabilities }}
+              <testcase classname="{{ .PkgName }}-{{ .InstalledVersion }}" name="[{{ .Vulnerability.Severity }}] {{ .VulnerabilityID }}" time="">
+                  <failure message="{{ escapeXML .Title }}" type="description">{{ escapeXML .Description }}</failure>
+              </testcase>
+          {{- end }}
+          </testsuite>
+          {{- end }}
+
+          {{- $failures := len .Misconfigurations }}
+          {{- if gt $failures 0 }}
+          <testsuite tests="{{ $failures }}" failures="{{ $failures }}" name="{{ .Target }} (Misconfigurations)" errors="0" skipped="0" time="">
+          {{- if not (eq .Type "") }}
+              <properties>
+                  <property name="type" value="{{ .Type }}"></property>
+              </properties>
+          {{- end }}
+          {{- range .Misconfigurations }}
+              <testcase classname="{{ .Type }}" name="[{{ .Severity }}] {{ .AVDID }}" time="">
+                  <failure message="{{ escapeXML .Title }}" type="description">{{ escapeXML .Description }}</failure>
+              </testcase>
+          {{- end }}
+          </testsuite>
+          {{- end }}
+
+          {{- $licenseFailures := 0 }}
+          {{- range .Licenses }}
+              {{- if ne .Severity "LOW" }}
+                  {{- $licenseFailures = add $licenseFailures 1 }}
+              {{- end }}
+          {{- end }}
+
+          {{- if gt (len .Licenses) 0 }}
+          <testsuite tests="{{ len .Licenses }}" failures="{{ $licenseFailures }}" name="{{ .Target }} (Licenses)" errors="0" skipped="0" time="">
+          {{- if not (eq .Type "") }}
+              <properties>
+                  <property name="type" value="{{ .Type }}"></property>
+              </properties>
+          {{- end }}
+          {{- range .Licenses }}
+              <testcase classname="{{ .Category }}" name="{{ .PkgName }}: {{ .Name }}" time="">
+                  <failure message="{{ .Name }} ({{ .Severity }})" type="{{ .Category }}">
+      PkgName: {{ .PkgName }}
+      License: {{ .Name }}
+      Category: {{ .Category }}
+      Severity: {{ .Severity }}
+      FilePath: {{ .FilePath }}
+      Confidence: {{ .Confidence }}
+      Link: {{ .Link }}
+                  </failure>
+              </testcase>
+          {{- end }}
+          </testsuite>
+          {{- end }}
+
+      {{- end }}
+      </testsuites>
+  TRIVY_SCAN_REPORT_NAME_SUFFIX: trivy_scan_report
+  TRIVY_SCAN_REPORT_FILE_NAME: ${TRIVY_SCAN_REPORT_NAME_SUFFIX}.tar.gz
+
+  TEST_REPORT_DIR: test-report
+
+  LICENSE_INFO_FILE_NAME: LICENSE_CVE.md
+
+  SBOM_FILE: sbom.cdx.json
+  SBOM_CVE_INFO_FILE_NAME: SBOM_CVE.md
+
+  CHART_INFO_FILE_NAME: CHART_INFO.md
+  CHART_CVE_INFO_FILE_NAME: CHART_CVE.md
+  CHART_FILE: "Chart.yaml"
+  CHART_DIR: ./chart
+  CHART_REPOSITORY: helm
+  CHART_DEV_REPOSITORY_SUFFIX: /dev
+  CHART_README_MD_FILE_NAME: CHART_README.md
+
+  INSTALLED_PCKG_FILE_NAME: installed_pkgs.txt
+  DNF_INSTALL_ARG: "--setopt=install_weak_deps=0 --nodocs -y"
+  BUILDAH_SCRIPT_FILE_NAME: buildah.sh
+
+  DOCKER_HOST: tcp://docker:2375/
+  DOCKER_DRIVER: overlay2
+  DOCKER_TLS_CERTDIR: ""
+  IMAGE_NAME: dockerimage:internal
+  DOCKERFILE: Dockerfile
+  USE_DOCKER_BUILDX: "true"
+  IMAGE_TAR_FILE_NAME: image.tar.gz
+  IMAGE_REPOSITORY: ""
+  IMAGE_DEV_REPOSITORY_SUFFIX: /dev
+  HADOLINT_IGNORE: ""
+  IMAGE_TEST_SCRIPT_FILE_NAME: ci_image_test.sh
+  IMAGE_INFO_FILE_NAME: IMAGE_INFO.md
+  IMAGE_CVE_INFO_FILE_NAME: IMAGE_CVE.md
+  IMAGE_CVE_REPORT_FILE_NAME: image_${TRIVY_SCAN_REPORT_NAME_SUFFIX}.md
+  IMAGE_README_MD_FILE_NAME: IMAGE_README.md
+
+  TF_STATE_NAME: ""
+  TF_README_FILE_NAME: README.md
+  TF_TEST_TIMEOUT: 1h
+  TF_LOG_FILE_NAME: tf_test.log
+  TF_CVE_INFO_FILE_NAME: TF_CVE.md
+  TF_README_MD_FILE_NAME: TF_README.md
+
+.retry-with-script-failure:
+  retry:
+    max: 2
+    when:
+      - runner_system_failure
+      - stuck_or_timeout_failure
+      - runner_unsupported
+      - job_execution_timeout
+      - unknown_failure
+      - stale_schedule
+      - script_failure
+
+.release-rules:
+  rules:
+    - if: $CI_COMMIT_TAG
+      when: never
+    - if: '$CI_PIPELINE_SOURCE =~ /^(web|api)$/'
+      when: never
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+    - if: $CI_COMMIT_BRANCH =~ $MASTER_BRANCH_REGEX && $CI_COMMIT_REF_PROTECTED == "true"
+
+.master-fast-track-rules:
+  rules:
+    - if: $CI_COMMIT_TAG
+      when: never
+    - if: '$CI_PIPELINE_SOURCE =~ /^(web|api)$/'
+      when: never
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+    - if: $CI_COMMIT_BRANCH =~ $MASTER_BRANCH_REGEX && $CI_COMMIT_REF_PROTECTED == "true"
+
+.mr-only-rules:
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event" && ($CI_MERGE_REQUEST_TARGET_BRANCH_NAME == $CI_DEFAULT_BRANCH || ($CI_MERGE_REQUEST_TARGET_BRANCH_NAME =~ $MASTER_BRANCH_REGEX && $CI_MERGE_REQUEST_TARGET_BRANCH_PROTECTED == "true"))'
+    - when: never
+
+.lifecycle-rules:
+  rules:
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+    - if: $CI_COMMIT_BRANCH =~ $MASTER_BRANCH_REGEX && $CI_COMMIT_REF_PROTECTED == "true"
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event" && ($CI_MERGE_REQUEST_TARGET_BRANCH_NAME == $CI_DEFAULT_BRANCH || ($CI_MERGE_REQUEST_TARGET_BRANCH_NAME =~ $MASTER_BRANCH_REGEX && $CI_MERGE_REQUEST_TARGET_BRANCH_PROTECTED == "true"))'
+    - if: '$CI_PIPELINE_SOURCE == "parent_pipeline"'
+    - if: '$CI_PIPELINE_SOURCE =~ /^(web|api)$/ && ($WORKFLOW == "full-pipeline" || $WORKFLOW == "build" || $WORKFLOW == "check" || $WORKFLOW == "image-build-and-push" || $WORKFLOW == "chart-build-and-push")'
+    - when: never
+
+.full-and-mr-rules:
+  rules:
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+      when: never
+    - if: $CI_COMMIT_BRANCH =~ $MASTER_BRANCH_REGEX && $CI_COMMIT_REF_PROTECTED == "true"
+      when: never
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event" && ($CI_MERGE_REQUEST_TARGET_BRANCH_NAME == $CI_DEFAULT_BRANCH || ($CI_MERGE_REQUEST_TARGET_BRANCH_NAME =~ $MASTER_BRANCH_REGEX && $CI_MERGE_REQUEST_TARGET_BRANCH_PROTECTED == "true"))'
+    - if: '$CI_PIPELINE_SOURCE == "parent_pipeline"'
+    - if: '$CI_PIPELINE_SOURCE =~ /^(web|api)$/ && $WORKFLOW == "full-pipeline"'
+    - when: never
+
+.deploy-workflow-rules:
+  rules:
+    - if: '$CI_PIPELINE_SOURCE =~ /^(web|api)$/ && $WORKFLOW == "deploy"'
+    - when: never
+
+.sonarqube-workflow-rules:
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event" && ($CI_MERGE_REQUEST_TARGET_BRANCH_NAME == $CI_DEFAULT_BRANCH || ($CI_MERGE_REQUEST_TARGET_BRANCH_NAME =~ $MASTER_BRANCH_REGEX && $CI_MERGE_REQUEST_TARGET_BRANCH_PROTECTED == "true"))'
+    - if: '$CI_PIPELINE_SOURCE == "parent_pipeline"'
+    - if: '$CI_PIPELINE_SOURCE =~ /^(web|api)$/ && ($WORKFLOW == "full-pipeline" || $WORKFLOW == "sonarqube")'
+    - when: never
+
+.lint-workflow-rules:
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event" && ($CI_MERGE_REQUEST_TARGET_BRANCH_NAME == $CI_DEFAULT_BRANCH || ($CI_MERGE_REQUEST_TARGET_BRANCH_NAME =~ $MASTER_BRANCH_REGEX && $CI_MERGE_REQUEST_TARGET_BRANCH_PROTECTED == "true"))'
+    - if: '$CI_PIPELINE_SOURCE == "parent_pipeline"'
+    - if: '$CI_PIPELINE_SOURCE =~ /^(web|api)$/ && ($WORKFLOW == "full-pipeline" || $WORKFLOW == "lint")'
+    - when: never
+
+.secret-scan-workflow-rules:
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event" && ($CI_MERGE_REQUEST_TARGET_BRANCH_NAME == $CI_DEFAULT_BRANCH || ($CI_MERGE_REQUEST_TARGET_BRANCH_NAME =~ $MASTER_BRANCH_REGEX && $CI_MERGE_REQUEST_TARGET_BRANCH_PROTECTED == "true"))'
+    - if: '$CI_PIPELINE_SOURCE == "parent_pipeline"'
+    - if: '$CI_PIPELINE_SOURCE =~ /^(web|api)$/ && ($WORKFLOW == "full-pipeline" || $WORKFLOW == "secret-scanning")'
+    - when: never
+
+.license-scan-workflow-rules:
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event" && ($CI_MERGE_REQUEST_TARGET_BRANCH_NAME == $CI_DEFAULT_BRANCH || ($CI_MERGE_REQUEST_TARGET_BRANCH_NAME =~ $MASTER_BRANCH_REGEX && $CI_MERGE_REQUEST_TARGET_BRANCH_PROTECTED == "true"))'
+    - if: '$CI_PIPELINE_SOURCE == "parent_pipeline"'
+    - if: '$CI_PIPELINE_SOURCE =~ /^(web|api)$/ && ($WORKFLOW == "full-pipeline" || $WORKFLOW == "license-scanning")'
+    - when: never
+
+.sbom-scan-workflow-rules:
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event" && ($CI_MERGE_REQUEST_TARGET_BRANCH_NAME == $CI_DEFAULT_BRANCH || ($CI_MERGE_REQUEST_TARGET_BRANCH_NAME =~ $MASTER_BRANCH_REGEX && $CI_MERGE_REQUEST_TARGET_BRANCH_PROTECTED == "true"))'
+    - if: '$CI_PIPELINE_SOURCE == "parent_pipeline"'
+    - if: '$CI_PIPELINE_SOURCE =~ /^(web|api)$/ && ($WORKFLOW == "full-pipeline" || $WORKFLOW == "sbom-scanning")'
+    - when: never
+
+.chart-build-workflow-rules:
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event" && ($CI_MERGE_REQUEST_TARGET_BRANCH_NAME == $CI_DEFAULT_BRANCH || ($CI_MERGE_REQUEST_TARGET_BRANCH_NAME =~ $MASTER_BRANCH_REGEX && $CI_MERGE_REQUEST_TARGET_BRANCH_PROTECTED == "true"))'
+    - if: '$CI_PIPELINE_SOURCE == "parent_pipeline"'
+    - if: '$CI_PIPELINE_SOURCE =~ /^(web|api)$/ && ($WORKFLOW == "full-pipeline" || $WORKFLOW == "chart-build-and-push")'
+    - when: never
+
+.chart-scan-workflow-rules:
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event" && ($CI_MERGE_REQUEST_TARGET_BRANCH_NAME == $CI_DEFAULT_BRANCH || ($CI_MERGE_REQUEST_TARGET_BRANCH_NAME =~ $MASTER_BRANCH_REGEX && $CI_MERGE_REQUEST_TARGET_BRANCH_PROTECTED == "true"))'
+    - if: '$CI_PIPELINE_SOURCE == "parent_pipeline"'
+    - if: '$CI_PIPELINE_SOURCE =~ /^(web|api)$/ && ($WORKFLOW == "full-pipeline" || $WORKFLOW == "chart-build-and-push" || $WORKFLOW == "chart-scan")'
+    - when: never
+
+.image-build-workflow-rules:
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event" && ($CI_MERGE_REQUEST_TARGET_BRANCH_NAME == $CI_DEFAULT_BRANCH || ($CI_MERGE_REQUEST_TARGET_BRANCH_NAME =~ $MASTER_BRANCH_REGEX && $CI_MERGE_REQUEST_TARGET_BRANCH_PROTECTED == "true"))'
+    - if: '$CI_PIPELINE_SOURCE == "parent_pipeline"'
+    - if: '$CI_PIPELINE_SOURCE =~ /^(web|api)$/ && ($WORKFLOW == "full-pipeline" || $WORKFLOW == "image-build-and-push")'
+    - when: never
+
+.image-scan-workflow-rules:
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event" && ($CI_MERGE_REQUEST_TARGET_BRANCH_NAME == $CI_DEFAULT_BRANCH || ($CI_MERGE_REQUEST_TARGET_BRANCH_NAME =~ $MASTER_BRANCH_REGEX && $CI_MERGE_REQUEST_TARGET_BRANCH_PROTECTED == "true"))'
+    - if: '$CI_PIPELINE_SOURCE == "parent_pipeline"'
+    - if: '$CI_PIPELINE_SOURCE =~ /^(web|api)$/ && ($WORKFLOW == "full-pipeline" || $WORKFLOW == "image-build-and-push" || $WORKFLOW == "image-scan")'
+    - when: never
+
+.build-test-rules:
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event" && ($CI_MERGE_REQUEST_TARGET_BRANCH_NAME == $CI_DEFAULT_BRANCH || ($CI_MERGE_REQUEST_TARGET_BRANCH_NAME =~ $MASTER_BRANCH_REGEX && $CI_MERGE_REQUEST_TARGET_BRANCH_PROTECTED == "true"))'
+    - if: '$CI_PIPELINE_SOURCE == "parent_pipeline"'
+    - if: '$CI_PIPELINE_SOURCE =~ /^(web|api)$/ && ($WORKFLOW == "full-pipeline" || $WORKFLOW == "build" || $WORKFLOW == "image-build-and-push")'
+    - when: never
+
+.unit-test-workflow-rules:
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event" && ($CI_MERGE_REQUEST_TARGET_BRANCH_NAME == $CI_DEFAULT_BRANCH || ($CI_MERGE_REQUEST_TARGET_BRANCH_NAME =~ $MASTER_BRANCH_REGEX && $CI_MERGE_REQUEST_TARGET_BRANCH_PROTECTED == "true"))'
+    - if: '$CI_PIPELINE_SOURCE == "parent_pipeline"'
+    - if: '$CI_PIPELINE_SOURCE =~ /^(web|api)$/ && ($WORKFLOW == "full-pipeline" || $WORKFLOW == "build" || $WORKFLOW == "image-build-and-push")'
+    - when: never
+
+.common-init-rules:
+  rules:
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+    - if: $CI_COMMIT_BRANCH =~ $MASTER_BRANCH_REGEX && $CI_COMMIT_REF_PROTECTED == "true"
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event" && ($CI_MERGE_REQUEST_TARGET_BRANCH_NAME == $CI_DEFAULT_BRANCH || ($CI_MERGE_REQUEST_TARGET_BRANCH_NAME =~ $MASTER_BRANCH_REGEX && $CI_MERGE_REQUEST_TARGET_BRANCH_PROTECTED == "true"))'
+    - if: '$CI_PIPELINE_SOURCE == "parent_pipeline"'
+    - if: '$CI_PIPELINE_SOURCE =~ /^(web|api)$/ && ($WORKFLOW == "full-pipeline" || $WORKFLOW == "build" || $WORKFLOW == "check" || $WORKFLOW == "image-build-and-push" || $WORKFLOW == "chart-build-and-push")'
+    - when: never
+
+.check-job-common:
+  stage: check
+  needs:
+    - job: Common:Init
+      artifacts: true
+      optional: true
+
+Common:Check:Library:Pin:
+  stage: check
+  extends:
+    - .check-job-common
+    - .common-init-rules
+  variables:
+    ALLOW_UNSTABLE_LIBRARY_REFS: "false"
+  script:
+    - CI_FILE=".gitlab-ci.yml"
+    - |
+      if [[ ! -f "${CI_FILE}" ]]; then
+          echo "No ${CI_FILE}; nothing to check."
+          exit 0
+        fi
+    - STABLE='^v?[0-9]+(\.[0-9]+){0,2}$'
+    - OFFENDERS=""
+    - CHECKED=0
+    - |
+      classify() {
+        if [[ "${1}" == *-* ]]; then
+          echo "a pre-release tag"
+        elif [[ "${1}" =~ ^[0-9a-f]{7,40}$ ]]; then
+          echo "a commit SHA"
+        else
+          echo "a branch"
+        fi
+      }
+    - |
+      # include: project: ... ref: ...
+      while read -r PROJECT REF; do
+        [[ -z "${PROJECT}" ]] && continue
+        CHECKED=$((CHECKED + 1))
+        if [[ -z "${REF}" ]]; then
+          OFFENDERS+="${PROJECT} -> <no ref> (defaults to the library's default branch)"$'\n'
+        elif [[ ! "${REF}" =~ ${STABLE} ]]; then
+          OFFENDERS+="${PROJECT} -> ${REF} ($(classify "${REF}"))"$'\n'
+        fi
+      done < <(yq -r '
+        [.include] | flatten | .[]
+        | select(tag == "!!map") | select(has("project"))
+        | .project + " " + (.ref // "")' "${CI_FILE}")
+    - |
+      # include: remote: <raw url>, and the bare-string shorthand. A GitHub-hosted
+      # library carries its ref as a path segment:
+      #   raw.githubusercontent.com/<org>/<repo>/<ref>/<file>
+      while read -r URL; do
+        [[ "${URL}" == https://raw.githubusercontent.com/* ]] || continue
+        REST="${URL#https://raw.githubusercontent.com/}"
+        ORG="${REST%%/*}"; REST="${REST#*/}"
+        REPO="${REST%%/*}"; REST="${REST#*/}"
+        REF="${REST%%/*}"
+        CHECKED=$((CHECKED + 1))
+        if [[ ! "${REF}" =~ ${STABLE} ]]; then
+          OFFENDERS+="${ORG}/${REPO} -> ${REF} ($(classify "${REF}"))"$'\n'
+        fi
+      done < <(
+        yq -r '[.include] | flatten | .[] | select(tag == "!!map") | select(has("remote")) | .remote' "${CI_FILE}"
+        yq -r '[.include] | flatten | .[] | select(tag == "!!str")' "${CI_FILE}"
+      )
+    - |
+      if [[ -z "${OFFENDERS}" ]]; then
+        echo "All ${CHECKED} library include(s) pin a stable release tag."
+        exit 0
+      fi
+    - COUNT="$(grep -c . <<<"${OFFENDERS}")"
+    - printf '%s' "${OFFENDERS}"
+    - |
+      if [[ "${ALLOW_UNSTABLE_LIBRARY_REFS,,}" == "true" ]]; then
+        echo "WARNING: ${COUNT} library include(s) do not pin a stable release tag. Failing is suppressed by ALLOW_UNSTABLE_LIBRARY_REFS, which is for testing only."
+        exit 0
+      fi
+    - >
+      echo "ERROR: ${COUNT} library include(s) do not pin a stable release tag."
+    - echo "A branch moves underneath the project, so the pipeline that passed review is not"
+    - echo "the one that ships and a release cannot be reproduced. Pin a published tag."
+    - exit 1
+
+
+.skip-on-master-rules:
+  rules:
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+      when: never
+    - if: $CI_COMMIT_BRANCH =~ $MASTER_BRANCH_REGEX && $CI_COMMIT_REF_PROTECTED == "true"
+      when: never
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event" && ($CI_MERGE_REQUEST_TARGET_BRANCH_NAME == $CI_DEFAULT_BRANCH || ($CI_MERGE_REQUEST_TARGET_BRANCH_NAME =~ $MASTER_BRANCH_REGEX && $CI_MERGE_REQUEST_TARGET_BRANCH_PROTECTED == "true"))'
+    - if: '$CI_PIPELINE_SOURCE == "parent_pipeline"'
+    - if: '$CI_PIPELINE_SOURCE =~ /^(web|api)$/ && ($WORKFLOW == "full-pipeline" || $WORKFLOW == "check")'
+    - when: never
+
+.image-check-rules:
+  rules:
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+      when: never
+    - if: $CI_COMMIT_BRANCH =~ $MASTER_BRANCH_REGEX && $CI_COMMIT_REF_PROTECTED == "true"
+      when: never
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event" && ($CI_MERGE_REQUEST_TARGET_BRANCH_NAME == $CI_DEFAULT_BRANCH || ($CI_MERGE_REQUEST_TARGET_BRANCH_NAME =~ $MASTER_BRANCH_REGEX && $CI_MERGE_REQUEST_TARGET_BRANCH_PROTECTED == "true"))'
+    - if: '$CI_PIPELINE_SOURCE == "parent_pipeline"'
+    - if: '$CI_PIPELINE_SOURCE =~ /^(web|api)$/ && ($WORKFLOW == "full-pipeline" || $WORKFLOW == "check" || $WORKFLOW == "image-scan")'
+    - when: never
+
+.trivy-cache-rules:
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event" && ($CI_MERGE_REQUEST_TARGET_BRANCH_NAME == $CI_DEFAULT_BRANCH || ($CI_MERGE_REQUEST_TARGET_BRANCH_NAME =~ $MASTER_BRANCH_REGEX && $CI_MERGE_REQUEST_TARGET_BRANCH_PROTECTED == "true"))'
+    - if: '$CI_PIPELINE_SOURCE == "parent_pipeline"'
+    - if: '$CI_PIPELINE_SOURCE =~ /^(web|api)$/ && ($WORKFLOW == "full-pipeline" || $WORKFLOW == "license-scanning" || $WORKFLOW == "sbom-scanning" || $WORKFLOW == "chart-build-and-push" || $WORKFLOW == "chart-scan" || $WORKFLOW == "image-build-and-push" || $WORKFLOW == "image-scan")'
+    - exists:
+        - ${PROJECT_PATH}/main.tf
+    - when: never
+
+Trivy:Cache:Warm:
+  stage: prepare
+  extends:
+    - .trivy-cache-rules
+  variables:
+    TRIVY_CACHE_DIR: ${CI_PROJECT_DIR}/.trivycache
+  cache:
+    - key: trivy-db
+      when: always
+      policy: pull-push
+      paths:
+        - ${CI_PROJECT_DIR}/.trivycache
+  script:
+    - mkdir -p .trivy-checks-warm
+    - trivy config --skip-version-check .trivy-checks-warm || true
+    - rmdir .trivy-checks-warm 2>/dev/null || true
+    - |
+      if [[ "${TRIVY_ENABLE_JAVA_SCAN}" == "true" || -f "pom.xml" ]]; then
+        echo "Warming trivy-java-db for downstream Image:Scan / SBOM:Generate..."
+        trivy image --download-java-db-only --skip-version-check
+      else
+        echo "No pom.xml and TRIVY_ENABLE_JAVA_SCAN != true - skipping trivy-java-db download."
+      fi
+  needs:
+    - job: Common:Init
+      artifacts: true
+      optional: true
+
+.scan-script:
+  stage: security
+  variables:
+    TRIVY_CACHE_DIR: ${CI_PROJECT_DIR}/.trivycache
+  cache:
+    - key: trivy-db
+      when: always
+      policy: pull
+      paths:
+        - ${CI_PROJECT_DIR}/.trivycache
+  allow_failure:
+    exit_codes:
+      - 2
+  script:
+    - declare -A IGNORED_ITEM_REASONS
+    - EXIT_CODE=0
+    - REASONS=()
+    - MISSING_REASONS=()
+    - INVALID_REASONS=()
+    - FINAL_FIXABLE=()
+    - FINAL_FIXABLE_IGNORED=()
+    - FINAL_UNFIXABLE=()
+    - FINAL_FIXED_IGNORED=()
+    - FINAL_NOTICE=()
+    - FINAL_NOTICE_IGNORED=()
+    - FINAL_PERMISSIVE=()
+    - FINAL_PERMISSIVE_IGNORED=()
+    - FINAL_RECIPROCAL=()
+    - FINAL_RECIPROCAL_IGNORED=()
+    - FINAL_RESTRICTED=()
+    - FINAL_RESTRICTED_IGNORED=()
+    - FINAL_UNRECOGNIZED=()
+    - FINAL_UNRECOGNIZED_IGNORED=()
+
+    # Core Helpers Functions
+    - |
+      cleanup() {
+        local FILES=("${IGNORED_ITEMS_FILE}" "${JUNIT_TPL_FILE}" "${ALL_FIXABLE_FILE}" "${ALL_UNFIXABLE_FILE}" "${ALL_FOUND_FILE}" "${ALL_NOTICE_FILE}" "${ALL_PERMISSIVE_FILE}" "${ALL_RECIPROCAL_FILE}" "${ALL_RESTRICTED_FILE}" "${ALL_UNRECOGNIZED_FILE}")
+        rm -f "${FILES[@]}"
+      }
+
+      log() {
+        echo "[${1}] ${2}"
+      }
+
+      log_info() {
+        log "INFO" "${*}"
+      }
+
+      log_warn() {
+        log "WARN" "${*}" >&2
+      }
+
+      log_error() {
+        log "ERROR" "${*}" >&2
+      }
+
+      print_separator() {
+        echo "========================================"
+      }
+
+    # Config Helpers Functions
+    - |
+      get_ignore_config_path() {
+        case "${SCAN_TYPE}" in
+          image) echo "image" ;;
+          config) echo "iac.${CONFIG_TYPE}" ;;
+          license) echo "license" ;;
+          sbom) echo "sbom" ;;
+        esac
+      }
+
+      get_summary_file_name() {
+        case "${SCAN_TYPE}" in
+          image)
+            echo "${IMAGE_CVE_INFO_FILE_NAME}"
+            ;;
+          config)
+            if [[ "${CONFIG_TYPE}" == "chart" ]]; then
+              echo "${CHART_CVE_INFO_FILE_NAME}"
+            else
+              echo "${TF_CVE_INFO_FILE_NAME}"
+            fi
+            ;;
+          license)
+            echo "${LICENSE_INFO_FILE_NAME}"
+            ;;
+          sbom)
+            echo "${SBOM_CVE_INFO_FILE_NAME}"
+            ;;
+        esac
+      }
+
+    # Validation Functions
+    - |
+      is_valid_reason() {
+        local REASON="${1}"
+        local TRIMMED="${REASON#"${REASON%%[![:space:]]*}"}"
+        TRIMMED="${TRIMMED%"${TRIMMED##*[![:space:]]}"}"
+        if [[ ${#TRIMMED} -lt 10 ]]; then
+          return 1
+        fi
+        local PLACEHOLDERS=("todo" "tbd" "n/a" "na" "fix" "fixme" "later" "wip" "placeholder" "none" "unknown" "ignore" "skip" "test" "temp")
+        local LOWER
+        LOWER=$(echo "${TRIMMED}" | tr '[:upper:]' '[:lower:]')
+        for PLACEHOLDER in "${PLACEHOLDERS[@]}"; do
+          if [[ "${LOWER}" == "${PLACEHOLDER}" ]]; then
+            return 1
+          fi
+        done
+        return 0
+      }
+
+      validate_scan_type() {
+        local VALID_TYPES=("image" "config" "license" "sbom")
+        if [[ -z "${SCAN_TYPE}" ]]; then
+          log_error "SCAN_TYPE is not set. Valid values: ${VALID_TYPES[*]}"
+          log_error "Example: export SCAN_TYPE=image"
+          exit 1
+        fi
+        if [[ ! " ${VALID_TYPES[*]} " == *" ${SCAN_TYPE} "* ]]; then
+          log_error "Invalid SCAN_TYPE '${SCAN_TYPE}'. Valid values: ${VALID_TYPES[*]}"
+          exit 1
+        fi
+        log_info "Scan type: ${SCAN_TYPE}"
+        if [[ "${SCAN_TYPE}" == "config" ]]; then
+          validate_config_type
+        fi
+      }
+
+      validate_config_type() {
+        local VALID_CONFIG_TYPES=("chart" "terraform")
+        if [[ -z "${CONFIG_TYPE}" ]]; then
+          log_error "CONFIG_TYPE is not set for config scan. Valid values: ${VALID_CONFIG_TYPES[*]}"
+          exit 1
+        fi
+        if [[ ! " ${VALID_CONFIG_TYPES[*]} " == *" ${CONFIG_TYPE} "* ]]; then
+          log_error "Invalid CONFIG_TYPE '${CONFIG_TYPE}'. Valid values: ${VALID_CONFIG_TYPES[*]}"
+          exit 1
+        fi
+        log_info "Config type: ${CONFIG_TYPE}"
+      }
+
+    - TRIVY_ARGS="--skip-java-db-update"
+
+    # Trivy Integration Functions
+    - |
+      build_trivy_command() {
+        local BASE_CMD=""
+        case "${SCAN_TYPE}" in
+          image)
+            if [[ -f "${IMAGE_TAR_FILE_NAME}" ]]; then
+              BASE_CMD="trivy image --scanners vuln ${TRIVY_ARGS} --input ${IMAGE_TAR_FILE_NAME}"
+            else
+              TARGET_TAG="${TARGET_VERSION:-${RELEASE_VERSION}}"
+              if [[ "${TARGET_TAG}" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+                SCAN_IMAGE_REPO="${IMAGE_REPOSITORY}"
+                log_info "Stable release version '${TARGET_TAG}' detected — pulling from non-dev production registry: ${IMAGE_REGISTRY}/${SCAN_IMAGE_REPO}:${TARGET_TAG}" >&2
+              else
+                SCAN_IMAGE_REPO="${IMAGE_REPOSITORY}${IMAGE_DEV_REPOSITORY_SUFFIX}"
+                log_info "Candidate/dev version '${TARGET_TAG}' detected — pulling from dev registry: ${IMAGE_REGISTRY}/${SCAN_IMAGE_REPO}:${TARGET_TAG}" >&2
+              fi
+              FULL_IMAGE="${IMAGE_REGISTRY}/${SCAN_IMAGE_REPO}:${TARGET_TAG}"
+              BASE_CMD="trivy image --scanners vuln ${TRIVY_ARGS} ${FULL_IMAGE}"
+            fi
+            ;;
+          config)
+            BASE_CMD="trivy config ${IAC_SCAN_PATH}"
+            if [[ -n "${TRIVY_HELM_VALUES_FILE:-}" && -f "${TRIVY_HELM_VALUES_FILE}" ]]; then
+              BASE_CMD+=" --helm-values ${TRIVY_HELM_VALUES_FILE}"
+            fi
+            ;;
+          license) BASE_CMD="trivy fs --scanners license --license-full --skip-db-update ${TRIVY_ARGS} ." ;;
+          sbom) BASE_CMD="trivy sbom --scanners vuln ${SBOM_FILE}" ;;
+        esac
+        echo "${BASE_CMD}"
+      }
+
+      execute_trivy_scan() {
+        log_info "Executing Trivy scan..."
+        if [[ -n "${TRIVY_IGNORE_CVES}" ]]; then
+          log_info "Adding ignored CVEs to .trivyignore..."
+          printf "%s\n" ${TRIVY_IGNORE_CVES} >> .trivyignore
+        fi
+        local TRIVY_CMD
+        TRIVY_CMD=$(build_trivy_command)
+
+        if [[ "${SCAN_TYPE}" == "image" || "${SCAN_TYPE}" == "sbom" ]]; then
+          if [[ -n "${TRIVY_HOST:-}" ]]; then
+            TRIVY_CMD+=" --server ${TRIVY_HOST}"
+            log_info "Using Trivy server mode (${TRIVY_HOST})."
+            if [[ -n "${TRIVY_TOKEN:-}" ]]; then
+              TRIVY_CMD+=" --token ${TRIVY_TOKEN}"
+            fi
+          else
+            log_warn "TRIVY_HOST is not set: this scan will download the full vulnerability database (~1.2GB) into the job. Point TRIVY_HOST at the shared Trivy server to avoid it."
+          fi
+        fi
+
+        if ! ${TRIVY_CMD} --format json --ignorefile .trivyignore --skip-version-check --timeout "${TRIVY_TIMEOUT}" --output "${TRIVY_SCAN_REPORT_NAME}.json"; then
+          log_error "Trivy scan failed"
+          exit 1
+        fi
+
+        log_info "Generating JUnit XML test report..."
+        trivy convert --format template --template "@${JUNIT_TPL_FILE}" --output "${TRIVY_SCAN_REPORT_NAME}.junit" "${TRIVY_SCAN_REPORT_NAME}.json" 2>/dev/null || true
+
+        if [[ ! -f "${TRIVY_SCAN_REPORT_NAME}.json" ]]; then
+          log_error "Trivy did not generate output file"
+          exit 1
+        fi
+        log_info "Trivy scan completed successfully"
+      }
+
+    # Data Extraction Functions
+    - |
+      load_ignored_items() {
+        local CONFIG_PATH
+        CONFIG_PATH=$(get_ignore_config_path)
+
+        if [[ ! -f "${TRIVY_IGNORE_CONFIG_FILE}" ]]; then
+          log_warn "Ignore file not found: ${TRIVY_IGNORE_CONFIG_FILE}"
+          touch "${IGNORED_ITEMS_FILE}"
+          return
+        fi
+        log_info "Loading ignored items from: ${CONFIG_PATH}"
+        while IFS= read -r LINE; do
+          local ITEM_NAME ITEM_PKG ITEM_REASON KEY
+          ITEM_NAME=$(jq -r 'fromjson | .id' <<< "${LINE}")
+          ITEM_PKG=$(jq -r 'fromjson | .package // "*"' <<< "${LINE}")
+          ITEM_REASON=$(jq -r 'fromjson | .reason' <<< "${LINE}")
+          if [[ -n "${ITEM_NAME}" && "${ITEM_NAME}" != "null" ]]; then
+            if [[ "${SCAN_TYPE}" == "license" && -n "${ITEM_PKG}" && "${ITEM_PKG}" != "*" && "${ITEM_PKG}" != "null" ]]; then
+              KEY="${ITEM_PKG}:::${ITEM_NAME}"
+            else
+              KEY="${ITEM_NAME}"
+            fi
+            echo "${KEY}" >> "${IGNORED_ITEMS_FILE}"
+            if [[ -z "${ITEM_REASON}" || "${ITEM_REASON}" == "null" ]]; then
+              MISSING_REASONS+=("${KEY}")
+            else
+              IGNORED_ITEM_REASONS["${KEY}"]="${ITEM_REASON}"
+              if ! is_valid_reason "${ITEM_REASON}"; then
+                INVALID_REASONS+=("${KEY}:::${ITEM_REASON}")
+              fi
+            fi
+          fi
+        done < <(yq -o=json ".${CONFIG_PATH}[] | @json" "${TRIVY_IGNORE_CONFIG_FILE}")
+        sort -u "${IGNORED_ITEMS_FILE}" -o "${IGNORED_ITEMS_FILE}"
+        log_info "Loaded $(wc -l < "${IGNORED_ITEMS_FILE}") ignored items"
+      }
+
+      extract_cve_items() {
+        local INPUT_JSON="${TRIVY_SCAN_REPORT_NAME}.json"
+        log_info "Extracting CVE items..."
+        jq -r '[.Results[]?.Vulnerabilities[]? | select(.FixedVersion != null and .FixedVersion != "" and .VulnerabilityID != null and .VulnerabilityID != "") | .VulnerabilityID] | unique | .[]' "${INPUT_JSON}" 2>/dev/null > "${ALL_FIXABLE_FILE}"
+        jq -r '[.Results[]?.Vulnerabilities[]? | select((.FixedVersion == null or .FixedVersion == "") and .VulnerabilityID != null and .VulnerabilityID != "") | .VulnerabilityID] | unique | .[]' "${INPUT_JSON}" 2>/dev/null > "${ALL_UNFIXABLE_FILE}"
+        cat "${ALL_FIXABLE_FILE}" "${ALL_UNFIXABLE_FILE}" | sort -u > "${ALL_FOUND_FILE}"
+        log_info "Found $(wc -l < "${ALL_FIXABLE_FILE}") fixable and $(wc -l < "${ALL_UNFIXABLE_FILE}") unfixable CVEs"
+      }
+
+      extract_misconfig_items() {
+        local INPUT_JSON="${TRIVY_SCAN_REPORT_NAME}.json"
+        log_info "Extracting misconfiguration items..."
+        jq -r '[.Results[]?.Misconfigurations[]? | select(.ID != null and .ID != "") | .ID] | unique | .[]' "${INPUT_JSON}" 2>/dev/null > "${ALL_FIXABLE_FILE}"
+        touch "${ALL_UNFIXABLE_FILE}"
+        cp "${ALL_FIXABLE_FILE}" "${ALL_FOUND_FILE}"
+        log_info "Found $(wc -l < "${ALL_FIXABLE_FILE}") misconfigurations"
+      }
+
+      extract_license_items() {
+        local INPUT_JSON="${TRIVY_SCAN_REPORT_NAME}.json"
+        log_info "Extracting license items..."
+        local CATEGORIES=("notice" "permissive" "reciprocal" "restricted" "unrecognized")
+        local FILES=("${ALL_NOTICE_FILE}" "${ALL_PERMISSIVE_FILE}" "${ALL_RECIPROCAL_FILE}" "${ALL_RESTRICTED_FILE}" "${ALL_UNRECOGNIZED_FILE}")
+        for I in "${!CATEGORIES[@]}"; do
+          jq -r "[.Results[]?.Licenses[]? | select(.Category == \"${CATEGORIES[${I}]}\" and .Name != null and .Name != \"\") | \"\(.PkgName // \"unknown\"):::\(.Name)\"] | unique | .[]" "${INPUT_JSON}" 2>/dev/null > "${FILES[${I}]}"
+          log_info "Found $(wc -l < "${FILES[${I}]}") ${CATEGORIES[${I}]} licenses"
+        done
+        cat "${FILES[@]}" | sort -u > "${ALL_FOUND_FILE}"
+      }
+
+    # Data Categorization Function
+    - |
+      categorize_items() {
+        local SOURCE_FILE="${1}"
+        local -n _RESULT_REF="${2}"
+        local -n _IGNORED_REF="${3}"
+        _RESULT_REF=()
+        while IFS= read -r ITEM; do
+          if [[ -n "${ITEM}" ]]; then
+            _RESULT_REF+=("${ITEM}")
+          fi
+        done < <(comm -23 "${SOURCE_FILE}" "${IGNORED_ITEMS_FILE}")
+        _IGNORED_REF=()
+        while IFS= read -r ITEM; do
+          if [[ -n "${ITEM}" ]]; then
+            _IGNORED_REF+=("${ITEM}")
+          fi
+        done < <(comm -12 "${SOURCE_FILE}" "${IGNORED_ITEMS_FILE}")
+      }
+
+      categorize_cve_items() {
+        log_info "Categorizing CVE items..."
+        categorize_items "${ALL_FIXABLE_FILE}" "FINAL_FIXABLE" "FINAL_FIXABLE_IGNORED"
+        categorize_items "${ALL_UNFIXABLE_FILE}" "FINAL_UNFIXABLE" "FINAL_UNFIXABLE_IGNORED"
+        FINAL_FIXED_IGNORED=()
+        while IFS= read -r ITEM; do
+          if [[ -n "${ITEM}" ]]; then
+            FINAL_FIXED_IGNORED+=("${ITEM}")
+          fi
+        done < <(comm -23 "${IGNORED_ITEMS_FILE}" "${ALL_FOUND_FILE}")
+        log_info "Categorized: ${#FINAL_FIXABLE[@]} fixable, ${#FINAL_FIXABLE_IGNORED[@]} ignored, ${#FINAL_UNFIXABLE[@]} unfixable, ${#FINAL_FIXED_IGNORED[@]} stale"
+      }
+
+      categorize_license_items() {
+        log_info "Categorizing license items..."
+        local CATEGORIES=("notice" "permissive" "reciprocal" "restricted" "unrecognized")
+        local TEMP_FILES=("${ALL_NOTICE_FILE}" "${ALL_PERMISSIVE_FILE}" "${ALL_RECIPROCAL_FILE}" "${ALL_RESTRICTED_FILE}" "${ALL_UNRECOGNIZED_FILE}")
+        local RESULT_ARRAYS=("FINAL_NOTICE" "FINAL_PERMISSIVE" "FINAL_RECIPROCAL" "FINAL_RESTRICTED" "FINAL_UNRECOGNIZED")
+        local IGNORED_ARRAYS=("FINAL_NOTICE_IGNORED" "FINAL_PERMISSIVE_IGNORED" "FINAL_RECIPROCAL_IGNORED" "FINAL_RESTRICTED_IGNORED" "FINAL_UNRECOGNIZED_IGNORED")
+        for I in "${!CATEGORIES[@]}"; do
+          local -n _RESULT_REF="${RESULT_ARRAYS[${I}]}"
+          local -n _IGNORED_REF="${IGNORED_ARRAYS[${I}]}"
+          _RESULT_REF=()
+          _IGNORED_REF=()
+          while IFS= read -r ITEM; do
+            if [[ -z "${ITEM}" ]]; then continue; fi
+            local PKG="${ITEM%%:::*}"
+            local LIC="${ITEM#*:::}"
+            if grep -Fxq "${ITEM}" "${IGNORED_ITEMS_FILE}" || grep -Fxq "${LIC}" "${IGNORED_ITEMS_FILE}"; then
+              _IGNORED_REF+=("${ITEM}")
+            else
+              _RESULT_REF+=("${ITEM}")
+            fi
+          done < "${TEMP_FILES[${I}]}"
+        done
+        FINAL_FIXED_IGNORED=()
+        while IFS= read -r ITEM; do
+          if [[ -z "${ITEM}" ]]; then continue; fi
+          if [[ "${ITEM}" == *":::"* ]]; then
+            if ! grep -Fxq "${ITEM}" "${ALL_FOUND_FILE}"; then
+              FINAL_FIXED_IGNORED+=("${ITEM}")
+            fi
+          else
+            if ! awk -F':::' '{print $2}' "${ALL_FOUND_FILE}" | grep -Fxq "${ITEM}"; then
+              FINAL_FIXED_IGNORED+=("${ITEM}")
+            fi
+          fi
+        done < "${IGNORED_ITEMS_FILE}"
+        log_info "Categorized licenses across all categories"
+      }
+
+    # Report Generator Function - Core
+    - |
+      generate_report_header() {
+        local TITLE="${1}"
+        local OUTPUT_FILE="${2}"
+        local CONFIG_INFO=""
+        if [[ "${SCAN_TYPE}" == "config" ]]; then
+          CONFIG_INFO="**Config Type:** ${CONFIG_TYPE}"
+        fi
+        cat > "${OUTPUT_FILE}" << EOF
+      # ${TITLE}
+
+      **Scan Type:** ${SCAN_TYPE}
+      ${CONFIG_INFO}
+      **Generated:** $(date -u +"%Y-%m-%d %H:%M:%S UTC")
+
+      EOF
+      }
+
+      generate_table() {
+        local HEADERS=("${@}")
+        local HEADER_ROW="|"
+        local SEPARATOR_ROW="|"
+        for HEADER in "${HEADERS[@]}"; do
+          HEADER_ROW+=" ${HEADER} |"
+          SEPARATOR_ROW+=" --- |"
+        done
+        echo "${HEADER_ROW}"
+        echo "${SEPARATOR_ROW}"
+      }
+
+    # Report Generator Function - CVE/MISCONFIG
+    - |
+      generate_vulnerability_section() {
+        local INPUT_JSON="${1}"
+        echo "## Container Image Vulnerability Scan"
+        echo ""
+        echo "### Summary"
+        generate_table "Category" "Severity" "Count"
+        local TOTAL_FIXABLE=0
+        local TOTAL_UNFIXABLE=0
+        local SEVERITIES=("CRITICAL" "HIGH" "MEDIUM" "LOW" "UNKNOWN")
+        for SEV in "${SEVERITIES[@]}"; do
+          local FIXABLE_COUNT UNFIXABLE_COUNT
+          FIXABLE_COUNT=$(jq "[.Results[]?.Vulnerabilities[]? | select(.Severity == \"${SEV}\" and .FixedVersion != null and .FixedVersion != \"\")] | length" "${INPUT_JSON}")
+          UNFIXABLE_COUNT=$(jq "[.Results[]?.Vulnerabilities[]? | select(.Severity == \"${SEV}\" and (.FixedVersion == null or .FixedVersion == \"\"))] | length" "${INPUT_JSON}")
+          echo "| Fixable | ${SEV} | ${FIXABLE_COUNT} |"
+          echo "| Unfixable | ${SEV} | ${UNFIXABLE_COUNT} |"
+          TOTAL_FIXABLE=$((TOTAL_FIXABLE + FIXABLE_COUNT))
+          TOTAL_UNFIXABLE=$((TOTAL_UNFIXABLE + UNFIXABLE_COUNT))
+        done
+        echo "| **Fixable Total** | — | ${TOTAL_FIXABLE} |"
+        echo "| **Unfixable Total** | — | ${TOTAL_UNFIXABLE} |"
+        echo "| **Grand Total** | — | $((TOTAL_FIXABLE + TOTAL_UNFIXABLE)) |"
+        echo ""
+        if [[ ${TOTAL_FIXABLE} -gt 0 ]]; then
+          echo "### Fixable Vulnerabilities"
+          generate_table "Package" "Vulnerability ID" "Installed Version" "Fixed Version" "Title" "Severity" "Ignored Reason"
+          jq -r '.Results[]?.Vulnerabilities[]? | select(.FixedVersion != null and .FixedVersion != "") | [.PkgName, .VulnerabilityID, .InstalledVersion, .FixedVersion, (.Title // "N/A"), .Severity] | @tsv' "${INPUT_JSON}" 2>/dev/null | while IFS=$'\t' read -r PKG VID INST_VER FIX_VER TITLE SEV; do
+            local REASON="${IGNORED_ITEM_REASONS[${VID}]:--}"
+            echo "| ${PKG} | ${VID} | ${INST_VER} | ${FIX_VER} | ${TITLE} | ${SEV} | ${REASON} |"
+          done
+          echo ""
+        fi
+        if [[ ${TOTAL_UNFIXABLE} -gt 0 ]]; then
+          echo "### Unfixable Vulnerabilities"
+          generate_table "Package" "Vulnerability ID" "Installed Version" "Title" "Severity"
+          jq -r '.Results[]?.Vulnerabilities[]? | select(.FixedVersion == null or .FixedVersion == "") | [.PkgName, .VulnerabilityID, .InstalledVersion, (.Title // "N/A"), .Severity] | @tsv' "${INPUT_JSON}" 2>/dev/null | while IFS=$'\t' read -r PKG VID INST_VER TITLE SEV; do
+            echo "| ${PKG} | ${VID} | ${INST_VER} | ${TITLE} | ${SEV} |"
+          done
+          echo ""
+        fi
+      }
+
+      generate_misconfig_section() {
+        local INPUT_JSON="${1}"
+        echo "## Configuration Scan (${CONFIG_TYPE})"
+        echo ""
+        echo "### Summary"
+        generate_table "Severity" "Count"
+        local TOTAL=0
+        local SEVERITIES=("CRITICAL" "HIGH" "MEDIUM" "LOW" "UNKNOWN")
+        for SEV in "${SEVERITIES[@]}"; do
+          local COUNT
+          COUNT=$(jq "[.Results[]?.Misconfigurations[]? | select(.Severity == \"${SEV}\")] | length" "${INPUT_JSON}")
+          echo "| ${SEV} | ${COUNT} |"
+          TOTAL=$((TOTAL + COUNT))
+        done
+        echo "| **Total** | **${TOTAL}** |"
+        echo ""
+        if [[ ${TOTAL} -gt 0 ]]; then
+          echo "### Misconfigurations"
+          generate_table "ID" "Title" "Severity" "Message" "Ignored Reason"
+          jq -r '.Results[]?.Misconfigurations[]? | [.ID, .Title, .Severity, (.Message // "N/A" | gsub("\n"; " "))] | @tsv' "${INPUT_JSON}" 2>/dev/null | while IFS=$'\t' read -r ID TITLE SEVERITY MSG; do
+            local REASON="${IGNORED_ITEM_REASONS[${ID}]:--}"
+            echo "| ${ID} | ${TITLE} | ${SEVERITY} | ${MSG} | ${REASON} |"
+          done
+          echo ""
+        fi
+      }
+
+      generate_cve_report() {
+        local INPUT_JSON="${TRIVY_SCAN_REPORT_NAME}.json"
+        local OUTPUT_MD="${TRIVY_SCAN_REPORT_NAME}.md"
+        log_info "Generating CVE/misconfiguration report: ${OUTPUT_MD}"
+        generate_report_header "Security Scan Report" "${OUTPUT_MD}"
+        if [[ "${SCAN_TYPE}" == "config" ]]; then
+          generate_misconfig_section "${INPUT_JSON}" >> "${OUTPUT_MD}"
+        else
+          generate_vulnerability_section "${INPUT_JSON}" >> "${OUTPUT_MD}"
+        fi
+        log_info "Report generated successfully"
+      }
+
+    # Report Generator Function - License
+    - |
+      generate_license_report() {
+        local INPUT_JSON="${TRIVY_SCAN_REPORT_NAME}.json"
+        local OUTPUT_MD="${TRIVY_SCAN_REPORT_NAME}.md"
+        log_info "Generating license report: ${OUTPUT_MD}"
+        generate_report_header "License Scan Report" "${OUTPUT_MD}"
+        generate_license_summary "${INPUT_JSON}" >> "${OUTPUT_MD}"
+        generate_license_details "${INPUT_JSON}" >> "${OUTPUT_MD}"
+        generate_license_ignored_section >> "${OUTPUT_MD}"
+        log_info "License report generated successfully"
+      }
+
+      generate_license_summary() {
+        local INPUT_JSON="${1}"
+        local COUNTS=()
+        local CATEGORIES=("notice" "permissive" "reciprocal" "restricted" "unrecognized")
+        local RISK_LEVELS=("Low" "Low" "Medium" "High" "Medium")
+        for CATEGORY in "${CATEGORIES[@]}"; do
+          COUNTS+=($(jq "[.Results[]?.Licenses[]? | select(.Category == \"${CATEGORY}\")] | length" "${INPUT_JSON}"))
+        done
+        local TOTAL=$(( ${COUNTS[0]} + ${COUNTS[1]} + ${COUNTS[2]} + ${COUNTS[3]} + ${COUNTS[4]} ))
+        echo "## Summary"
+        generate_table "Category" "Count" "Risk Level"
+        for I in "${!CATEGORIES[@]}"; do
+          echo "| ${CATEGORIES[${I}]^} | ${COUNTS[${I}]} | ${RISK_LEVELS[${I}]} |"
+        done
+        echo "| **Total** | **${TOTAL}** | — |"
+        echo ""
+      }
+
+      generate_license_details() {
+        local INPUT_JSON="${1}"
+        local CATEGORIES=("notice" "permissive" "reciprocal" "restricted" "unrecognized")
+        local TITLES=("Notice Licenses" "Permissive Licenses" "Reciprocal Licenses" "Restricted Licenses" "Unrecognized Licenses")
+        local DESCRIPTIONS=("These licenses require attribution but allow free use." "These licenses allow free use with minimal restrictions." "These licenses require derived works to be licensed under the same terms (copyleft)." "These licenses have significant restrictions on use and distribution." "These licenses could not be categorized. Manual review recommended.")
+        for I in "${!CATEGORIES[@]}"; do
+          local COUNT
+          COUNT=$(jq "[.Results[]?.Licenses[]? | select(.Category == \"${CATEGORIES[${I}]}\")] | length" "${INPUT_JSON}")
+          if [[ ${COUNT} -gt 0 ]]; then
+            echo "## ${TITLES[${I}]}"
+            echo "${DESCRIPTIONS[${I}]}"
+            echo ""
+            generate_table "Package Name" "License" "Severity" "File Path"
+            jq -r ".Results[]?.Licenses[]? | select(.Category == \"${CATEGORIES[${I}]}\") | [.PkgName, .Name, (.Severity // \"UNKNOWN\"), (.FilePath // \"N/A\")] | @tsv" "${INPUT_JSON}" 2>/dev/null | while IFS=$'\t' read -r PKG LICENSE SEVERITY FILEPATH; do
+              echo "| ${PKG} | ${LICENSE} | ${SEVERITY} | ${FILEPATH} |"
+            done
+            echo ""
+          fi
+        done
+      }
+
+      generate_license_ignored_section() {
+        local TOTAL_IGNORED=$((${#FINAL_NOTICE_IGNORED[@]} + ${#FINAL_PERMISSIVE_IGNORED[@]} + ${#FINAL_RECIPROCAL_IGNORED[@]} + ${#FINAL_RESTRICTED_IGNORED[@]} + ${#FINAL_UNRECOGNIZED_IGNORED[@]}))
+        if [[ ${TOTAL_IGNORED} -eq 0 ]]; then
+          return
+        fi
+        echo "## Ignored Licenses"
+        echo "The following licenses are currently ignored based on configuration:"
+        echo ""
+        generate_table "Package" "License" "Category" "Ignored Reason"
+        local CATEGORIES=("FINAL_NOTICE_IGNORED" "FINAL_PERMISSIVE_IGNORED" "FINAL_RECIPROCAL_IGNORED" "FINAL_RESTRICTED_IGNORED" "FINAL_UNRECOGNIZED_IGNORED")
+        local CATEGORY_NAMES=("Notice" "Permissive" "Reciprocal" "Restricted" "Unrecognized")
+        for I in "${!CATEGORIES[@]}"; do
+          local -n _LIC_REF="${CATEGORIES[${I}]}"
+          for ITEM in "${_LIC_REF[@]}"; do
+            local PKG LIC REASON
+            if [[ "${ITEM}" == *":::"* ]]; then
+              PKG="${ITEM%%:::*}"
+              LIC="${ITEM#*:::}"
+            else
+              PKG="*"
+              LIC="${ITEM}"
+            fi
+            REASON="${IGNORED_ITEM_REASONS[${ITEM}]:-${IGNORED_ITEM_REASONS[${LIC}]:-N/A}}"
+            echo "| ${PKG} | ${LIC} | ${CATEGORY_NAMES[${I}]} | ${REASON} |"
+          done
+        done
+        echo ""
+      }
+
+    # Summary Generation
+    - |
+      generate_cve_summary_file() {
+        local SUMMARY_FILE
+        SUMMARY_FILE=$(get_summary_file_name)
+        local INPUT_JSON="${TRIVY_SCAN_REPORT_NAME}.json"
+        local REPORT_LABEL
+        case "${SCAN_TYPE}" in
+          image) REPORT_LABEL="Image CVE" ;;
+          config) REPORT_LABEL="${CONFIG_TYPE^} configuration" ;;
+          sbom) REPORT_LABEL="SBOM CVE" ;;
+          *) REPORT_LABEL="CVE" ;;
+        esac
+        log_info "Generating summary file: ${SUMMARY_FILE}"
+        {
+          echo "### 🛡️ ${REPORT_LABEL} Security Scan Report"
+          echo ""
+          if [[ "${SCAN_TYPE}" == "image" ]]; then
+            local FIXABLE_TOTAL UNFIXABLE_TOTAL
+            FIXABLE_TOTAL=$(jq '[.Results[]?.Vulnerabilities[]? | select(.FixedVersion != null and .FixedVersion != "")] | length' "${INPUT_JSON}")
+            UNFIXABLE_TOTAL=$(jq '[.Results[]?.Vulnerabilities[]? | select(.FixedVersion == null or .FixedVersion == "")] | length' "${INPUT_JSON}")
+            echo "| Category | Count |"
+            echo "|----------|-------|"
+            echo "| Fixable | ${FIXABLE_TOTAL} |"
+            echo "| Unfixable | ${UNFIXABLE_TOTAL} |"
+            echo "| **Total** | **$((FIXABLE_TOTAL + UNFIXABLE_TOTAL))** |"
+            echo ""
+          fi
+          echo "### 📊 ${REPORT_LABEL} Severity Breakdown"
+          echo ""
+          generate_table "Severity" "Fixable" "Unfixable" "Total"
+          local SEVERITIES=("CRITICAL" "HIGH" "MEDIUM" "LOW" "UNKNOWN")
+          for SEV in "${SEVERITIES[@]}"; do
+            local FIXABLE UNFIXABLE TOTAL
+            if [[ "${SCAN_TYPE}" == "config" ]]; then
+              FIXABLE=$(jq "[.Results[]?.Misconfigurations[]? | select(.Severity == \"${SEV}\")] | length" "${INPUT_JSON}")
+              UNFIXABLE=0
+            else
+              FIXABLE=$(jq "[.Results[]?.Vulnerabilities[]? | select(.Severity == \"${SEV}\" and .FixedVersion != null and .FixedVersion != \"\")] | length" "${INPUT_JSON}")
+              UNFIXABLE=$(jq "[.Results[]?.Vulnerabilities[]? | select(.Severity == \"${SEV}\" and (.FixedVersion == null or .FixedVersion == \"\"))] | length" "${INPUT_JSON}")
+            fi
+            TOTAL=$((FIXABLE + UNFIXABLE))
+            echo "| ${SEV} | ${FIXABLE} | ${UNFIXABLE} | ${TOTAL} |"
+          done
+          echo ""
+        } > "${SUMMARY_FILE}"
+        log_info "Summary file generated: ${SUMMARY_FILE}"
+      }
+
+      generate_license_summary_file() {
+        local INPUT_JSON="${TRIVY_SCAN_REPORT_NAME}.json"
+        local SUMMARY_FILE="${LICENSE_INFO_FILE_NAME}"
+        log_info "Generating license summary file: ${SUMMARY_FILE}"
+        local COUNTS=()
+        local CATEGORIES=("notice" "permissive" "reciprocal" "restricted" "unrecognized")
+        local RISK_LEVELS=("Low" "Low" "Medium" "High" "Medium")
+        for CATEGORY in "${CATEGORIES[@]}"; do
+          COUNTS+=($(jq "[.Results[]?.Licenses[]? | select(.Category == \"${CATEGORY}\")] | length" "${INPUT_JSON}"))
+        done
+        local TOTAL=$(( ${COUNTS[0]} + ${COUNTS[1]} + ${COUNTS[2]} + ${COUNTS[3]} + ${COUNTS[4]} ))
+        {
+          echo "### 📜 License Compliance Summary"
+          echo ""
+          generate_table "Category" "Count" "Risk Level"
+          for I in "${!CATEGORIES[@]}"; do
+            echo "| ${CATEGORIES[${I}]^} | ${COUNTS[${I}]} | ${RISK_LEVELS[${I}]} |"
+          done
+          echo "| **Total** | **${TOTAL}** | — |"
+          echo ""
+          if [[ ${#FINAL_RESTRICTED[@]} -gt 0 ]]; then
+            echo "### ⚠️ Action Required: Restricted Licenses"
+            echo "The following restricted licenses require immediate attention:"
+            echo ""
+            for ITEM in "${FINAL_RESTRICTED[@]}"; do
+              if [[ "${ITEM}" == *":::"* ]]; then
+                echo "- Package: **${ITEM%%:::*}** — License: \`${ITEM#*:::}\`"
+              else
+                echo "- ${ITEM}"
+              fi
+            done
+            echo ""
+          fi
+        } > "${SUMMARY_FILE}"
+        log_info "License summary file generated: ${SUMMARY_FILE}"
+      }
+
+      print_cve_summary() {
+        print_separator
+        echo "CVE/Misconfiguration Scan Summary"
+        print_separator
+        print_array_summary "Fixable Items" "FINAL_FIXABLE"
+        print_array_summary "Ignored Fixable Items" "FINAL_FIXABLE_IGNORED" "IGNORED_ITEM_REASONS"
+        print_array_summary "Unfixable Items" "FINAL_UNFIXABLE"
+        print_array_summary "Fixed Items Still in Ignore List" "FINAL_FIXED_IGNORED" "IGNORED_ITEM_REASONS"
+        print_separator
+      }
+
+      print_license_summary() {
+        print_separator
+        echo "License Scan Summary"
+        print_separator
+        local CATEGORIES=("Notice" "Permissive" "Reciprocal" "Restricted" "Unrecognized")
+        local ARRAYS=("FINAL_NOTICE" "FINAL_PERMISSIVE" "FINAL_RECIPROCAL" "FINAL_RESTRICTED" "FINAL_UNRECOGNIZED")
+        for I in "${!CATEGORIES[@]}"; do
+          print_array_summary "${CATEGORIES[${I}]} Licenses" "${ARRAYS[${I}]}"
+        done
+        local TOTAL_IGNORED=$((${#FINAL_NOTICE_IGNORED[@]} + ${#FINAL_PERMISSIVE_IGNORED[@]} + ${#FINAL_RECIPROCAL_IGNORED[@]} + ${#FINAL_RESTRICTED_IGNORED[@]} + ${#FINAL_UNRECOGNIZED_IGNORED[@]}))
+        echo "Total Ignored Licenses: ${TOTAL_IGNORED}"
+        echo ""
+        print_array_summary "Fixed Licenses Still in Ignore List" "FINAL_FIXED_IGNORED" "IGNORED_ITEM_REASONS"
+        print_separator
+      }
+
+      print_array_summary() {
+        local TITLE="${1}"
+        local ARRAY_NAME="${2}"
+        local REASON_ARRAY="${3}"
+        local -n _PRINT_REF="${ARRAY_NAME}"
+        local COUNT=${#_PRINT_REF[@]}
+        echo "${TITLE}: ${COUNT}"
+        if [[ ${COUNT} -gt 0 ]]; then
+          for ITEM in "${_PRINT_REF[@]}"; do
+            local REASON=""
+            if [[ -n "${REASON_ARRAY}" ]]; then
+              local -n _PRINT_REASON_REF="${REASON_ARRAY}"
+              REASON="${_PRINT_REASON_REF[${ITEM}]:-}"
+              if [[ -z "${REASON}" && "${ITEM}" == *":::"* ]]; then
+                REASON="${_PRINT_REASON_REF[${ITEM#*:::}]:-}"
+              fi
+            fi
+            if [[ -n "${REASON}" ]]; then
+              echo "  - ${ITEM} (Reason: ${REASON})"
+            else
+              echo "  - ${ITEM}"
+            fi
+          done
+        fi
+        echo ""
+      }
+
+    # CVE Processors/Validators and Exit Code Managers
+    - |
+      check_missing_reasons() {
+        if [[ ${#MISSING_REASONS[@]} -eq 0 ]]; then
+          return
+        fi
+        EXIT_CODE=1
+        print_separator
+        echo "MISSING REASONS ERROR"
+        print_separator
+        echo "The following ignored items are missing a 'reason' field in ${TRIVY_IGNORE_CONFIG_FILE}:"
+        echo ""
+        for ITEM in "${MISSING_REASONS[@]}"; do
+          echo "  - ${ITEM}"
+        done
+        echo ""
+        echo "Please add a 'reason' field for each ignored item."
+        echo "Example:"
+        echo "  - name: ${MISSING_REASONS[0]}"
+        echo "    reason: 'Explanation for why this is ignored'"
+        print_separator
+        echo ""
+        REASONS+=("Error: Found ${#MISSING_REASONS[@]} ignored item(s) without a reason field.")
+      }
+
+      check_invalid_reasons() {
+        if [[ ${#INVALID_REASONS[@]} -eq 0 ]]; then
+          return
+        fi
+        EXIT_CODE=1
+        print_separator
+        echo "INVALID REASONS ERROR"
+        print_separator
+        echo "The following ignored items have invalid/placeholder 'reason' fields in ${TRIVY_IGNORE_CONFIG_FILE}:"
+        echo ""
+        for ENTRY in "${INVALID_REASONS[@]}"; do
+          local ITEM="${ENTRY%%:::*}"
+          local REASON="${ENTRY#*:::}"
+          echo "  - ${ITEM} (reason: '${REASON}')"
+        done
+        echo ""
+        echo "Reasons must be descriptive (at least 10 characters) and not a placeholder (e.g. TODO, TBD, N/A, fix, wip)."
+        echo "Example:"
+        echo "  - name: ${INVALID_REASONS[0]%%:::*}"
+        echo "    reason: 'Accepted risk: this vulnerability does not affect our usage pattern'"
+        print_separator
+        echo ""
+        REASONS+=("Error: Found ${#INVALID_REASONS[@]} ignored item(s) with invalid/placeholder reason fields.")
+      }
+
+      determine_cve_exit_code() {
+        local HAS_ERRORS=0
+        local HAS_WARNINGS=0
+        check_missing_reasons
+        check_invalid_reasons
+        if [[ ${EXIT_CODE} -eq 1 ]]; then
+          HAS_ERRORS=1
+        fi
+        if [[ ${#FINAL_FIXABLE[@]} -gt 0 ]]; then
+          HAS_ERRORS=1
+          REASONS+=("Error: Found ${#FINAL_FIXABLE[@]} active fixable vulnerabilities/misconfigurations that must be addressed.")
+        fi
+        if [[ ${#FINAL_FIXED_IGNORED[@]} -gt 0 ]]; then
+          HAS_ERRORS=1
+          REASONS+=("Error: Found ${#FINAL_FIXED_IGNORED[@]} fixed items still in ignore list. Remove them from ${TRIVY_IGNORE_CONFIG_FILE}.")
+        fi
+        if [[ ${#FINAL_UNFIXABLE[@]} -gt 0 ]]; then
+          HAS_WARNINGS=1
+          REASONS+=("Warning: Found ${#FINAL_UNFIXABLE[@]} unfixable vulnerabilities. Review and consider mitigation strategies.")
+        fi
+        if [[ ${#FINAL_FIXABLE_IGNORED[@]} -gt 0 ]]; then
+          HAS_WARNINGS=1
+          REASONS+=("Warning: Found ${#FINAL_FIXABLE_IGNORED[@]} ignored fixable vulnerabilities. Review if these can be addressed.")
+        fi
+        if [[ ${HAS_ERRORS} -eq 1 ]]; then
+          EXIT_CODE=1
+        elif [[ ${HAS_WARNINGS} -eq 1 ]]; then
+          EXIT_CODE=2
+        else
+          EXIT_CODE=0
+        fi
+      }
+
+      is_classification_ignored() {
+        local CAT="${1,,}"
+        local IGNORED_CONFIG="${TRIVY_IGNORED_LICENSE_CLASSIFICATIONS,,}"
+        IFS=',' read -r -a CONFIG_ITEMS <<< "${IGNORED_CONFIG}"
+        for ITEM in "${CONFIG_ITEMS[@]}"; do
+          ITEM="$(echo "${ITEM}" | xargs)"
+          case "${ITEM}" in
+            "${CAT}") return 0 ;;
+            "low")
+              if [[ "${CAT}" == "notice" || "${CAT}" == "permissive" || "${CAT}" == "unencumbered" ]]; then
+                return 0
+              fi
+              ;;
+            "medium")
+              if [[ "${CAT}" == "reciprocal" || "${CAT}" == "unrecognized" ]]; then
+                return 0
+              fi
+              ;;
+            "high")
+              if [[ "${CAT}" == "restricted" ]]; then
+                return 0
+              fi
+              ;;
+          esac
+        done
+        return 1
+      }
+
+      determine_license_exit_code() {
+        local HAS_ERRORS=0
+        local HAS_WARNINGS=0
+        check_missing_reasons
+        check_invalid_reasons
+        if [[ ${EXIT_CODE} -eq 1 ]]; then
+          HAS_ERRORS=1
+        fi
+        if [[ ${#FINAL_RESTRICTED[@]} -gt 0 ]] && ! is_classification_ignored "restricted"; then
+          HAS_ERRORS=1
+          REASONS+=("Error: Found ${#FINAL_RESTRICTED[@]} restricted licenses requiring immediate attention.")
+        fi
+        if [[ ${#FINAL_FIXED_IGNORED[@]} -gt 0 ]]; then
+          HAS_ERRORS=1
+          REASONS+=("Error: Found ${#FINAL_FIXED_IGNORED[@]} licenses in ignore file that are no longer present. Remove them from ${TRIVY_IGNORE_CONFIG_FILE}.")
+        fi
+        if [[ ${#FINAL_RECIPROCAL[@]} -gt 0 ]] && ! is_classification_ignored "reciprocal"; then
+          HAS_WARNINGS=1
+          REASONS+=("Warning: Found ${#FINAL_RECIPROCAL[@]} reciprocal (copyleft) licenses. Review compliance implications.")
+        fi
+        if [[ ${#FINAL_UNRECOGNIZED[@]} -gt 0 ]] && ! is_classification_ignored "unrecognized"; then
+          HAS_WARNINGS=1
+          REASONS+=("Warning: Found ${#FINAL_UNRECOGNIZED[@]} unrecognized licenses. Manual review required.")
+        fi
+        if [[ ${#FINAL_RESTRICTED_IGNORED[@]} -gt 0 ]] && ! is_classification_ignored "restricted"; then
+          HAS_WARNINGS=1
+          REASONS+=("Warning: Found ${#FINAL_RESTRICTED_IGNORED[@]} ignored restricted licenses. Review if acceptable.")
+        fi
+        if [[ ${HAS_ERRORS} -eq 1 ]]; then
+          EXIT_CODE=1
+        elif [[ ${HAS_WARNINGS} -eq 1 ]]; then
+          EXIT_CODE=2
+        else
+          EXIT_CODE=0
+        fi
+      }
+
+      process_cve_scan() {
+        if [[ "${SCAN_TYPE}" == "config" ]]; then
+          extract_misconfig_items
+        else
+          extract_cve_items
+        fi
+        categorize_cve_items
+        generate_cve_report
+        print_cve_summary
+        determine_cve_exit_code
+        generate_cve_summary_file
+      }
+
+      process_license_scan() {
+        extract_license_items
+        categorize_license_items
+        generate_license_report
+        print_license_summary
+        determine_license_exit_code
+        generate_license_summary_file
+      }
+
+      print_final_summary() {
+        echo ""
+        print_separator
+        case ${EXIT_CODE} in
+          0) echo "All checks passed" ;;
+          1) echo "Scan failed with errors" ;;
+          2) echo "Scan completed with warnings" ;;
+        esac
+        print_separator
+        if [[ ${#REASONS[@]} -gt 0 ]]; then
+          echo ""
+          echo "Details:"
+          printf '  %s\n' "${REASONS[@]}"
+        fi
+        echo ""
+        log_info "Generated reports:"
+        echo "  - ${TRIVY_SCAN_REPORT_NAME}.json (raw JSON)"
+        echo "  - ${TRIVY_SCAN_REPORT_NAME}.md (markdown report)"
+        echo "  - $(get_summary_file_name) (summary)"
+        echo ""
+        log_info "Scan completed"
+      }
+
+      auto_generate_detected_findings() {
+        local SCAN_JSON="./${TRIVY_SCAN_REPORT_NAME}.json"
+        local IGNORE_FILE="./${TRIVY_IGNORE_CONFIG_FILE}"
+        local OUTPUT="/tmp/generated-${TRIVY_IGNORE_CONFIG_FILE}"
+        local EXISTING_IGNORED=""
+        local NEW_FIXABLE=""
+        local NEW_MISCONFIGS=""
+        local NEW_ITEMS=""
+        local INDENT=""
+        if [[ ! -f "${IGNORE_FILE}" ]]; then
+          echo "${TRIVY_IGNORE_CONFIG_FILE} not found — initializing new baseline..." >&2
+        else
+          EXISTING_IGNORED=$(yq -r '.. | .id? | select(. != null)' "${IGNORE_FILE}" 2>/dev/null | sort -u)
+        fi
+        {
+          if [[ "${SCAN_TYPE}" == "image" ]]; then
+            NEW_FIXABLE=$(jq -r '.Results[]?.Vulnerabilities[]? | select(.FixedVersion != null and .FixedVersion != "") | .VulnerabilityID' "${SCAN_JSON}" 2>/dev/null | sort -u)
+            NEW_ITEMS=$(comm -23 <(echo "${NEW_FIXABLE}") <(echo "${EXISTING_IGNORED}"))
+            if [[ -n "${NEW_ITEMS}" ]]; then
+              echo "image:"
+              while read -r VID; do
+                if [[ -z "${VID}" ]]; then
+                  continue
+                fi
+                cat <<EOF
+        - id: "${VID}"
+          reason: "Explanation for why this is ignored"
+      EOF
+              done <<< "${NEW_ITEMS}"
+            fi
+          fi
+          if [[ "${SCAN_TYPE}" == "config" ]]; then
+            NEW_MISCONFIGS=$(jq -r '.Results[]?.Misconfigurations[]?.ID' "${SCAN_JSON}" 2>/dev/null | sort -u)
+            NEW_ITEMS=$(comm -23 <(echo "${NEW_MISCONFIGS}") <(echo "${EXISTING_IGNORED}"))
+            if [[ -n "${NEW_ITEMS}" ]]; then
+              echo "iac:"
+              if [[ "${CONFIG_TYPE}" == "chart" ]]; then
+                echo "  chart:"
+                INDENT="    "
+              else
+                echo "  terraform:"
+                INDENT="    "
+              fi
+              while read -r MID; do
+                if [[ -z "${MID}" ]]; then
+                  continue
+                fi
+                cat <<EOF
+      ${INDENT}- id: "${MID}"
+      ${INDENT}  reason: "Explanation for why this is ignored"
+      EOF
+              done <<< "${NEW_ITEMS}"
+            fi
+          fi
+          if [[ "${SCAN_TYPE}" == "license" ]]; then
+            local NON_PERMISSIVE_LICENSES
+            NON_PERMISSIVE_LICENSES=$(jq -r '[.Results[]?.Licenses[]? | select((.Category == "restricted" or .Category == "reciprocal" or .Category == "unrecognized") and .Name != null and .Name != "") | "\(.PkgName // "unknown"):::\(.Name)"] | unique | .[]' "${SCAN_JSON}" 2>/dev/null | sort -u)
+            local NEW_LIC_ITEMS=()
+            while IFS= read -r LIC_ITEM; do
+              if [[ -z "${LIC_ITEM}" ]]; then continue; fi
+              local PKG="${LIC_ITEM%%:::*}"
+              local LIC="${LIC_ITEM#*:::}"
+              if ! grep -Fxq "${LIC_ITEM}" "${IGNORED_ITEMS_FILE}" && ! grep -Fxq "${LIC}" "${IGNORED_ITEMS_FILE}"; then
+                NEW_LIC_ITEMS+=("${LIC_ITEM}")
+              fi
+            done <<< "${NON_PERMISSIVE_LICENSES}"
+            if [[ ${#NEW_LIC_ITEMS[@]} -gt 0 ]]; then
+              echo "license:"
+              for ITEM in "${NEW_LIC_ITEMS[@]}"; do
+                local PKG="${ITEM%%:::*}"
+                local LIC="${ITEM#*:::}"
+                echo "  - id: \"${LIC}\""
+                echo "    package: \"${PKG}\""
+                echo "    reason: \"Explanation for why this is ignored\""
+              done
+            fi
+          fi
+        } > "${OUTPUT}"
+        cat "${OUTPUT}"
+      }
+
+    # Main
+    - |
+      setup_temp_files() {
+        IGNORED_ITEMS_FILE=$(mktemp)
+        ALL_FIXABLE_FILE=$(mktemp)
+        ALL_UNFIXABLE_FILE=$(mktemp)
+        ALL_FOUND_FILE=$(mktemp)
+        ALL_NOTICE_FILE=$(mktemp)
+        ALL_PERMISSIVE_FILE=$(mktemp)
+        ALL_RECIPROCAL_FILE=$(mktemp)
+        ALL_RESTRICTED_FILE=$(mktemp)
+        ALL_UNRECOGNIZED_FILE=$(mktemp)
+        JUNIT_TPL_FILE=$(mktemp)
+        printf '%s' "${TRIVY_JUNIT_TEMPLATE}" > "${JUNIT_TPL_FILE}"
+        trap cleanup EXIT
+      }
+
+      main() {
+        export LC_ALL=C
+        if [[ "${SKIP_CVE_SCAN}" == "true" ]]; then
+          echo "SKIP_CVE_SCAN=true - skipping the ${SCAN_TYPE:-security} scan."
+          exit 0
+        fi
+        setup_temp_files
+        print_separator
+        echo "Unified Security & License Scanner"
+        print_separator
+        echo ""
+        validate_scan_type
+        execute_trivy_scan
+        log_info "Loading ignored items configuration..."
+        load_ignored_items
+        echo ""
+        case "${SCAN_TYPE}" in
+          image|config|sbom)
+            log_info "Processing CVE/misconfiguration scan results..."
+            process_cve_scan
+            ;;
+          license)
+            log_info "Processing license scan results..."
+            process_license_scan
+            ;;
+        esac
+        print_final_summary
+        auto_generate_detected_findings
+        exit ${EXIT_CODE}
+      }
+
+      main "${@}"
+
+.Gitlab:Package:Push:
+  stage: push
+  script:
+    - echo "Pushing package version ${APP_PUSH_VERSION} to package registry group"
+    - >
+      curl --fail -L --header "JOB-TOKEN: ${CI_JOB_TOKEN}" --upload-file ${PACKAGE_UPLOAD_FILE_PATH} "${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/packages/generic/${CI_PROJECT_NAME}/${APP_PUSH_VERSION}/${PACKAGE_PUSH_NAME}"
+
+.MD:Lint:
+  stage: lint
+  image:
+    name: ${MD_LINT_IMAGE_REPO}:${MD_LINT_IMAGE_TAG}
+    entrypoint: [""]
+  script:
+    - echo style \"#\{File.dirname\(__FILE__\)\}/markdownlint.rb\" > .markdownlintrc
+    - |
+      echo -e "all\n\
+      exclude_rule 'MD013'\n\
+      exclude_rule 'MD024'\n\
+      exclude_rule 'MD007'\n\
+      exclude_rule 'MD047'" \
+      > markdownlint.rb
+    - |
+      for RULE in ${MD_LINT_IGNORE_RULE}; do
+        echo -e "exclude_rule '${RULE}'" >> markdownlint.rb
+      done
+    - mdl --config .markdownlintrc ${LINT_MD_FILES}
+
+.YAML:Lint:
+  stage: lint
+  script:
+    - cd ${PROJECT_PATH}
+    - |
+      if [[ ! -f .yamllint.yml && ! -f .yamllint.yaml && ! -f .yamllint ]]; then
+        yamllint -s -d "{extends: default, rules: {line-length: disable, document-start: disable, comments: disable, comments-indentation: disable}}" ${LINT_YAML_FILES}
+      else
+        yamllint -s ${LINT_YAML_FILES}
+      fi
+  needs:
+    - job: Common:Init
+      artifacts: false
+      optional: true
+
+default:
+  image: ${TOOLKIT_BUILD_IMAGE_REPO}:${TOOLKIT_BUILD_IMAGE_TAG}
+  interruptible: true
+  before_script:
+    - cd ${PROJECT_PATH}
+  retry:
+    max: 2
+    when:
+      - runner_system_failure
+      - stuck_or_timeout_failure
+      - runner_unsupported
+      - job_execution_timeout
+      - unknown_failure
+      - stale_schedule
+
+workflow:
+  name: '$PIPELINE_NAME'
+  auto_cancel:
+    on_new_commit: conservative
+    on_job_failure: none
+  rules:
+    # 1. MR targeting default branch or protected */master
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event" && $CI_MERGE_REQUEST_TARGET_BRANCH_NAME == $CI_DEFAULT_BRANCH && $CI_MERGE_REQUEST_TARGET_BRANCH_PROTECTED == "true"'
+      variables:
+        PIPELINE_NAME: "🔍 MR Verification [!$CI_MERGE_REQUEST_IID]"
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event" && $CI_MERGE_REQUEST_TARGET_BRANCH_NAME =~ $MASTER_BRANCH_REGEX && $CI_MERGE_REQUEST_TARGET_BRANCH_PROTECTED == "true"'
+      variables:
+        PIPELINE_NAME: "🔍 MR Verification [!$CI_MERGE_REQUEST_IID]"
+
+    # 2. Monorepo Child Pipeline
+    - if: '$CI_PIPELINE_SOURCE == "parent_pipeline"'
+      variables:
+        PIPELINE_NAME: "📦 Monorepo Child Pipeline [${PROJECT_PATH}]"
+
+    # 3. Direct Push ONLY to default branch (master) or protected */master (Multi-Master Production Release)
+    - if: '$CI_PIPELINE_SOURCE =~ /^(push|pipeline)$/ && ($CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH || ($CI_COMMIT_BRANCH =~ $MASTER_BRANCH_REGEX && $CI_COMMIT_REF_PROTECTED == "true"))'
+      variables:
+        PIPELINE_NAME: "🚀 Production Release"
+      auto_cancel:
+        on_new_commit: none
+        on_job_failure: none
+
+    - if: '$CI_PIPELINE_SOURCE =~ /^(web|api)$/ && $WORKFLOW == "deploy" && $TARGET_VERSION'
+      variables:
+        PIPELINE_NAME: "▶️ Deploy v${TARGET_VERSION} to ${DEPLOY_TARGET}"
+    - if: '$CI_PIPELINE_SOURCE =~ /^(web|api)$/ && $WORKFLOW == "deploy" && $DEPLOY_VERSION'
+      variables:
+        PIPELINE_NAME: "▶️ Deploy v${DEPLOY_VERSION} to ${DEPLOY_TARGET}"
+    - if: '$CI_PIPELINE_SOURCE =~ /^(web|api)$/ && $WORKFLOW == "deploy"'
+      variables:
+        PIPELINE_NAME: "▶️ Deploy to ${DEPLOY_TARGET}"
+    - if: '$CI_PIPELINE_SOURCE =~ /^(web|api)$/ && $WORKFLOW == "sonarqube"'
+      variables:
+        PIPELINE_NAME: "▶️ SonarQube Code Quality Scan"
+    - if: '$CI_PIPELINE_SOURCE =~ /^(web|api)$/ && $WORKFLOW == "secret-scanning"'
+      variables:
+        PIPELINE_NAME: "▶️ Secret Scanning Security Audit"
+    - if: '$CI_PIPELINE_SOURCE =~ /^(web|api)$/ && $WORKFLOW == "license-scanning"'
+      variables:
+        PIPELINE_NAME: "▶️ License Compliance Scan"
+    - if: '$CI_PIPELINE_SOURCE =~ /^(web|api)$/ && $WORKFLOW == "sbom-scanning"'
+      variables:
+        PIPELINE_NAME: "▶️ SBOM Generation & Security Scan"
+    - if: '$CI_PIPELINE_SOURCE =~ /^(web|api)$/ && $WORKFLOW == "lint"'
+      variables:
+        PIPELINE_NAME: "▶️ Code & Config Linting"
+    - if: '$CI_PIPELINE_SOURCE =~ /^(web|api)$/ && $WORKFLOW == "image-build-and-push"'
+      variables:
+        PIPELINE_NAME: "▶️ Container Image Build & Push"
+    - if: '$CI_PIPELINE_SOURCE =~ /^(web|api)$/ && $WORKFLOW == "image-scan"'
+      variables:
+        PIPELINE_NAME: "▶️ Container Image Vulnerability Scan"
+    - if: '$CI_PIPELINE_SOURCE =~ /^(web|api)$/ && $WORKFLOW == "chart-build-and-push"'
+      variables:
+        PIPELINE_NAME: "▶️ Helm Chart Package & Push"
+    - if: '$CI_PIPELINE_SOURCE =~ /^(web|api)$/ && $WORKFLOW == "chart-scan"'
+      variables:
+        PIPELINE_NAME: "▶️ Helm Chart Security & Config Scan"
+    - if: '$CI_PIPELINE_SOURCE =~ /^(web|api)$/ && $WORKFLOW == "build"'
+      variables:
+        PIPELINE_NAME: "▶️ Build & Unit Test"
+    - if: '$CI_PIPELINE_SOURCE =~ /^(web|api)$/ && $WORKFLOW == "check"'
+      variables:
+        PIPELINE_NAME: "▶️ Release & Artifact Conflict Checks"
+    - if: '$CI_PIPELINE_SOURCE =~ /^(web|api)$/'
+      variables:
+        PIPELINE_NAME: "▶️ Manual Full Pipeline Run"
+
+Workflow:Validate:Variables:
+  stage: .pre
+  rules:
+    - if: '$CI_PIPELINE_SOURCE =~ /^(web|api)$/ && ($WORKFLOW == "image-scan" || $WORKFLOW == "chart-scan" || $WORKFLOW == "deploy")'
+    - when: never
+  script:
+    - |
+      if [[ "${WORKFLOW}" == "image-scan" && -z "${TARGET_VERSION}" ]]; then
+        echo "❌ ERROR: TARGET_VERSION is required when WORKFLOW='image-scan'."
+        exit 1
+      fi
+    - |
+      if [[ "${WORKFLOW}" == "chart-scan" ]]; then
+        if [[ -n "${TARGET_VERSION}" ]]; then
+          echo "ℹ️ TARGET_VERSION='${TARGET_VERSION}' provided for chart-scan — will pull remote chart."
+        elif [[ -f "${CHART_DIR}/${CHART_FILE}" ]]; then
+          echo "ℹ️ No TARGET_VERSION provided for chart-scan — will perform local scan on '${CHART_DIR}/${CHART_FILE}'."
+        else
+          echo "❌ ERROR: No TARGET_VERSION provided and local chart '${CHART_DIR}/${CHART_FILE}' not found."
+          exit 1
+        fi
+      fi
+    - |
+      if [[ "${WORKFLOW}" == "deploy" && -z "${DEPLOY_TARGET}" ]]; then
+        echo "❌ ERROR: DEPLOY_TARGET is required when WORKFLOW='deploy'."
+        exit 1
+      fi
+    - echo "✅ Workflow '${WORKFLOW}' variables validated."
+
+Common:Init:
+  stage: init
+  extends:
+    - .common-init-rules
+  script:
+    - echo "BUILD_CUSTOMER=${BUILD_CUSTOMER}" 2>&1 | tee -a init.env
+    - MASTER_BRANCH_PATTERN="${MASTER_BRANCH_REGEX#/}"
+    - MASTER_BRANCH_PATTERN="${MASTER_BRANCH_PATTERN%/}"
+    - MASTER_BRANCH_PATTERN="${MASTER_BRANCH_PATTERN//\\/}"
+    - |
+      if [[ "${CI_PIPELINE_SOURCE}" =~ ^(web|api)$ && ("${CI_COMMIT_BRANCH}" == "${CI_DEFAULT_BRANCH}" || ("${CI_COMMIT_REF_NAME}" =~ ${MASTER_BRANCH_PATTERN} && "${CI_COMMIT_REF_PROTECTED}" == "true")) ]]; then
+        RC_VERSION_SUFFIX=-rc.${CI_PIPELINE_ID}
+        echo "⚠️  Manual trigger on protected master branch — forcing RC image suffix to prevent stable image overwrite."
+        echo "IMAGE_REPOSITORY_SUFFIX=${IMAGE_DEV_REPOSITORY_SUFFIX}" 2>&1 | tee -a init.env
+        export IMAGE_REPOSITORY_SUFFIX=${IMAGE_DEV_REPOSITORY_SUFFIX}
+      elif [[ (${CI_COMMIT_BRANCH} == ${CI_DEFAULT_BRANCH}) || (${CI_COMMIT_REF_NAME} =~ ${MASTER_BRANCH_PATTERN} && ${CI_COMMIT_REF_PROTECTED} == "true") ]]; then
+        RC_VERSION_SUFFIX=""
+        echo "IMAGE_REPOSITORY_SUFFIX=" 2>&1 | tee -a init.env
+        export IMAGE_REPOSITORY_SUFFIX=
+        UPSTREAM_MR_IID=""
+        UPSTREAM_PIPELINE_ID=""
+        COMMIT_MSG=$(git log -1 --pretty=%B || true)
+        UPSTREAM_MR_IID=$(echo "${COMMIT_MSG}" | grep -oE "MR [0-9]+" | head -n1 | tr -d 'MR ' || true)
+        if [[ -z "${UPSTREAM_MR_IID}" ]]; then
+          UPSTREAM_MR_IID=$(echo "${COMMIT_MSG}" | grep -oE "![0-9]+" | head -n1 | tr -d '!' || true)
+        fi
+        if [[ -z "${UPSTREAM_MR_IID}" ]]; then
+          UPSTREAM_MR_IID=$(echo "${COMMIT_MSG}" | grep -oE "merge_requests/[0-9]+" | head -n1 | tr -d 'merge_requests/' || true)
+        fi
+        if [[ -z "${UPSTREAM_MR_IID}" ]]; then
+          UPSTREAM_MR_JSON=$(curl --silent --fail --header "JOB-TOKEN: ${CI_JOB_TOKEN}" "${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/repository/commits/${CI_COMMIT_SHA}/merge_requests" 2>/dev/null || true)
+          UPSTREAM_MR_IID=$(echo "${UPSTREAM_MR_JSON}" | jq -r '.[0].iid // empty' 2>/dev/null || true)
+          UPSTREAM_MR_SHA=$(echo "${UPSTREAM_MR_JSON}" | jq -r '.[0].sha // empty' 2>/dev/null || true)
+        fi
+        if [[ -n "${UPSTREAM_MR_IID}" ]]; then
+          MR_REF_PIPES=$(curl --silent --fail --header "JOB-TOKEN: ${CI_JOB_TOKEN}" "${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/pipelines?ref=refs/merge-requests/${UPSTREAM_MR_IID}/head&status=success" 2>/dev/null || true)
+          UPSTREAM_PIPELINE_ID=$(echo "${MR_REF_PIPES}" | jq -r '.[0].id // empty' 2>/dev/null || true)
+        fi
+        if [[ -z "${UPSTREAM_PIPELINE_ID}" && -n "${UPSTREAM_MR_SHA}" ]]; then
+          SRC_PIPES_JSON=$(curl --silent --fail --header "JOB-TOKEN: ${CI_JOB_TOKEN}" "${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/pipelines?sha=${UPSTREAM_MR_SHA}&status=success" 2>/dev/null || true)
+          UPSTREAM_PIPELINE_ID=$(echo "${SRC_PIPES_JSON}" | jq -r '.[0].id // empty' 2>/dev/null || true)
+        fi
+        if [[ -z "${UPSTREAM_PIPELINE_ID}" ]]; then
+          RECENT_PIPES=$(curl --silent --fail --header "JOB-TOKEN: ${CI_JOB_TOKEN}" "${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/pipelines?status=success&per_page=10" 2>/dev/null || true)
+          UPSTREAM_PIPELINE_ID=$(echo "${RECENT_PIPES}" | jq -r '[.[] | select(.source=="merge_request_event")][0].id // empty' 2>/dev/null || true)
+          if [[ -z "${UPSTREAM_MR_IID}" && -n "${UPSTREAM_PIPELINE_ID}" ]]; then
+            UPSTREAM_MR_IID=$(echo "${RECENT_PIPES}" | jq -r '[.[] | select(.id=='${UPSTREAM_PIPELINE_ID}')][0].ref // ""' | grep -oE "[0-9]+" || true)
+          fi
+        fi
+        if [[ -n "${UPSTREAM_PIPELINE_ID}" ]]; then
+          if [[ -n "${UPSTREAM_MR_IID}" ]]; then
+            DEV_CANDIDATE_RC_SUFFIX="-rc.${UPSTREAM_PIPELINE_ID}-${UPSTREAM_MR_IID}"
+          else
+            DEV_CANDIDATE_RC_SUFFIX="-rc.${UPSTREAM_PIPELINE_ID}"
+          fi
+          echo "DEV_CANDIDATE_RC_SUFFIX=${DEV_CANDIDATE_RC_SUFFIX}" 2>&1 | tee -a init.env
+          echo "UPSTREAM_PIPELINE_ID=${UPSTREAM_PIPELINE_ID}" 2>&1 | tee -a init.env
+          echo "MR_IID=${UPSTREAM_MR_IID}" 2>&1 | tee -a init.env
+        fi
+      elif [[ "${CI_PIPELINE_SOURCE}" == "merge_request_event" ]]; then
+        RC_VERSION_SUFFIX="-rc.${CI_PIPELINE_ID}-${CI_MERGE_REQUEST_IID}"
+        echo "IMAGE_REPOSITORY_SUFFIX=${IMAGE_DEV_REPOSITORY_SUFFIX}" 2>&1 | tee -a init.env
+        export IMAGE_REPOSITORY_SUFFIX=${IMAGE_DEV_REPOSITORY_SUFFIX}
+      else
+        RC_VERSION_SUFFIX=-rc.${CI_PIPELINE_ID}
+        echo "IMAGE_REPOSITORY_SUFFIX=${IMAGE_DEV_REPOSITORY_SUFFIX}" 2>&1 | tee -a init.env
+        export IMAGE_REPOSITORY_SUFFIX=${IMAGE_DEV_REPOSITORY_SUFFIX}
+      fi
+    - |
+      if [[ -z "${IMAGE_REGISTRY}" ]]; then
+        if [[ -n "${CI_REGISTRY}" || "${GITLAB_CI}" == "true" ]]; then
+          IMAGE_REGISTRY="${CI_REGISTRY}"
+          echo "ℹ️  IMAGE_REGISTRY not set. Defaulting to GitLab Container Registry: ${IMAGE_REGISTRY}"
+          if [[ -z "${IMAGE_REPOSITORY}" || "${IMAGE_REPOSITORY}" != "${CI_PROJECT_PATH}"* ]]; then
+            IMAGE_REPOSITORY="${CI_PROJECT_PATH}"
+            echo "ℹ️  Defaulting IMAGE_REPOSITORY to GitLab project path: ${IMAGE_REPOSITORY}"
+          fi
+          export IMAGE_REGISTRY IMAGE_REPOSITORY
+        fi
+      fi
+    - echo "IMAGE_REGISTRY=${IMAGE_REGISTRY}" 2>&1 | tee -a init.env
+    - echo "IMAGE_REPOSITORY=${IMAGE_REPOSITORY}" 2>&1 | tee -a init.env
+    - echo "RC_VERSION_SUFFIX=${RC_VERSION_SUFFIX}" 2>&1 | tee -a init.env
+    - echo "IMAGE_CHECK_REPOSITORY=${IMAGE_REPOSITORY}" 2>&1 | tee -a init.env
+    - echo "IMAGE_PUSH_REPOSITORY=${IMAGE_REPOSITORY}${IMAGE_REPOSITORY_SUFFIX}" 2>&1 | tee -a init.env
+    - |
+      if [[ -n "${RELEASE_VERSION}" && -f ${CHART_DIR}/${CHART_FILE} ]]; then
+        CHART_RELEASE_VERSION=${RELEASE_VERSION}
+        echo "CHART_RELEASE_VERSION=${RELEASE_VERSION}" 2>&1 | tee -a init.env
+        CHART_PUSH_VERSION=${CHART_RELEASE_VERSION}${RC_VERSION_SUFFIX}
+        echo "CHART_PUSH_VERSION=${CHART_RELEASE_VERSION}${RC_VERSION_SUFFIX}" 2>&1 | tee -a init.env
+        echo "CHART_NAME=$(yq eval .name "${CHART_DIR}/${CHART_FILE}")" 2>&1 | tee -a init.env
+      elif [[ -f ${CHART_DIR}/${CHART_FILE} ]]; then
+        echo "CHART_NAME=$(yq eval .name "${CHART_DIR}/${CHART_FILE}")" 2>&1 | tee -a init.env
+        CHART_RELEASE_VERSION=$(yq eval .version "${CHART_DIR}/${CHART_FILE}")
+        echo "CHART_RELEASE_VERSION=${CHART_RELEASE_VERSION}" 2>&1 | tee -a init.env
+        CHART_PUSH_VERSION=${CHART_RELEASE_VERSION}${RC_VERSION_SUFFIX}
+        echo "CHART_PUSH_VERSION=${CHART_RELEASE_VERSION}${RC_VERSION_SUFFIX}" 2>&1 | tee -a init.env
+        if [[ ${CI_PIPELINE_SOURCE} == "parent_pipeline" && ! -z ${PARENT_CI_PIPELINE_ID} ]]; then
+          echo "PARENT_CI_PIPELINE_ID is set and CI_PIPELINE_SOURCE is parent pipeline. skipping RELEASE_VERSION."
+        else
+          if [[ -f ./Dockerfile ]]; then
+            RELEASE_VERSION=$(yq eval .appVersion "${CHART_DIR}/${CHART_FILE}")
+            echo "RELEASE_VERSION=${RELEASE_VERSION}" 2>&1 | tee -a init.env
+          else
+            RELEASE_VERSION=$(yq eval .version "${CHART_DIR}/${CHART_FILE}")
+            echo "RELEASE_VERSION=${RELEASE_VERSION}" 2>&1 | tee -a init.env
+          fi
+        fi
+      else
+        echo "${CHART_DIR}/${CHART_FILE} not found. Skipping chart envs."
+      fi
+    - |
+      if [[ -z "${CHART_REGISTRY}" ]]; then
+        if [[ -n "${CI_REGISTRY}" || "${GITLAB_CI}" == "true" ]]; then
+          CHART_REGISTRY="${CI_REGISTRY}"
+          echo "ℹ️  CHART_REGISTRY not set. Defaulting to GitLab Container Registry: ${CHART_REGISTRY}"
+          if [[ -z "${CHART_REPOSITORY}" || "${CHART_REPOSITORY}" != "${CI_PROJECT_PATH}"* ]]; then
+            CHART_REPOSITORY="${CI_PROJECT_PATH}/helm"
+            echo "ℹ️  Defaulting CHART_REPOSITORY to GitLab project path: ${CHART_REPOSITORY}"
+          fi
+          export CHART_REGISTRY CHART_REPOSITORY
+        fi
+      elif [[ -z "${CHART_REPOSITORY}" ]]; then
+        if [[ -n "${CI_PROJECT_PATH}" ]]; then
+          CHART_REPOSITORY="${CI_PROJECT_PATH}/helm"
+        fi
+      fi
+      if [[ -z ${RC_VERSION_SUFFIX} ]]; then
+        CHART_PUSH_REPOSITORY=${CHART_REPOSITORY}
+      else
+        CHART_PUSH_REPOSITORY=${CHART_REPOSITORY}${CHART_DEV_REPOSITORY_SUFFIX}
+      fi
+      echo "CHART_REGISTRY=${CHART_REGISTRY}" 2>&1 | tee -a init.env
+      echo "CHART_REPOSITORY=${CHART_REPOSITORY}" 2>&1 | tee -a init.env
+      echo "CHART_PUSH_REPOSITORY=${CHART_PUSH_REPOSITORY}" 2>&1 | tee -a init.env
+    - |
+      if [[ -z "${RELEASE_VERSION}" ]]; then
+        echo "${CHART_DIR}/${CHART_FILE} not found and RELEASE_VERSION not set. Either add helm chart in correct directory or provide RELEASE_VERSION as variable."
+        exit 1
+      else
+        echo "RELEASE_VERSION=${RELEASE_VERSION}" 2>&1 | tee -a init.env
+      fi
+    # Disabling this due to chart rc versioning issues during parent child pipelines
+    # - |
+    #   if [[ ${CI_PIPELINE_SOURCE} != "parent_pipeline" ]]; then
+    #     echo "CHART_PUSH_VERSION=${CHART_RELEASE_VERSION}${RC_VERSION_SUFFIX}" 2>&1 | tee -a init.env
+    #   elif [[ ${CI_PIPELINE_SOURCE} == "parent_pipeline" && ! -z ${PARENT_CI_PIPELINE_ID} && ! -z ${RC_VERSION_SUFFIX} ]]; then
+    #     echo "CHART_PUSH_VERSION=${CHART_RELEASE_VERSION}-rc.${PARENT_CI_PIPELINE_ID}" 2>&1 | tee -a init.env
+    #   else
+    #     echo "CHART_PUSH_VERSION=${CHART_RELEASE_VERSION}" 2>&1 | tee -a init.env
+    #   fi
+    - export APP_PUSH_VERSION=${RELEASE_VERSION}${RC_VERSION_SUFFIX}
+    - echo "APP_PUSH_VERSION=${APP_PUSH_VERSION}" 2>&1 | tee -a init.env
+    - |
+      if [[ -n "${DEV_CANDIDATE_RC_SUFFIX}" ]]; then
+        DEV_CANDIDATE_VERSION="${RELEASE_VERSION}${DEV_CANDIDATE_RC_SUFFIX}"
+        DEV_CANDIDATE_CHART_VERSION="${CHART_RELEASE_VERSION}${DEV_CANDIDATE_RC_SUFFIX}"
+        echo "DEV_CANDIDATE_VERSION=${DEV_CANDIDATE_VERSION}" 2>&1 | tee -a init.env
+        echo "DEV_CANDIDATE_CHART_VERSION=${DEV_CANDIDATE_CHART_VERSION}" 2>&1 | tee -a init.env
+      fi
+    - |
+      if [[ -z "${RELEASE_VERSION_SUFFIX}" ]]; then
+        TAG=${RELEASE_VERSION}
+      else
+        TAG=${RELEASE_VERSION}-${RELEASE_VERSION_SUFFIX}
+      fi
+    - echo "TAG=${TAG}" 2>&1 | tee -a init.env
+    - echo "MAJOR_VERSION=$(echo ${APP_PUSH_VERSION} | grep -Eo '^([0-9]+)')" 2>&1 | tee -a init.env
+    - echo "MINOR_VERSION=$(echo ${APP_PUSH_VERSION} | grep -Eo '^([0-9]+)\.([0-9]+)')" 2>&1 | tee -a init.env
+  artifacts:
+    name: Env File
+    expose_as: Env File
+    when: always
+    expire_in: 1 week
+    paths:
+      - ${PROJECT_PATH}/init.env
+    reports:
+      dotenv: ${PROJECT_PATH}/init.env
+
+Changelog:Lint:
+  variables:
+    LINT_MD_FILES: ${CHANGELOG_FILE_NAME}
+  extends:
+    - .MD:Lint
+    - .check-job-common
+    - .lint-workflow-rules
+
+Changelog:Check Existence:
+  extends:
+    - .check-job-common
+  script:
+    - echo "Checking if ${RELEASE_VERSION} version exist in ${CHANGELOG_FILE_NAME}..."
+    - |
+      if [[ ! -f ${CHANGELOG_FILE_NAME} ]]; then
+        echo "${CHANGELOG_FILE_NAME} changelog is missing in the repo"
+        exit 1
+      fi
+    - awk -v ver=${RELEASE_VERSION} '/^#+ \[/ { if (p) { exit }; if ($2 == "["ver"]") { p=1; next} } p && NF' ${CHANGELOG_FILE_NAME} > ${RELEASE_CHANGELOG_FILE_NAME}
+    - |
+      if [[ ! -s ${RELEASE_CHANGELOG_FILE_NAME} ]]; then
+        echo "changelog is empty. Make sure the changelog is following the keepachangelog.com standards."
+        echo "Falling back to copying full changelogs from ${CHANGELOG_FILE_NAME}"
+        cp ${CHANGELOG_FILE_NAME} ${RELEASE_CHANGELOG_FILE_NAME}
+        if [[ ! $(cat ${RELEASE_CHANGELOG_FILE_NAME} | grep "${RELEASE_VERSION//./\\.}") ]]; then
+          echo "Changelog is either empty or doesnt have release vesion specified in the ${CHANGELOG_FILE_NAME} file"
+          exit 1
+        fi
+      fi
+    - |
+      jq -Rs '
+        def clean_text:
+          gsub("\u0060"; "")
+          | gsub("\\*\\*"; "");
+        split("\n")
+        | reduce .[] as $line (
+            [];
+            if ($line | test("^#{3,} +")) then
+              . + [{
+                type: "TextBlock",
+                text: ($line | sub("^#{3,} +"; "") | clean_text),
+                weight: "Bolder",
+                spacing: (if length == 0 then "None" else "Medium" end),
+                wrap: true
+              }]
+            elif ($line | test("^- +")) then
+              . + [{
+                type: "TextBlock",
+                text: ("• " + ($line | sub("^- +"; "") | clean_text)),
+                spacing: "Small",
+                wrap: true
+              }]
+            elif ($line | length == 0) then .
+            else
+              . + [{
+                type: "TextBlock",
+                text: ($line | clean_text),
+                spacing: "Small",
+                wrap: true
+              }]
+            end
+          )
+      ' "${RELEASE_CHANGELOG_FILE_NAME}" > "${RELEASE_CHANGELOG_CARD_FILE_NAME}"
+    - jq -e 'length > 0' "${RELEASE_CHANGELOG_CARD_FILE_NAME}" > /dev/null
+    - cat ${RELEASE_CHANGELOG_FILE_NAME}
+  artifacts:
+    name: Release Changelog
+    expose_as: Release Changelog
+    when: always
+    expire_in: 1 week
+    paths:
+      - ${PROJECT_PATH}/${RELEASE_CHANGELOG_FILE_NAME}
+      - ${PROJECT_PATH}/${RELEASE_CHANGELOG_CARD_FILE_NAME}
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "web"
+      when: never
+    - if: '($CI_PIPELINE_SOURCE == "merge_request_event" || $CI_PIPELINE_SOURCE == "parent_pipeline") && $CI_MERGE_REQUEST_TARGET_BRANCH_NAME == $CI_DEFAULT_BRANCH'
+    - if: '($CI_PIPELINE_SOURCE == "merge_request_event" || $CI_PIPELINE_SOURCE == "parent_pipeline") && $CI_MERGE_REQUEST_TARGET_BRANCH_NAME =~ $MASTER_BRANCH_REGEX && $CI_MERGE_REQUEST_TARGET_BRANCH_PROTECTED == "true"'
+
+Tag:Tag Existence:
+  variables:
+    GIT_STRATEGY: none
+  extends:
+    - .check-job-common
+    - .skip-on-master-rules
+  before_script: []
+  script:
+    - echo "Checking if tag ${TAG} exist..."
+    - 'RESPONSE_CODE=$(curl --write-out %{http_code} --silent --output /dev/null --header "JOB-TOKEN:${CI_JOB_TOKEN}" "${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/releases/${TAG}")'
+    - |
+      if [[ "${RESPONSE_CODE}" -eq 200 ]]; then
+        echo "❌ Tag '${TAG}' already exists."
+        exit 1
+      elif [[ "${RESPONSE_CODE}" -eq 404 ]]; then
+        echo "✅ Tag '${TAG}' is available."
+      else
+        echo "❌ Something went wrong... Response Code: ${RESPONSE_CODE}"
+        exit 1
+      fi
+  needs:
+    - job: Common:Init
+      artifacts: true
+      optional: true

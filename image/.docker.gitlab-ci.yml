@@ -1,0 +1,131 @@
+Docker:Lint:
+  stage: lint
+  extends:
+    - .image-common
+    - .lint-workflow-rules
+  services: []
+  variables:
+    DEFAULT_HADOLINT: DL3008,DL3013,DL3016,DL3018,DL3028,DL3033,DL3037,DL3041,DL3062
+  script:
+    - HADOLINT_ARGS=()
+    - |
+      if [[ -n "${HADOLINT_IGNORE}" ]]; then
+        FULL_HADOLINT_IGNORE="${DEFAULT_HADOLINT},${HADOLINT_IGNORE}"
+      else
+        FULL_HADOLINT_IGNORE="${DEFAULT_HADOLINT}"
+      fi
+    - IFS=',' read -r -a IGNORES <<< "${FULL_HADOLINT_IGNORE}"
+    - |
+      for rule in "${IGNORES[@]}"; do
+        rule="$(echo "${rule}" | xargs)"
+        if [[ -n "${rule}" ]]; then
+          HADOLINT_ARGS+=(--ignore "${rule}")
+        fi
+      done
+    - hadolint "${HADOLINT_ARGS[@]}" --disable-ignore-pragma "${DOCKERFILE}"
+  dependencies: []
+  needs:
+    - job: Common:Init
+      artifacts: false
+      optional: true
+
+Image:Build:
+  stage: build
+  extends:
+    - .image-common
+    - .image-registry-login
+    - .image-build-workflow-rules
+  script:
+    - DOCKER_BUILD_ARGS=()
+    - |
+      for DOCKER_BUILD_VARS in $(env | grep -E '^DOCKER_BUILD_ARG_' | awk -F= '{print $1}'); do
+        DOCKER_BUILD_ARGS+=(--build-arg "${DOCKER_BUILD_VARS#DOCKER_BUILD_ARG_}=${!DOCKER_BUILD_VARS}")
+      done
+    - |
+      DOCKER_BUILD_ARGS+=(
+        --build-arg "VERSION=${APP_PUSH_VERSION}"
+        --build-arg "CI_DEPENDENCY_PROXY_GROUP_IMAGE_PREFIX=${CI_DEPENDENCY_PROXY_GROUP_IMAGE_PREFIX}/"
+        --build-arg "MICRO_ROOT_BASE_IMAGE=${MICRO_ROOT_BASE_IMAGE_REPO}:${MICRO_ROOT_BASE_IMAGE_TAG}"
+        --build-arg "NGINX_MICRO_BASE_IMAGE=${NGINX_MICRO_BASE_IMAGE_REPO}:${NGINX_MICRO_BASE_IMAGE_TAG}"
+        --build-arg "PYTHON_312_MICRO_BASE_IMAGE=${PYTHON_312_MICRO_BASE_IMAGE_REPO}:${PYTHON_312_MICRO_BASE_IMAGE_TAG}"
+        --build-arg "NODE_JS_24_MICRO_BASE_IMAGE=${NODE_JS_24_MICRO_BASE_IMAGE_REPO}:${NODE_JS_24_MICRO_BASE_IMAGE_TAG}"
+        --build-arg "JAVA_25_MICRO_BASE_IMAGE=${JAVA_25_MICRO_BASE_IMAGE_REPO}:${JAVA_25_MICRO_BASE_IMAGE_TAG}"
+        --build-arg "TOOLKIT_BUILD_IMAGE=${TOOLKIT_BUILD_IMAGE_REPO}:${TOOLKIT_BUILD_IMAGE_TAG}"
+      )
+    - |
+      DOCKER_LABELS=(
+        --label "org.opencontainers.image.version=${APP_PUSH_VERSION}"
+        --label "org.opencontainers.image.created=${CI_JOB_STARTED_AT}"
+        --label "org.opencontainers.image.revision=${CI_COMMIT_SHA}"
+        --label "org.opencontainers.image.ref.name=${CI_COMMIT_REF_NAME}"
+      )
+    - >
+      echo "Final DOCKER_BUILD_ARGS for docker build: ${DOCKER_BUILD_ARGS[*]}"
+    - |
+      if [[ "${USE_DOCKER_BUILDX}" == "true" ]]; then
+        echo "BuildKit enabled. Setting up builder..."
+
+        BUILDER_NAME="buildkit-${CI_JOB_ID}"
+
+        docker buildx create \
+          --use \
+          --bootstrap \
+          --driver docker-container \
+          --name "${BUILDER_NAME}" \
+          --driver-opt image="${BUILDKIT_IMAGE_REPO}:${BUILDKIT_IMAGE_TAG}"
+
+        BUILDKIT_CONTAINER="buildx_buildkit_${BUILDER_NAME}0"
+
+        echo "BuildKit container: ${BUILDKIT_CONTAINER}"
+        echo "Propagating custom /etc/hosts entries to BuildKit..."
+
+        while read -r ip hosts; do
+          [[ -z "${ip}" ]] && continue
+          [[ "${ip}" =~ ^# ]] && continue
+          [[ "${ip}" == "127.0.0.1" ]] && continue
+          [[ "${ip}" == "::1" ]] && continue
+
+          for host in ${hosts}; do
+            [[ "${host}" =~ ^# ]] && break
+
+            echo "Adding ${ip} ${host}"
+
+            docker exec -u 0 "${BUILDKIT_CONTAINER}" \
+              sh -c "grep -qE '[[:space:]]${host}([[:space:]]|\$)' /etc/hosts || echo '${ip} ${host}' >> /etc/hosts"
+          done
+        done < /etc/hosts
+
+        echo "BuildKit /etc/hosts:"
+        docker exec "${BUILDKIT_CONTAINER}" cat /etc/hosts
+
+        docker buildx build --builder "${BUILDER_NAME}" -f "${DOCKERFILE}" . --load --tag "${IMAGE_NAME}" "${DOCKER_BUILD_ARGS[@]}" "${DOCKER_LABELS[@]}" \
+          --cache-from="type=registry,ref=${IMAGE_REGISTRY}/${IMAGE_PUSH_REPOSITORY}:buildcache-${CI_COMMIT_REF_SLUG}" \
+          --cache-from="type=registry,ref=${IMAGE_REGISTRY}/${IMAGE_PUSH_REPOSITORY}:buildcache-${CI_DEFAULT_BRANCH}" \
+          --cache-to="type=registry,ref=${IMAGE_REGISTRY}/${IMAGE_PUSH_REPOSITORY}:buildcache-${CI_COMMIT_REF_SLUG},mode=max"
+      else
+        echo "Building image with standard Docker..."
+        docker build -f "${DOCKERFILE}" . --tag "${IMAGE_NAME}" "${DOCKER_BUILD_ARGS[@]}" "${DOCKER_LABELS[@]}"
+      fi
+    - docker save ${IMAGE_NAME} | gzip > ${IMAGE_TAR_FILE_NAME}
+  after_script:
+    - |
+      if [[ "${USE_DOCKER_BUILDX}" == "true" ]]; then
+        docker buildx rm "buildkit-${CI_JOB_ID}" 2>/dev/null || true
+      fi
+  artifacts:
+    name: Image Tar
+    expose_as: Image Tar
+    when: always
+    expire_in: 1 week
+    paths:
+      - ${PROJECT_PATH}/${IMAGE_TAR_FILE_NAME}
+  needs:
+    - job: Common:Init
+      artifacts: true
+      optional: true
+    - job: Project:Build
+      artifacts: true
+      optional: true
+    - job: Dependency:Download
+      artifacts: false
+      optional: true
