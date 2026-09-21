@@ -843,6 +843,7 @@ flowchart LR
 | `Chart:Lint` | `lint` | `helm lint --strict` with optional value overrides. |
 | `.Chart:UnitTest` | `test` | **Optional, opt-in.** Renders a mock consumer chart at `${CHART_DIR}/${MOCK_CHART}` with `helm unittest --strict` and publishes a JUnit report. Hidden template — declare `Chart:UnitTest: {extends: .Chart:UnitTest}` to enable. For repositories that *ship* a chart others depend on; requires the `unittest` Helm plugin in the job image. |
 | `Chart:Check Existence` | `check` | Checks whether the chart version already exists in the GitLab Helm Package Registry. |
+| `Common:Check:Library:Pin` | `check` | Fails when an `include:` pins a branch, a commit or a pre-release instead of a published tag. Covers both `project:`/`ref:` and a `remote:` raw URL whose ref is a path segment. Set `ALLOW_UNSTABLE_LIBRARY_REFS: "true"` to downgrade it to a warning — testing only. |
 | `Chart:Check:README` | `check` | Validates that `helm-docs` generated documentation is up to date. |
 | `Chart:Check:Dependency` | `check` | Prevents release charts from depending on development chart repositories. *(Not run in `chart-build-and-push`.)* |
 | `Chart:Values:Lint` | `lint` | Validates YAML syntax of chart values files. *(Not run in `chart-build-and-push`.)* |
@@ -1072,7 +1073,7 @@ include:
 
 | Variable | Required | Default | Description |
 |---|---|---|---|
-| `PROJECT_CACHE_KEY` | Yes | — | Cache prefix. The pipeline appends lockfile hashes (`package-lock.json`, `uv.lock`, `go.sum`, `pom.xml`) so caches auto-invalidate. |
+| `PROJECT_CACHE_KEY` | Yes | — | Cache prefix. The pipeline appends lockfile hashes (`package-lock.json`, `uv.lock`, `go.sum`, `pom.xml`) so caches auto-invalidate. `common/` falls back to an empty string rather than failing, so an omission is *silently legal* — but not supported: every cache key then degrades to a bare lockfile hash and `sonarqube/` builds the literal `sonar-`, unreadable in the cache list and colliding the moment a repository grows a second stack. Declare it. |
 | `IMAGE_REPOSITORY` | Yes* | — | Image repository path in registry (e.g. `myorg/web-app`). |
 | `CHART_REPOSITORY` | No | `${CI_PROJECT_PATH}/helm` | Chart repository path. Auto-derived: whenever the value is not already rooted at `${CI_PROJECT_PATH}`, it is re-set to `${CI_PROJECT_PATH}/helm` (same prefix rule `IMAGE_REPOSITORY` uses). Only consumed by chart-dependency resolution — chart publishing uses the Package Registry and ignores it. |
 | `HELM_CHANNEL` | No | `dev` (RC builds) / `stable` (releases) | GitLab Helm Package Registry channel that `Chart:Push` publishes to. Set explicitly to override the automatic RC/release split. |

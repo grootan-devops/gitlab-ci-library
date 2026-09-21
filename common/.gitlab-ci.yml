@@ -411,6 +411,84 @@ variables:
       artifacts: true
       optional: true
 
+Common:Check:Library:Pin:
+  stage: check
+  extends:
+    - .check-job-common
+    - .common-init-rules
+  variables:
+    ALLOW_UNSTABLE_LIBRARY_REFS: "false"
+  script:
+    - CI_FILE=".gitlab-ci.yml"
+    - |
+      if [[ ! -f "${CI_FILE}" ]]; then
+          echo "No ${CI_FILE}; nothing to check."
+          exit 0
+        fi
+    - STABLE='^v?[0-9]+(\.[0-9]+){0,2}$'
+    - OFFENDERS=""
+    - CHECKED=0
+    - |
+      classify() {
+        if [[ "${1}" == *-* ]]; then
+          echo "a pre-release tag"
+        elif [[ "${1}" =~ ^[0-9a-f]{7,40}$ ]]; then
+          echo "a commit SHA"
+        else
+          echo "a branch"
+        fi
+      }
+    - |
+      # include: project: ... ref: ...
+      while read -r PROJECT REF; do
+        [[ -z "${PROJECT}" ]] && continue
+        CHECKED=$((CHECKED + 1))
+        if [[ -z "${REF}" ]]; then
+          OFFENDERS+="${PROJECT} -> <no ref> (defaults to the library's default branch)"$'\n'
+        elif [[ ! "${REF}" =~ ${STABLE} ]]; then
+          OFFENDERS+="${PROJECT} -> ${REF} ($(classify "${REF}"))"$'\n'
+        fi
+      done < <(yq -r '
+        [.include] | flatten | .[]
+        | select(tag == "!!map") | select(has("project"))
+        | .project + " " + (.ref // "")' "${CI_FILE}")
+    - |
+      # include: remote: <raw url>, and the bare-string shorthand. A GitHub-hosted
+      # library carries its ref as a path segment:
+      #   raw.githubusercontent.com/<org>/<repo>/<ref>/<file>
+      while read -r URL; do
+        [[ "${URL}" == https://raw.githubusercontent.com/* ]] || continue
+        REST="${URL#https://raw.githubusercontent.com/}"
+        ORG="${REST%%/*}"; REST="${REST#*/}"
+        REPO="${REST%%/*}"; REST="${REST#*/}"
+        REF="${REST%%/*}"
+        CHECKED=$((CHECKED + 1))
+        if [[ ! "${REF}" =~ ${STABLE} ]]; then
+          OFFENDERS+="${ORG}/${REPO} -> ${REF} ($(classify "${REF}"))"$'\n'
+        fi
+      done < <(
+        yq -r '[.include] | flatten | .[] | select(tag == "!!map") | select(has("remote")) | .remote' "${CI_FILE}"
+        yq -r '[.include] | flatten | .[] | select(tag == "!!str")' "${CI_FILE}"
+      )
+    - |
+      if [[ -z "${OFFENDERS}" ]]; then
+        echo "All ${CHECKED} library include(s) pin a stable release tag."
+        exit 0
+      fi
+    - COUNT="$(grep -c . <<<"${OFFENDERS}")"
+    - printf '%s' "${OFFENDERS}"
+    - |
+      if [[ "${ALLOW_UNSTABLE_LIBRARY_REFS,,}" == "true" ]]; then
+        echo "WARNING: ${COUNT} library include(s) do not pin a stable release tag. Failing is suppressed by ALLOW_UNSTABLE_LIBRARY_REFS, which is for testing only."
+        exit 0
+      fi
+    - >
+      echo "ERROR: ${COUNT} library include(s) do not pin a stable release tag."
+    - echo "A branch moves underneath the project, so the pipeline that passed review is not"
+    - echo "the one that ships and a release cannot be reproduced. Pin a published tag."
+    - exit 1
+
+
 .skip-on-master-rules:
   rules:
     - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
