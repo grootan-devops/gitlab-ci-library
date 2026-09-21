@@ -79,7 +79,7 @@ include:
 > `project:`. `include: project:` only resolves against another project on the same GitLab
 > instance; pointed at a GitHub path it fails at resolution. `remote:` takes one URL per
 > entry, so a multi-file include becomes one line per file.
-
+>
 > [!IMPORTANT]
 > The `1.0.0` segment in these URLs is the **git ref**, and it is illustrative — this
 > repository has published no tags, so that exact URL returns 404 today. Replace it with a
@@ -87,7 +87,7 @@ include:
 > templates live on `dev` only — `main` holds nothing but the README — so a working include
 > reads `.../gitlab-ci-library/dev/common/.gitlab-ci.yml`. A branch ref moves under you;
 > switch to a tag as soon as one is cut.
-
+>
 > [!NOTE]
 > `include: remote:` supports **no authentication**, so every file it fetches must be
 > publicly readable. This repository is public, which is what makes the URLs above work. If
@@ -106,7 +106,7 @@ flowchart LR
 ```
 
 | Stage | Purpose | Typical Jobs |
-|---|---|---|
+| --- | --- | --- |
 | `.pre` | Pre-flight variable validation & version discovery | `Workflow:Validate:Variables` *(gatekeeper)*, `Project:Version:Init` |
 | `init` | Environment initialization & metadata resolution | `Common:Init`, `Terraform:Init` |
 | `prepare` | Warm package manager caches (with dev dependencies) | `Node:Dependency:Download`, `Python:Dependency:Download`, `Go:Dependency:Download` |
@@ -162,7 +162,7 @@ flowchart TD
 Triggered on demand via GitLab **Web UI (Run pipeline)** or **API triggers** using the `WORKFLOW` variable:
 
 | `WORKFLOW` Value | Dynamic Pipeline Title | Description | Key Inputs |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | `full-pipeline` *(default)* | `▶️ Manual Full Pipeline Run` | Runs the complete end-to-end build, test, scan, package, push, and deploy/release flow. | `TARGET_VERSION` *(optional)* |
 | `build` | `▶️ Build & Unit Test Verification` | Fast-track verification: resolves version, downloads dependencies, builds project, and executes unit tests without packaging images/charts. | — |
 | `check` | `▶️ Release Prerequisites & Conflict Check` | Standalone pre-flight guard: validates git tag availability, image tag, chart version in registry, chart docs, and dependencies without building. | — |
@@ -182,7 +182,7 @@ Triggered on demand via GitLab **Web UI (Run pipeline)** or **API triggers** usi
 ### Comprehensive Execution Matrix
 
 | # | Workflow / Trigger Mode | Trigger Source | Automatic? | Stage Count | Job Count | Scope & Primary Purpose |
-|---|---|---|:---:|:---:|:---:|---|
+| --- | --- | --- | :---: | :---: | :---: | --- |
 | **1** | **MR to Protected Master** | `merge_request_event` to `master` / `*/master` (protected) | ✅ **Yes** | 10 | 27 | **Full Verification Suite**: Linters, unit tests, candidate container image & chart builds, CVE security scans, and SonarQube quality gate. |
 | **2** | **Production Release (Multi-Master)** | `push` / merge to `default_branch` (`master`) or protected `*/master` | ✅ **Yes** | 4 | 5 | **Lightweight Release Tagging & OCI Promotion**: Stamped on merge (~15s). Restores verification artifacts from MR, promotes candidate image/chart to prod via Crane & Helm, creates GitLab release, stamps Git tag, and alerts Teams. Zero builds/tests/scans. |
 | **3** | **Branch Push & Non-Master MR** | `push` to `dev` / `feature/*` or MR to `dev` | ❌ **No** | 0 | 0 | **Silenced / No Pipeline**: Prevents wasteful runner minute consumption on developer branch commits. |
@@ -260,6 +260,7 @@ flowchart TD
 > **Trigger:** Merge Request merged into `default_branch` (`master`) or protected `*/master`.  
 > **Philosophy:** Pure lightweight release stamping (~15 seconds) with zero redundant compilation, unit testing, or re-scanning.  
 > **Candidate Resolution & Direct Promotion:**
+>
 > 1. `Common:Init` on `master` queries GitLab API (`/projects/:id/repository/commits/:sha/merge_requests`) to discover the upstream MR and its latest successful verification pipeline `#<UPSTREAM_PIPELINE_ID>`.
 > 2. It exports the exact pre-built dev candidate version: `DEV_CANDIDATE_VERSION="${RELEASE_VERSION}-rc.${UPSTREAM_PIPELINE_ID}-${MR_IID}"`.
 > 3. `Image:Promote` uses **Crane** for layerless OCI promotion: pulls the candidate manifest directly from `registry.contoso.com/acme/<project>/dev:<DEV_CANDIDATE_VERSION>`, mutates the version label to `${TAG}`, and pushes to `registry.contoso.com/acme/<project>:${TAG}` along with `latest`, `${MAJOR_VERSION}`, and `${MINOR_VERSION}` tags.
@@ -357,7 +358,7 @@ flowchart LR
 ```
 
 | Job / Template | Stage | Description |
-|---|---|---|
+| --- | --- | --- |
 | `Common:Init` | `init` | Calculates `RELEASE_VERSION`, `APP_PUSH_VERSION`, `TAG`, `MAJOR_VERSION`, `MINOR_VERSION`, `CHART_NAME`, `CHART_PUSH_VERSION`. Exports `init.env`. |
 | `Changelog:Lint` | `lint` | Validates keepachangelog format in `CHANGELOG.md`. |
 | `Changelog:Check Existence` | `check` | Ensures `CHANGELOG.md` contains an entry for the version being released. |
@@ -383,7 +384,7 @@ flowchart LR
 ```
 
 | Job / Template | Type | Stage | Description |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | `.Node:24` | Template | — | Node.js 24 base image + `.npm` caching configuration. |
 | `.Node:Project:Version:Init` | Template | `.pre` | Reads `.version` from `package.json` and writes `version.env`. |
 | `.Node:Dependency:Download` | Template | `prepare` | Runs `npm ci --include=dev` into the `.npm` cache. |
@@ -410,7 +411,7 @@ flowchart LR
 ```
 
 | Job / Template | Type | Stage | Description |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | `.Python:12` | Template | — | Python 3.12 runtime base image + `.uv` cache. |
 | `.Python:Project:Version:Init` | Template | `.pre` | Extracts version from `pyproject.toml`. |
 | `.Python:Dependency:Download` | Template | `prepare` | Warms `.uv` cache via `uv sync --frozen --no-install-project --no-install-workspace`. |
@@ -439,7 +440,7 @@ flowchart LR
 ```
 
 | Job / Template | Type | Stage | Description |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | `Go:Dependency:Download` | Job | `prepare` | Warms Go module cache via `go mod download`. |
 | `Go:Fmt` | Job | `lint` | Enforces `go fmt` compliance. |
 | `Go:Vet` | Job | `lint` | Runs `go vet` with `// govet:ignore` suppression support. |
@@ -462,7 +463,7 @@ flowchart LR
 ```
 
 | Job / Template | Type | Stage | Description |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | `.Java:25` | Template | — | Java 25 runtime image + `.m2` local repository cache. |
 | `.Java:Project:Version:Init` | Template | `.pre` | Extracts `project.version` from `pom.xml`. |
 | `.Java:Dependency:Download` | Template | `prepare` | Runs `mvn dependency:go-offline`. |
@@ -485,7 +486,7 @@ flowchart LR
 ```
 
 | Job / Template | Stage | Description |
-|---|---|---|
+| --- | --- | --- |
 | `Docker:Lint` | `lint` | Hadolint Dockerfile linting with configurable ignores. |
 | `Image:Build` | `build` | Docker/BuildKit build with build-args injection and registry cache. Saves image tar artifact. |
 | `Image:Check Existence` | `check` | Verifies image tag does not already exist in registry before release. |
@@ -511,29 +512,29 @@ Every container image built by this platform adheres strictly to the **Packaging
    The `image/.docker.gitlab-ci.yml` builder automatically resolves and injects the following build-args into `docker build`. A Dockerfile pins nothing itself — bumping a base image is a change to one CI/CD variable pair in `common/.gitlab-ci.yml`.
 
 | Tech Stack | Injected CI Build-Arg | Variable pair | Current default |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | **Java** | `JAVA_25_MICRO_BASE_IMAGE` | `JAVA_25_MICRO_BASE_IMAGE_REPO` / `_TAG` | `registry-1.docker.io/grootantech/java-25:1.0.0` |
 | **Golang** | `MICRO_ROOT_BASE_IMAGE` | `MICRO_ROOT_BASE_IMAGE_REPO` / `_TAG` | `registry-1.docker.io/grootantech/micro-root:1.0.0` |
 | **Python** | `PYTHON_312_MICRO_BASE_IMAGE` | `PYTHON_312_MICRO_BASE_IMAGE_REPO` / `_TAG` | `registry-1.docker.io/grootantech/python-3-12:1.0.0` |
 | **Node.js Backend** | `NODE_JS_24_MICRO_BASE_IMAGE` | `NODE_JS_24_MICRO_BASE_IMAGE_REPO` / `_TAG` | `registry-1.docker.io/grootantech/node-24:1.0.0` |
 | **Node.js Frontend** | `NGINX_MICRO_BASE_IMAGE` | `NGINX_MICRO_BASE_IMAGE_REPO` / `_TAG` | `registry-1.docker.io/grootantech/micro-nginx:1.0.0` |
-| **Multi-stage builder** | `TOOLKIT_BUILD_IMAGE` | `TOOLKIT_BUILD_IMAGE_REPO` / `_TAG` | `registry-1.docker.io/grootantech/toolkit:verify-v2` |
+| **Multi-stage builder** | `TOOLKIT_BUILD_IMAGE` | `TOOLKIT_BUILD_IMAGE_REPO` / `_TAG` | `registry-1.docker.io/grootantech/toolkit:1.0.0` |
 | **All** | `VERSION` | — | `${APP_PUSH_VERSION}` |
 
    GitLab additionally injects `CI_DEPENDENCY_PROXY_GROUP_IMAGE_PREFIX` (with a trailing `/`), so a public base image is written `FROM ${CI_DEPENDENCY_PROXY_GROUP_IMAGE_PREFIX}redhat/ubi9-minimal:${TAG}` with no separator. **GitHub has no Dependency Proxy and injects no equivalent** — a Dockerfile shared between the two platforms must give that ARG a default.
 
-4. **Base image selection**:
+1. **Base image selection**:
    Use the runtime image matching the project language; fall back to `MICRO_ROOT_BASE_IMAGE` when no language image fits. **A runtime stage is never built `FROM` a build image.** A `*_BUILD_IMAGE` carries compilers, package managers and credential helpers, all of which would ship to production — it belongs in a builder stage only.
 
-5. **Tags are pinned, never floating**:
+2. **Tags are pinned, never floating**:
    No `:latest`, and no untagged reference. A literal image carries an explicit tag with a `# renovate:` annotation on the line above so the bot can bump it. A `FROM ${VAR}` reference needs no tag: CI resolves it from the variable pair above.
 
-6. **Runtime instructions**:
+3. **Runtime instructions**:
    - `EXPOSE` is required on a service image. It is the image's only self-describing contract, and the chart's `containerPort` is unverifiable without it.
    - **Prefer `CMD`.** It states the default command while leaving an operator free to override it with `docker run <image> <cmd>`.
    - Use `ENTRYPOINT` only to invoke a pre-start shim — a script that must substitute configuration before the service starts. If that shim `exec`s the service as its last action it becomes PID 1 and needs nothing further. If it forks, or leaves children running, `exec` through `dumb-init` so signals and zombie reaping work: `exec /usr/bin/dumb-init -- nginx -g "daemon off;"`.
 
-7. **Layout: the `USER` bracket, grouping and layers**:
+4. **Layout: the `USER` bracket, grouping and layers**:
    - `USER 0` immediately after the runtime stage's `FROM`, opening the root setup phase. `USER 10001:10001` closes it, before the runtime instructions. A builder stage is discarded and needs no `USER 0` — declaring one there trips hadolint `DL3002` ("last USER should not be root"), which is evaluated per stage and gates `Docker:Lint`.
    - Group by instruction kind and separate groups with one blank line. Instructions that form a single unit — a run of `COPY`s, one install-and-chown `RUN` — stay together with no blank line between them, under one comment saying what the group is for.
    - **Merge consecutive `RUN`s.** Each one is a layer, and a layer keeps whatever the previous one left behind. Chain with `&& \` instead.
@@ -810,12 +811,12 @@ To enforce strict packaging hygiene, minimize Docker build context transfer to u
 ##### Stack-by-Stack `.dockerignore` Reference
 
 | Tech Stack | Allowlisted Packaging Targets | Sample `.dockerignore` |
-|---|---|---|
-| **Python** (`uv` + `src/` layout) | `pyproject.toml`, `uv.lock`, `.uv/`, `src/` | `**`<br/>`*`<br/>`!pyproject.toml`<br/>`!uv.lock`<br/>`!.uv`<br/>`!.uv/**`<br/>`!src`<br/>`!src/**` |
-| **Java** (Spring Boot Fat JAR) | Maven (`target/*.jar`) or Gradle (`build/libs/*.jar`) | `**`<br/>`*`<br/>`!target/*.jar`<br/>`!build/libs/*.jar` |
-| **Golang** (Static Binary) | Pre-compiled binary (`bin/`) | `**`<br/>`*`<br/>`!bin/`<br/>`!bin/*` |
-| **Node.js Frontend** (Nginx SPA) | Static bundle (`dist/`), `nginx.conf` | `**`<br/>`*`<br/>`!dist/`<br/>`!dist/**`<br/>`!nginx.conf` |
-| **Node.js Backend** (Express / NestJS) | `dist/`, `.npm` cache, `package*.json` | `**`<br/>`*`<br/>`!dist/`<br/>`!dist/**`<br/>`!package.json`<br/>`!package-lock.json`<br/>`!.npm`<br/>`!.npm/**` |
+| --- | --- | --- |
+| **Python** (`uv` + `src/` layout) | `pyproject.toml`, `uv.lock`, `.uv/`, `src/` | `**`, `*`, `!pyproject.toml`, `!uv.lock`, `!.uv`, `!.uv/**`, `!src`, `!src/**` |
+| **Java** (Spring Boot Fat JAR) | Maven (`target/*.jar`) or Gradle (`build/libs/*.jar`) | `**`, `*`, `!target/*.jar`, `!build/libs/*.jar` |
+| **Golang** (Static Binary) | Pre-compiled binary (`bin/`) | `**`, `*`, `!bin/`, `!bin/*` |
+| **Node.js Frontend** (Nginx SPA) | Static bundle (`dist/`), `nginx.conf` | `**`, `*`, `!dist/`, `!dist/**`, `!nginx.conf` |
+| **Node.js Backend** (Express / NestJS) | `dist/`, `.npm` cache, `package*.json` | `**`, `*`, `!dist/`, `!dist/**`, `!package.json`, `!package-lock.json`, `!.npm`, `!.npm/**` |
 
 ---
 
@@ -839,7 +840,7 @@ flowchart LR
 > the `lint` / `check` / `full-pipeline` workflows, but are **excluded from `chart-build-and-push`**.
 
 | Job | Stage | Description |
-|---|---|---|
+| --- | --- | --- |
 | `Chart:Lint` | `lint` | `helm lint --strict` with optional value overrides. |
 | `.Chart:UnitTest` | `test` | **Optional, opt-in.** Renders a mock consumer chart at `${CHART_DIR}/${MOCK_CHART}` with `helm unittest --strict` and publishes a JUnit report. Hidden template — declare `Chart:UnitTest: {extends: .Chart:UnitTest}` to enable. For repositories that *ship* a chart others depend on; requires the `unittest` Helm plugin in the job image. |
 | `Chart:Check Existence` | `check` | Checks whether the chart version already exists in the GitLab Helm Package Registry. |
@@ -964,7 +965,9 @@ flowchart LR
 - **ArgoCD**: `Deploy:ArgoCD:Validate:Chart:<env>` and `Deploy:ArgoCD:Validate:Image:<env>` verify target chart and image exist in OCI registry before `Deploy:ArgoCD:<env>` commits GitOps changes and syncs ArgoCD.
 
 #### Komodo Deployment Component (`deploy/gitops/.komodo.gitlab-ci.yml`)
+
 Deploys container images to Komodo stacks via GitOps Docker Compose updates and triggers the Komodo API:
+
 ```yaml
 include:
   - remote: 'https://raw.githubusercontent.com/grootan-devops/gitlab-ci-library/1.0.0/deploy/gitops/.komodo.gitlab-ci.yml'
@@ -980,9 +983,11 @@ include:
 ```
 
 #### ArgoCD Deployment Component (`deploy/gitops/.argocd.gitlab-ci.yml`)
+
 Supports both **Helm-based** (App-of-Apps values) and **Manifest-based** (raw Kubernetes YAML) deployments with strict automated validation:
 
 ##### Option A: Helm-Based Deployment
+
 ```yaml
 include:
   - remote: 'https://raw.githubusercontent.com/grootan-devops/gitlab-ci-library/1.0.0/deploy/gitops/.argocd.gitlab-ci.yml'
@@ -996,6 +1001,7 @@ include:
 ```
 
 ##### Option B: Manifest-Based Deployment
+
 ```yaml
 include:
   - remote: 'https://raw.githubusercontent.com/grootan-devops/gitlab-ci-library/1.0.0/deploy/gitops/.argocd.gitlab-ci.yml'
@@ -1009,12 +1015,14 @@ include:
 ```
 
 ##### Strict Parameter & Validation Rules (Hard Fail)
+
 - **Host & Token Guards**: Pipelines immediately hard-fail if `gitops_repo_url`, `gitops_branch`, `argocd_server`/`komodo_server`, or `argocd_token`/`komodo_api_key`/`komodo_api_secret` are empty.
 - **Mutual Exclusivity**: You cannot specify both `gitops_chart_values_file` and `gitops_manifest_file`.
 - **Helm Mode**: If `gitops_chart_values_file` is specified, `gitops_chart_app_yq_path` is strictly mandatory. If `gitops_image_values_file` is also provided, `gitops_image_repo_yq_path` and `gitops_image_tag_yq_path` are both mandatory.
 - **Manifest Mode**: If `gitops_manifest_file` is specified, `gitops_new_image` is strictly mandatory. Direct container image update occurs without container name filtering.
 
 #### Direct GitLab Deployment Component (`deploy/gitlab/.gitlab-ci.yml`)
+
 ```yaml
 include:
   - remote: 'https://raw.githubusercontent.com/grootan-devops/gitlab-ci-library/1.0.0/deploy/gitlab/.gitlab-ci.yml'
@@ -1029,7 +1037,7 @@ include:
 
 ---
 
-### release & notify (`release/.gitlab-ci.yml`)
+### release & notify
 
 ```mermaid
 flowchart LR
@@ -1072,7 +1080,7 @@ include:
 ## Key Variables & Configuration
 
 | Variable | Required | Default | Description |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | `PROJECT_CACHE_KEY` | Yes | — | Cache prefix. The pipeline appends lockfile hashes (`package-lock.json`, `uv.lock`, `go.sum`, `pom.xml`) so caches auto-invalidate. `common/` falls back to an empty string rather than failing, so an omission is *silently legal* — but not supported: every cache key then degrades to a bare lockfile hash and `sonarqube/` builds the literal `sonar-`, unreadable in the cache list and colliding the moment a repository grows a second stack. Declare it. |
 | `IMAGE_REPOSITORY` | Yes* | — | Image repository path in registry (e.g. `myorg/web-app`). |
 | `CHART_REPOSITORY` | No | `${CI_PROJECT_PATH}/helm` | Chart repository path. Auto-derived: whenever the value is not already rooted at `${CI_PROJECT_PATH}`, it is re-set to `${CI_PROJECT_PATH}/helm` (same prefix rule `IMAGE_REPOSITORY` uses). Only consumed by chart-dependency resolution — chart publishing uses the Package Registry and ignores it. |
@@ -1141,7 +1149,7 @@ sbom:
 All security scanning jobs evaluate results using standard status codes:
 
 | Exit Code | Meaning | Pipeline Result |
-|---|---|---|
+| --- | --- | --- |
 | `0` | Clean scan — all checks passed. | Success ✅ |
 | `1` | Fixable vulnerabilities found, stale ignore entries, or invalid reasons. | Failed ❌ |
 | `2` | Warnings only — unfixable vulnerabilities or approved ignored entries. | Allowed Failure ⚠️ |
@@ -1151,7 +1159,9 @@ All security scanning jobs evaluate results using standard status codes:
 ## DevOps Reference & Platform Defaults
 
 ### Group-Injected CI/CD Variables
+
 Configure at the top-level GitLab Group (or instance settings) to automatically propagate to all projects:
+
 - **Registries**: `IMAGE_REGISTRY`, `IMAGE_REGISTRY_USERNAME`, `IMAGE_REGISTRY_PASSWORD`, `CHART_REGISTRY`, `CHART_REGISTRY_USERNAME`, `CHART_REGISTRY_PASSWORD`
   - ⚠️ The `CHART_REGISTRY*` trio is **only** used to `helm registry login` so `helm dependency update` can pull chart dependencies (e.g. the shared `tpllib` library chart) from an OCI registry. It is **not** used to publish charts — see below.
 - **Security & Quality**: `SONAR_URL`, `SONAR_EXTERNAL_URL`, `SONARQUBE_TOKEN`, `TRIVY_HOST`
@@ -1166,10 +1176,12 @@ Charts are published to the project's own [GitLab Helm Package Registry](https:/
 - **Auth**: `gitlab-ci-token:${CI_JOB_TOKEN}`, supplied inline per request. Because the target is always the pipeline's *own* project, the job token is always sufficient — no deploy token, and no `helm registry login`.
 - **Channels**: `dev` for release-candidate builds (any version carrying `RC_VERSION_SUFFIX`), `stable` for releases. A `stable` publish is also mirrored into `dev` so downstream dev consumers resolve a single channel. Override with `HELM_CHANNEL`.
 - **Consuming a published chart**:
+
   ```bash
   helm repo add myproj "${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/packages/helm/stable" \
     --username gitlab-ci-token --password "${CI_JOB_TOKEN}"
   ```
+
   Published charts are browsable under **Deploy → Package Registry** in the project.
 
 ### Container Image Publishing & Authentication
@@ -1529,7 +1541,7 @@ include:
 
 ---
 
-### 6. Terraform Infrastructure / Reusable Module
+### 6. Terraform Infrastructure / Module Registry
 
 ```yaml
 # .gitlab-ci.yml
@@ -1559,6 +1571,7 @@ module "vpc" {
 ### 7. Monorepo with Triggered Child Pipelines
 
 **Root `.gitlab-ci.yml`:**
+
 ```yaml
 include:
   - remote: 'https://raw.githubusercontent.com/grootan-devops/gitlab-ci-library/1.0.0/mono/.gitlab-ci.yml'
@@ -1595,6 +1608,7 @@ frontend:
 ```
 
 **`backend/.gitlab-ci.yml` (Child pipeline):**
+
 ```yaml
 include:
   - remote: 'https://raw.githubusercontent.com/grootan-devops/gitlab-ci-library/1.0.0/common/.mono.gitlab-ci.yml'
@@ -1697,6 +1711,7 @@ Project:Unit:Test:
 ```
 
 > **Trigger via GitLab UI / API / Rules**:
+>
 > - Manual Web Dispatch: Set variable `WORKFLOW = "build"`
 > - **Executed Stages & Jobs**:
 >   1. `.pre`: `Project:Version:Init`
@@ -1727,6 +1742,7 @@ Project:Version:Init:
 ```
 
 > **Trigger via GitLab UI / API / Rules**:
+>
 > - Manual Web Dispatch: Set variable `WORKFLOW = "check"`
 > - **Executed Stages & Jobs**:
 >   1. `.pre`: `Project:Version:Init`
@@ -1742,7 +1758,7 @@ Project:Version:Init:
 
 ---
 
-## Migration Guide
+## Migration Guide & Standard
 
 The initial public release is `1.0.0`. No migration is required. Future breaking releases will document consumer actions in [`MIGRATION.md`](./MIGRATION.md).
 
