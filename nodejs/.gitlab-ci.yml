@@ -1,0 +1,126 @@
+.node-common:
+  stage: prepare
+  variables:
+    NODE_ENV: production
+    npm_config_cache: ${CI_PROJECT_DIR}/${PROJECT_PATH}/.npm
+  cache:
+    key:
+      files:
+        - package-lock.json
+      prefix: ${PROJECT_CACHE_KEY}
+    when: always
+    policy: pull
+    paths:
+      - ${PROJECT_PATH}/.npm/
+  needs:
+    - job: Common:Init
+      artifacts: true
+      optional: true
+
+.Node:Project:Version:Init:
+  stage: .pre
+  extends:
+    - .lifecycle-rules
+  script:
+    - echo "RELEASE_VERSION=$(jq -r .version package.json)" 2>&1 | tee -a version.env
+  artifacts:
+    name: Env File
+    expose_as: Env File
+    when: always
+    expire_in: 1 week
+    paths:
+      - ${PROJECT_PATH}/version.env
+    reports:
+      dotenv: ${PROJECT_PATH}/version.env
+
+.Node:24:
+  image:
+    name: ${NODE_JS_24_MICRO_BASE_IMAGE_REPO}:${NODE_JS_24_MICRO_BASE_IMAGE_TAG}
+    entrypoint: [""]
+  extends:
+    - .node-common
+
+.Node:Dependency:Download:
+  stage: prepare
+  extends:
+    - .build-test-rules
+  cache:
+    policy: pull-push
+  script:
+    - npm ci --include=dev --prefer-offline --no-audit --no-fund
+
+.Node:Build:
+  stage: build
+  extends:
+    - .build-test-rules
+  cache:
+    policy: pull
+  needs:
+    - job: Common:Init
+      artifacts: true
+      optional: true
+    - job: Node:Dependency:Download
+      artifacts: false
+      optional: true
+
+Node:Lint:
+  stage: lint
+  extends:
+    - .lint-workflow-rules
+  variables:
+    BIOME_REPORT: biome-report.txt
+  script:
+    - set -e
+    - |
+      if [[ ! -f "biome.json" ]]; then
+        echo "ERROR: biome.json not found in ${PROJECT_PATH}"
+        echo ""
+        echo "Create biome.json at your project root with this starter config:"
+        echo '{
+        "$schema": "https://biomejs.dev/schemas/2.3.11/schema.json",
+        "formatter": {
+          "lineWidth": 320
+        },
+        "files": {
+          "includes": ["**/*.ts", "**/*.tsx", "**/*.js", "**/*.jsx", "**/*.json", "**/*.html", "**/*.css", "**/*.scss", "!!node_modules", "!!dist", "!!coverage"]
+        }
+      }'
+        exit 1
+      fi
+    # the capture now lives in a single - | block, so no echo comes between the command and $?: dont convert to list of script exit code wont work.
+    - |
+      set +e
+      biome check --max-diagnostics=none > "${BIOME_REPORT}" 2>&1
+      BIOME_EXIT=$?
+      set -e
+      cat "${BIOME_REPORT}"
+      exit "${BIOME_EXIT}"
+  needs:
+    - job: Common:Init
+      artifacts: false
+      optional: true
+
+.Node:Test:Unit:
+  stage: test
+  extends:
+    - .unit-test-workflow-rules
+  variables:
+    NODE_ENV: test
+  cache:
+    policy: pull
+  needs:
+    - job: Common:Init
+      artifacts: true
+      optional: true
+    - job: Node:Dependency:Download
+      artifacts: false
+      optional: true
+  artifacts:
+    name: Unit Test Report
+    expose_as: Unit Test Report
+    when: always
+    expire_in: 1 week
+    paths:
+      - ${TEST_REPORT_DIR}/
+    reports:
+      junit: ${TEST_REPORT_DIR}/junit.xml
