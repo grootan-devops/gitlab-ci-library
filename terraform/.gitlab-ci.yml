@@ -59,6 +59,11 @@ Terraform:Init:
     - .terraform-common
     - .terraform-workflow-rules
   script:
+    - |
+      if [[ -z "${TF_STATE_NAME}" ]]; then
+        echo "TF_STATE_NAME is empty. Set it to the workspace key prefix component for this Terraform root, e.g. 'network' or 'platform'. Without it every root in this project writes to the same state key."
+        exit 1
+      fi
     - terraform init -input=false -no-color -backend-config="workspace_key_prefix=${CI_PROJECT_PATH_SLUG}/${TF_STATE_NAME}" -reconfigure
   needs:
     - job: Common:Init
