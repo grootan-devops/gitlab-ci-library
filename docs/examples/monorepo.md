@@ -61,7 +61,7 @@ Project:Version:Init:
 Node:Dependency:Download:
   extends:
     - .Node:24
-    - .Node:Dependency:Download
+    - Dependency:Download
 
 Project:Build:
   extends:

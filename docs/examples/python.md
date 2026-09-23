@@ -25,7 +25,7 @@ Project:Version:Init:
 Python:Dependency:Download:
   extends:
     - .Python:12
-    - .Python:Dependency:Download
+    - Dependency:Download
 
 Project:Unit:Test:
   extends:

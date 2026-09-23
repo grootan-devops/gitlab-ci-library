@@ -14,10 +14,10 @@ include:
 Project:Version:Init:
   extends: .Node:Project:Version:Init
 
-Node:Dependency:Download:
+Dependency:Download:
   extends:
     - .Node:24
-    - .Node:Dependency:Download
+    - Dependency:Download
 
 Project:Build:
   extends:

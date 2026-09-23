@@ -25,7 +25,7 @@ Project:Version:Init:
 Java:Dependency:Download:
   extends:
     - .Java:25
-    - .Java:Dependency:Download
+    - Dependency:Download
 
 Project:Build:
   extends:
