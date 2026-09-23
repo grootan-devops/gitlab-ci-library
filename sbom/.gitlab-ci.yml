@@ -12,7 +12,7 @@ SBOM:Generate:
           mkdir -p ~/.m2
           ln -sf "${CI_PROJECT_DIR}/${PROJECT_PATH}/.m2/repository" ~/.m2/repository 2>/dev/null || true
         elif command -v mvn >/dev/null 2>&1; then
-          echo "WARNING: Maven cache did not restore - resolving dependencies inline. Instantiate Dependency:Download to avoid this."
+          echo "WARNING: Maven cache did not restore - resolving dependencies inline. Instantiate Java:Dependency:Download to avoid this."
           (cd "${PROJECT_PATH}" && (mvn dependency:go-offline -q -B -DskipTests || mvn dependency:resolve -q -B -DskipTests || true))
         fi
       fi
@@ -45,7 +45,7 @@ SBOM:Generate:
     - job: Trivy:Cache:Warm
       artifacts: false
       optional: true
-    - job: Dependency:Download
+    - job: Java:Dependency:Download
       artifacts: false
       optional: true
 

@@ -177,7 +177,7 @@ CMD ["uvicorn", "src.main:app", "--host", "0.0.0.0", "--port", "8080"]
 ### 4. Node.js Backend (NestJS, Strapi, Express)
 
 - **Base Image**: `${NODE_JS_24_MICRO_BASE_IMAGE}`
-- **Build Artifacts Copied**: Pre-compiled TypeScript output (`dist/`) and `package*.json`. Production dependencies are installed **offline in the image** from the `.npm` cache `Dependency:Download` warmed — `node_modules/` is cached, never artifacted.
+- **Build Artifacts Copied**: Pre-compiled TypeScript output (`dist/`) and `package*.json`. Production dependencies are installed **offline in the image** from the `.npm` cache `Node:Dependency:Download` warmed — `node_modules/` is cached, never artifacted.
 - **File Ownership & Permissions**: `COPY --chown=10001:10001 ...`
 - **Runtime Environment**: `ENV NODE_ENV=production PORT=8080`
 

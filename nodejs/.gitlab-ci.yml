@@ -59,7 +59,7 @@
     - job: Common:Init
       artifacts: true
       optional: true
-    - job: Dependency:Download
+    - job: Node:Dependency:Download
       artifacts: false
       optional: true
 
@@ -112,7 +112,7 @@ Node:Lint:
     - job: Common:Init
       artifacts: true
       optional: true
-    - job: Dependency:Download
+    - job: Node:Dependency:Download
       artifacts: false
       optional: true
   artifacts:
