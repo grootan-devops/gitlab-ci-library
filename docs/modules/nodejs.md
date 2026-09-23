@@ -1,5 +1,9 @@
 # nodejs
 
+Consumers define `Node:Dependency:Download` by extending `.Node:24` and
+`.Node:Dependency:Download`. It warms the `.npm` cache with the shared
+`PROJECT_CACHE_KEY`; build, test, and image jobs that need those packages restore the same cache.
+
 Full lifecycle support for Node.js / TypeScript / Frontend / Backend applications using npm and Biome.
 
 ```mermaid

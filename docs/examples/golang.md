@@ -4,7 +4,7 @@
 # .gitlab-ci.yml
 variables:
   BINARY_NAME: auth-service
-  PROJECT_CACHE_KEY: auth-service-go
+  PROJECT_CACHE_KEY: go
   IMAGE_REPOSITORY: myorg/auth
   CHART_REPOSITORY: myorg/helm
   ADDITIONAL_RELEASE_ARTIFACT: ${BINARY_NAME}

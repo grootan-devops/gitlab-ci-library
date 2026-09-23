@@ -51,7 +51,7 @@ include:
   - remote: 'https://raw.githubusercontent.com/grootan-devops/gitlab-ci-library/1.0.0/release/.gitlab-ci.yml'
 
 variables:
-  PROJECT_CACHE_KEY: myapp-backend
+  PROJECT_CACHE_KEY: node-backend
   IMAGE_REPOSITORY: myteam/myapp-backend
   PROJECT_PATH: ./backend
 

@@ -5,7 +5,7 @@ Fast verification pipeline for rapid developer testing without container image b
 ```yaml
 # .gitlab-ci.yml
 variables:
-  PROJECT_CACHE_KEY: myapp-build-test
+  PROJECT_CACHE_KEY: node
 
 include:
   - remote: 'https://raw.githubusercontent.com/grootan-devops/gitlab-ci-library/1.0.0/common/.gitlab-ci.yml'

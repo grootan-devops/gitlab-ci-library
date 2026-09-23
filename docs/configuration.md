@@ -4,7 +4,7 @@
 
 | Variable | Required | Default | Description |
 | --- | --- | --- | --- |
-| `PROJECT_CACHE_KEY` | Yes | — | Cache prefix. The pipeline appends lockfile hashes (`package-lock.json`, `uv.lock`, `go.sum`, `pom.xml`) so caches auto-invalidate. `common/` falls back to an empty string rather than failing, so an omission is *silently legal* — but not supported: every cache key then degrades to a bare lockfile hash and `sonarqube/` builds the literal `sonar-`, unreadable in the cache list and colliding the moment a repository grows a second stack. Declare it. |
+| `PROJECT_CACHE_KEY` | Yes | — | Stable cache key shared by the stack's dependency-download job and every job that restores its dependency cache, including `Image:Build`. Use the stack name (`python`, `java`, `node`, `go`, or `terraform`), optionally followed by a monorepo scope such as `node-admin`; do not append a lockfile hash. `common/` defaults it to an empty string, but declare a nonempty value so cache readers restore the warmed cache. |
 | `IMAGE_REPOSITORY` | Yes* | — | Image repository path in registry (e.g. `myorg/web-app`). |
 | `CHART_REPOSITORY` | OCI publishing | `helm` | OCI namespace/path without the chart name. Set for your registry; Docker Hub uses the namespace root, e.g. `grootantech`. Ignored by GitLab package publishing. |
 | `CHART_REGISTRY` | No | Empty | OCI hostname, optionally with port. Empty selects the current project's GitLab Helm Package Registry. |

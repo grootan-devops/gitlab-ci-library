@@ -9,6 +9,13 @@ Shared GitLab CI/CD library
 Choose your project shape in the [integration examples](docs/examples/README.md), then follow the
 [getting-started guide](docs/getting-started.md). Keep only the modules your project needs.
 
+Language modules use stack-specific dependency download jobs: `Python:Dependency:Download`,
+`Java:Dependency:Download`, and `Node:Dependency:Download`. Go provides
+`Go:Dependency:Download` directly. Their cache is warmed once and restored by `Image:Build`
+with the same `PROJECT_CACHE_KEY`; see the [Python service example](docs/examples/python.md).
+The Python CI download job uses the toolkit build image; the Dockerfile's micro image is
+reserved for the production container.
+
 ## Documentation
 
 | Task | Read |

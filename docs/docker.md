@@ -122,14 +122,16 @@ CMD ["/app/api-service"]
 ### 3. Python Microservice (FastAPI / Flask / Worker with `uv`)
 
 - **Base Image**: `${PYTHON_312_MICRO_BASE_IMAGE}`
-- **Storage Strategy**: **Pattern A (Cache-Only with BuildKit Bind Mount)** — Zero bytes of dependencies in GitLab coordinator artifact storage. `Image:Build` pulls the `.uv` cache directly from Runner Cache, and `Project:Build` exports only lightweight package archives (`dist/`, ~8 KB).
-- **BuildKit Bind Mount**: The `.uv` cache folder is mounted temporarily via `--mount=type=bind,source=.uv,target=/tmp/.uv`. It is **never copied** into the image filesystem, ensuring zero layer bloat.
+- **CI/runtime image distinction**: `Python:Dependency:Download` uses the Python 3.12 CI build image through `.Python:12`; the Dockerfile uses `${PYTHON_312_MICRO_BASE_IMAGE}` as the production runtime.
+- **Storage Strategy**: **Cache-only with a BuildKit bind mount** — no dependency artifacts are uploaded. `Python:Dependency:Download` warms `.uv`, and `Image:Build` restores the same cache key/path for the Docker build. Containerized Python services do not need `Project:Build` unless they separately produce a build artifact.
+- **BuildKit Bind Mount**: The `.uv` cache folder is mounted read-write temporarily via `--mount=type=bind,source=.uv,target=/tmp/.uv,rw`. It is **never copied** into the image filesystem, ensuring zero layer bloat.
 - **Environment**: `ENV PATH="/app/.venv/bin:$PATH"` (`PYTHONUNBUFFERED=1` is pre-configured in the base image).
 - **File Ownership & Permissions**: `COPY --chown=10001:10001 ...` and `chown -R 10001:10001 /app`
 - **Zero Internet Access**: `uv sync` installs strictly offline from the mounted `/tmp/.uv` in milliseconds.
 
 ```dockerfile
 ARG PYTHON_312_MICRO_BASE_IMAGE
+
 FROM ${PYTHON_312_MICRO_BASE_IMAGE}
 
 USER 0
@@ -137,21 +139,19 @@ USER 0
 WORKDIR /app
 ENV PATH="/app/.venv/bin:$PATH"
 
-# Copy locked dependency manifests
-COPY --chown=10001:10001 pyproject.toml uv.lock ./
+COPY pyproject.toml uv.lock ./
 
-# Mount pre-warmed CI cache via Buildx, install production dependencies offline, set ownership
-RUN --mount=type=bind,source=.uv,target=/tmp/.uv \
+RUN --mount=type=bind,source=.uv,target=/tmp/.uv,rw \
     uv sync --frozen --no-dev --no-install-project --no-install-workspace --offline --cache-dir /tmp/.uv && \
     chown -R 10001:10001 /app
 
-# Copy application source code with non-root ownership
-COPY --chown=10001:10001 src/ /app/src/
+COPY --chown=10001:10001 app/ /app/app/
+COPY --chown=10001:10001 main.py config.py /app/
 
 USER 10001:10001
-EXPOSE 8080
+EXPOSE 3000
 
-CMD ["uvicorn", "src.main:app", "--host", "0.0.0.0", "--port", "8080"]
+CMD ["python", "main.py"]
 ```
 
 ```dockerignore
@@ -167,9 +167,11 @@ CMD ["uvicorn", "src.main:app", "--host", "0.0.0.0", "--port", "8080"]
 !.uv
 !.uv/**
 
-# Application source code
-!src
-!src/**
+# Application source code and runtime entry files
+!app
+!app/**
+!main.py
+!config.py
 ```
 
 ---
@@ -196,7 +198,7 @@ COPY --chown=10001:10001 package*.json /app/
 
 # Mount the pre-warmed CI cache via Buildx, install production dependencies offline,
 # and set ownership
-RUN --mount=type=bind,source=.npm,target=/tmp/.npm,ro \
+RUN --mount=type=bind,source=.npm,target=/tmp/.npm,rw \
     npm ci --omit=dev --offline --no-audit --no-fund --cache /tmp/.npm && \
     chown -R 10001:10001 /app
 

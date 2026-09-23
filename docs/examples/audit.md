@@ -5,7 +5,7 @@ For repositories wanting lightweight security and quality gates without packagin
 ```yaml
 # .gitlab-ci.yml
 variables:
-  PROJECT_CACHE_KEY: audit-repo
+  PROJECT_CACHE_KEY: node-audit
 
 include:
   - remote: 'https://raw.githubusercontent.com/grootan-devops/gitlab-ci-library/1.0.0/common/.gitlab-ci.yml'

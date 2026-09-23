@@ -12,6 +12,9 @@ this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ### Changed
 
 - Split the README into a task index with focused module, configuration and integration guides.
+- Restore stack-scoped dependency download examples and use the shared `PROJECT_CACHE_KEY` for cache handoff into image builds.
+- Refresh the Python microservice example with the tested BuildKit `.uv` bind mount and application layout.
+- Clarify that Python and Java CI anchors use build images, not production micro images, and document the Docker build path arguments.
 - Preserve complete examples while reducing the documentation loaded for a single task.
 - Describe each module's purpose in the module index.
 - Select OCI publishing when `CHART_REGISTRY` is configured; otherwise use the current project's GitLab Helm Package Registry.

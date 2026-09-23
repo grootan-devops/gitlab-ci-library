@@ -3,7 +3,7 @@
 ```yaml
 # .gitlab-ci.yml
 variables:
-  PROJECT_CACHE_KEY: tf-vpc-module
+  PROJECT_CACHE_KEY: terraform-vpc-module
   RELEASE_VERSION: 1.0.0
   TF_STATE_NAME: vpc-infrastructure
 

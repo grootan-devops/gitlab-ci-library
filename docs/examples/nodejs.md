@@ -5,7 +5,7 @@
 variables:
   IMAGE_REPOSITORY: "myorg/web-app"
   CHART_REPOSITORY: "myorg/helm"
-  PROJECT_CACHE_KEY: "myorg-website-backend"
+  PROJECT_CACHE_KEY: "node"
 
   DEPLOY_TARGET:
     value: "komodo-staging"
