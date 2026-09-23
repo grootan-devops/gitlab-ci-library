@@ -196,7 +196,7 @@ COPY --chown=10001:10001 package*.json /app/
 
 # Mount the pre-warmed CI cache via Buildx, install production dependencies offline,
 # and set ownership
-RUN --mount=type=bind,source=.npm,target=/tmp/.npm,rw \
+RUN --mount=type=bind,source=.npm,target=/tmp/.npm,ro \
     npm ci --omit=dev --offline --no-audit --no-fund --cache /tmp/.npm && \
     chown -R 10001:10001 /app
 

@@ -1,5 +1,6 @@
 Sonarqube:
   stage: qa
+  when: always
   extends:
     - .sonarqube-workflow-rules
   image: ${SONAR_SCANNER_CLI_IMAGE_REPO}:${SONAR_SCANNER_CLI_IMAGE_TAG}
