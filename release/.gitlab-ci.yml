@@ -306,6 +306,7 @@ Release:
   needs:
     - job: Release:Upload
       artifacts: true
+      optional: false
     - job: Common:Init
       artifacts: true
       optional: true

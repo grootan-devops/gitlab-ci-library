@@ -96,23 +96,23 @@ variables:
   # --- Notifications: Microsoft Teams Adaptive Cards ---
   # RELEASE_MESSAGE_TEAMS_WORKFLOWS_URL: ""
 
-  MICRO_ROOT_BASE_IMAGE_REPO: registry-1.docker.io/grootantech/micro-root
+  MICRO_ROOT_BASE_IMAGE_REPO: grootantech/micro-root
   MICRO_ROOT_BASE_IMAGE_TAG: 1.0.0
-  NGINX_MICRO_BASE_IMAGE_REPO: registry-1.docker.io/grootantech/micro-nginx
+  NGINX_MICRO_BASE_IMAGE_REPO: grootantech/micro-nginx
   NGINX_MICRO_BASE_IMAGE_TAG: 1.0.0
-  PYTHON_312_MICRO_BASE_IMAGE_REPO: registry-1.docker.io/grootantech/micro-python-3-12
+  PYTHON_312_MICRO_BASE_IMAGE_REPO: grootantech/micro-python-3-12
   PYTHON_312_MICRO_BASE_IMAGE_TAG: 1.0.0
-  JAVA_25_MICRO_BASE_IMAGE_REPO: registry-1.docker.io/grootantech/micro-java-25
+  JAVA_25_MICRO_BASE_IMAGE_REPO: grootantech/micro-java-25
   JAVA_25_MICRO_BASE_IMAGE_TAG: 1.0.0
-  NODE_JS_24_MICRO_BASE_IMAGE_REPO: registry-1.docker.io/grootantech/micro-node-24
+  NODE_JS_24_MICRO_BASE_IMAGE_REPO: grootantech/micro-node-24
   NODE_JS_24_MICRO_BASE_IMAGE_TAG: 1.0.0
 
-  DOCKER_DIND_IMAGE_REPO: registry-1.docker.io/docker
+  DOCKER_DIND_IMAGE_REPO: docker
   DOCKER_DIND_IMAGE_TAG: "29.3.1-dind"
-  BUILDKIT_IMAGE_REPO: registry-1.docker.io/moby/buildkit
+  BUILDKIT_IMAGE_REPO: moby/buildkit
   BUILDKIT_IMAGE_TAG: v0.29.0
 
-  TOOLKIT_IMAGE_REPO: registry-1.docker.io/grootantech/toolkit
+  TOOLKIT_IMAGE_REPO: grootantech/toolkit
   TOOLKIT_IMAGE_TAG: 1.0.0
   MD_LINT_IMAGE_REPO: ${TOOLKIT_IMAGE_REPO}
   MD_LINT_IMAGE_TAG: ${TOOLKIT_IMAGE_TAG}
@@ -124,6 +124,10 @@ variables:
   GO_BUILD_IMAGE_TAG: ${TOOLKIT_IMAGE_TAG}
   BUILDAH_BUILD_IMAGE_REPO: ${TOOLKIT_IMAGE_REPO}
   BUILDAH_BUILD_IMAGE_TAG: ${TOOLKIT_IMAGE_TAG}
+  PYTHON_312_BUILD_IMAGE_REPO: ${TOOLKIT_IMAGE_REPO}
+  PYTHON_312_BUILD_IMAGE_TAG: ${TOOLKIT_IMAGE_TAG}
+  NODE_JS_24_BUILD_IMAGE_REPO: ${TOOLKIT_IMAGE_REPO}
+  NODE_JS_24_BUILD_IMAGE_TAG: ${TOOLKIT_IMAGE_TAG}
   JAVA25_BUILD_IMAGE_REPO: ${TOOLKIT_IMAGE_REPO}
   JAVA25_BUILD_IMAGE_TAG: ${TOOLKIT_IMAGE_TAG}
 
@@ -1827,28 +1831,24 @@ Common:Init:
         echo "${CHART_DIR}/${CHART_FILE} not found. Skipping chart envs."
       fi
     - |
+      CHART_REGISTRY="${CHART_REGISTRY:-}"
+      CHART_DEV_REPOSITORY="${CHART_REPOSITORY}${CHART_DEV_REPOSITORY_SUFFIX}"
+      case "${CHART_REGISTRY}" in
+        docker.io|index.docker.io|registry-1.docker.io)
+          CHART_DEV_REPOSITORY="${CHART_REPOSITORY}"
+          ;;
+      esac
       if [[ -z "${CHART_REGISTRY}" ]]; then
-        if [[ -n "${CI_REGISTRY}" || "${GITLAB_CI}" == "true" ]]; then
-          CHART_REGISTRY="${CI_REGISTRY}"
-          echo "ℹ️  CHART_REGISTRY not set. Defaulting to GitLab Container Registry: ${CHART_REGISTRY}"
-          if [[ -z "${CHART_REPOSITORY}" || "${CHART_REPOSITORY}" != "${CI_PROJECT_PATH}"* ]]; then
-            CHART_REPOSITORY="${CI_PROJECT_PATH}/helm"
-            echo "ℹ️  Defaulting CHART_REPOSITORY to GitLab project path: ${CHART_REPOSITORY}"
-          fi
-          export CHART_REGISTRY CHART_REPOSITORY
-        fi
-      elif [[ -z "${CHART_REPOSITORY}" ]]; then
-        if [[ -n "${CI_PROJECT_PATH}" ]]; then
-          CHART_REPOSITORY="${CI_PROJECT_PATH}/helm"
-        fi
+        echo "CHART_REGISTRY is empty: charts use this project's GitLab Helm Package Registry."
       fi
       if [[ -z ${RC_VERSION_SUFFIX} ]]; then
         CHART_PUSH_REPOSITORY=${CHART_REPOSITORY}
       else
-        CHART_PUSH_REPOSITORY=${CHART_REPOSITORY}${CHART_DEV_REPOSITORY_SUFFIX}
+        CHART_PUSH_REPOSITORY=${CHART_DEV_REPOSITORY}
       fi
       echo "CHART_REGISTRY=${CHART_REGISTRY}" 2>&1 | tee -a init.env
       echo "CHART_REPOSITORY=${CHART_REPOSITORY}" 2>&1 | tee -a init.env
+      echo "CHART_DEV_REPOSITORY=${CHART_DEV_REPOSITORY}" 2>&1 | tee -a init.env
       echo "CHART_PUSH_REPOSITORY=${CHART_PUSH_REPOSITORY}" 2>&1 | tee -a init.env
     - |
       if [[ -z "${RELEASE_VERSION}" ]]; then

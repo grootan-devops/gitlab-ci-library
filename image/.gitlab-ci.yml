@@ -194,6 +194,7 @@ Image:Promote:
   needs:
     - job: Common:Init
       artifacts: true
+      optional: false
   script:
     - DEV_IMAGE="${IMAGE_REGISTRY}/${IMAGE_REPOSITORY}${IMAGE_DEV_REPOSITORY_SUFFIX}"
     - PROD_IMAGE="${IMAGE_REGISTRY}/${IMAGE_REPOSITORY}"

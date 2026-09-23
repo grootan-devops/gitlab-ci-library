@@ -7,6 +7,24 @@ this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [1.2.0] - 2026-09-23
+
+### Changed
+
+- Split the README into a task index with focused module, configuration and integration guides.
+- Preserve complete examples while reducing the documentation loaded for a single task.
+- Describe each module's purpose in the module index.
+- Select OCI publishing when `CHART_REGISTRY` is configured; otherwise use the current project's GitLab Helm Package Registry.
+- Support independent private-dependency authentication without changing the publishing backend.
+
+### Fixed
+
+- Define chart helper anchors under hidden-job `script` fields so GitLab schema validation accepts them.
+- Clear the Python runtime entrypoint so GitLab Runner can launch its shell instead of Bash reading a shell binary as a script.
+- Make the required initialization and release-upload dependencies explicit with `optional: false`.
+- Fail chart checks and promotion on registry/API errors instead of interpreting them as absent candidates.
+- Scan dependencies from the pulled chart and keep Docker Hub candidate/release charts in one repository.
+
 ## [1.1.0] - 2026-09-22
 
 ### Changed
