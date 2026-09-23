@@ -4,10 +4,7 @@
     NODE_ENV: production
     npm_config_cache: ${CI_PROJECT_DIR}/${PROJECT_PATH}/.npm
   cache:
-    key:
-      files:
-        - package-lock.json
-      prefix: ${PROJECT_CACHE_KEY}
+    key: ${PROJECT_CACHE_KEY}
     when: always
     policy: pull
     paths:

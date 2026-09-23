@@ -4,10 +4,7 @@
     UV_CACHE_DIR: ${CI_PROJECT_DIR}/${PROJECT_PATH}/.uv
     UV_VENV_RELOCATABLE: "1"
   cache:
-    key:
-      files:
-        - uv.lock
-      prefix: ${PROJECT_CACHE_KEY}
+    key: ${PROJECT_CACHE_KEY}
     when: always
     policy: pull
     paths:

@@ -38,10 +38,7 @@ Project:Unit:Test:
 
 Image:Build:
   cache:
-    key:
-      files:
-        - ${PROJECT_PATH}/uv.lock
-      prefix: ${PROJECT_CACHE_KEY}
+    key: ${PROJECT_CACHE_KEY}
     policy: pull
     paths:
       - ${PROJECT_PATH}/.uv/

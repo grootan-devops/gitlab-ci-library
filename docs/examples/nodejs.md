@@ -94,10 +94,7 @@ Project:Unit:Test:
 
 Image:Build:
   cache:
-    key:
-      files:
-        - package-lock.json
-      prefix: ${PROJECT_CACHE_KEY}
+    key: ${PROJECT_CACHE_KEY}
     policy: pull
     paths:
       - .npm/

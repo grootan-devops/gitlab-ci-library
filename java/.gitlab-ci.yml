@@ -3,10 +3,7 @@
   variables:
     MAVEN_OPTS: -Djava.awt.headless=true -Dmaven.repo.local=${CI_PROJECT_DIR}/${PROJECT_PATH}/.m2/repository
   cache:
-    key:
-      files:
-        - pom.xml
-      prefix: ${PROJECT_CACHE_KEY}
+    key: ${PROJECT_CACHE_KEY}
     when: always
     policy: pull
     paths:
