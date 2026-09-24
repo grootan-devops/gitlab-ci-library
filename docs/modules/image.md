@@ -15,7 +15,7 @@ flowchart LR
 | Job / Template | Stage | Description |
 | --- | --- | --- |
 | `Docker:Lint` | `lint` | Hadolint Dockerfile linting with configurable ignores. |
-| `Image:Build` | `build` | Docker/BuildKit build with build-args injection and registry cache. Saves image tar artifact. |
+| `Image:Build` | `build` | Docker/BuildKit build with build-args injection. Saves image tar artifact. |
 | `Image:Check Existence` | `check` | Verifies image tag does not already exist in registry before release. |
 | `Image:Push` | `push` | Publishes image to registry. Automatically tags `latest`, `MAJOR`, and `MINOR` on production release. |
 | `Image:Scan` | `security` | Trivy CVE scan on local image tar (or pulls remote image in `image-scan` workflow). |
