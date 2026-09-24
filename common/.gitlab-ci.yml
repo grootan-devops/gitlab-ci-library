@@ -244,7 +244,6 @@ variables:
   IMAGE_NAME: dockerimage:internal
   DOCKERFILE: Dockerfile
   USE_DOCKER_BUILDX: "true"
-  DOCKER_BUILD_CACHE: "true"
   IMAGE_TAR_FILE_NAME: image.tar.gz
   IMAGE_REPOSITORY: ""
   IMAGE_DEV_REPOSITORY_SUFFIX: /dev

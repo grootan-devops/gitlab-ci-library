@@ -126,19 +126,7 @@ Image:Build:
         echo "BuildKit /etc/hosts:"
         docker exec "${BUILDKIT_CONTAINER}" cat /etc/hosts
 
-        DOCKER_CACHE_ARGS=()
-        if [[ "${DOCKER_BUILD_CACHE}" == "true" ]]; then
-          echo "Docker BuildKit registry caching enabled."
-          DOCKER_CACHE_ARGS+=(
-            --cache-from="type=registry,ref=${IMAGE_REGISTRY}/${IMAGE_PUSH_REPOSITORY}:buildcache-${CI_COMMIT_REF_SLUG}"
-            --cache-from="type=registry,ref=${IMAGE_REGISTRY}/${IMAGE_PUSH_REPOSITORY}:buildcache-${CI_DEFAULT_BRANCH}"
-            --cache-to="type=registry,ref=${IMAGE_REGISTRY}/${IMAGE_PUSH_REPOSITORY}:buildcache-${CI_COMMIT_REF_SLUG},mode=max"
-          )
-        else
-          echo "Docker BuildKit registry caching disabled (DOCKER_BUILD_CACHE=${DOCKER_BUILD_CACHE})."
-        fi
-
-        docker buildx build --builder "${BUILDER_NAME}" -f "${DOCKERFILE}" . --load --tag "${IMAGE_NAME}" "${DOCKER_BUILD_ARGS[@]}" "${DOCKER_LABELS[@]}" "${DOCKER_CACHE_ARGS[@]}"
+        docker buildx build --builder "${BUILDER_NAME}" -f "${DOCKERFILE}" . --load --tag "${IMAGE_NAME}" "${DOCKER_BUILD_ARGS[@]}" "${DOCKER_LABELS[@]}"
       else
         echo "Building image with standard Docker..."
         docker build -f "${DOCKERFILE}" . --tag "${IMAGE_NAME}" "${DOCKER_BUILD_ARGS[@]}" "${DOCKER_LABELS[@]}"
