@@ -104,7 +104,7 @@ Images use the **OCI container registry** — not the Package Registry. `IMAGE_R
 Chart:UnitTest:
   extends: .Chart:UnitTest
   variables:
-    MOCK_CHART: test
+    MOCK_CHART: tests
 ```
 
 It renders a mock consumer chart with [helm-unittest](https://github.com/helm-unittest/helm-unittest)

@@ -3,6 +3,13 @@
 This document records required consumer actions when upgrading between releases.
 Breaking changes must include an entry before release.
 
+## Unreleased
+
+`.Chart:UnitTest` now defaults `MOCK_CHART` to `tests` instead of `test`. Rename the
+mock consumer chart directory to `tests/`, or keep the old location temporarily by setting
+`MOCK_CHART: test`. Its unit-test suites must be under
+`${CHART_DIR}/${MOCK_CHART}/tests/*_test.yaml`.
+
 ## 1.2.0
 
 The documentation restructuring requires no consumer configuration changes; update bookmarks

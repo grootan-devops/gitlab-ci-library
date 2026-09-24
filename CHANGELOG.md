@@ -7,6 +7,11 @@ this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Changed
+
+- Use `tests` as the default mock consumer chart directory for `.Chart:UnitTest` and
+  explicitly select its nested suite files.
+
 ## [1.2.0] - 2026-09-23
 
 ### Changed

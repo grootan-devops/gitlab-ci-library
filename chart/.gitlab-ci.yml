@@ -274,7 +274,7 @@ Chart:Lint:
   extends:
     - .chart-lint-workflow-rules
   variables:
-    MOCK_CHART: test
+    MOCK_CHART: tests
   needs:
     - job: Common:Init
       artifacts: true
@@ -283,8 +283,19 @@ Chart:Lint:
     # Kept in script rather than before_script: the library default before_script does
     # `cd ${PROJECT_PATH}`, and declaring one here would silently replace it.
     - *chart-login
-    - helm dependency update "${CHART_DIR}/${MOCK_CHART}"
-    - helm unittest --strict --output-type JUnit --output-file unittest-report.xml "${CHART_DIR}/${MOCK_CHART}"
+    - chart_path="${CHART_DIR}/${MOCK_CHART}"
+    - |
+      if [[ ! -f "${chart_path}/Chart.yaml" ]]; then
+        echo "ERROR: Mock chart '${chart_path}' lacks Chart.yaml." >&2
+        exit 1
+      fi
+    - |
+      if ! compgen -G "${chart_path}/tests/*_test.yaml" >/dev/null; then
+        echo "ERROR: No Helm unittest suites under ${chart_path}/tests/." >&2
+        exit 1
+      fi
+    - helm dependency update "${chart_path}"
+    - helm unittest --strict --output-type JUnit --output-file unittest-report.xml --file "${chart_path}/tests/*_test.yaml" "${chart_path}"
   artifacts:
     when: always
     expire_in: 1 week
