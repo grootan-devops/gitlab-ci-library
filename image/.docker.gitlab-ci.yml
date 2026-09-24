@@ -74,11 +74,17 @@ Image:Build:
           --bootstrap \
           --driver docker-container \
           --name "${BUILDER_NAME}" \
-          --driver-opt image="${BUILDKIT_IMAGE_REPO}:${BUILDKIT_IMAGE_TAG}"
+          --driver-opt image="${CI_DEPENDENCY_PROXY_GROUP_IMAGE_PREFIX}/${BUILDKIT_IMAGE_REPO}:${BUILDKIT_IMAGE_TAG}"
 
         BUILDKIT_CONTAINER="buildx_buildkit_${BUILDER_NAME}0"
 
         echo "BuildKit container: ${BUILDKIT_CONTAINER}"
+        echo "Propagating Docker authentication credentials to BuildKit..."
+        if [[ -f "${HOME}/.docker/config.json" ]]; then
+          docker exec -u 0 "${BUILDKIT_CONTAINER}" mkdir -p /root/.docker
+          docker cp "${HOME}/.docker/config.json" "${BUILDKIT_CONTAINER}:/root/.docker/config.json"
+        fi
+
         echo "Propagating custom /etc/hosts entries to BuildKit..."
 
         while read -r ip hosts; do

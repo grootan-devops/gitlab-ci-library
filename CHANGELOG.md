@@ -9,7 +9,7 @@ this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
-- Revert Dependency Proxy image prefix on BuildKit builder creation to pull BuildKit directly without proxy permission errors.
+- Use Dependency Proxy for BuildKit builder and propagate Docker authentication credentials (`config.json`) to the BuildKit container.
 - Safeguard Dependency Proxy docker login with conditional credential check and graceful fallback.
 
 ## [1.3.0] - 2026-09-25
