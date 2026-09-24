@@ -4,10 +4,7 @@
     NODE_ENV: production
     npm_config_cache: ${CI_PROJECT_DIR}/${PROJECT_PATH}/.npm
   cache:
-    key:
-      files:
-        - package-lock.json
-      prefix: ${PROJECT_CACHE_KEY}
+    key: ${PROJECT_CACHE_KEY}
     when: always
     policy: pull
     paths:
@@ -35,7 +32,7 @@
 
 .Node:24:
   image:
-    name: ${NODE_JS_24_MICRO_BASE_IMAGE_REPO}:${NODE_JS_24_MICRO_BASE_IMAGE_TAG}
+    name: ${NODE_JS_24_BUILD_IMAGE_REPO}:${NODE_JS_24_BUILD_IMAGE_TAG}
     entrypoint: [""]
   extends:
     - .node-common

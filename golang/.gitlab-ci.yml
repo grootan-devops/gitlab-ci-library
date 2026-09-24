@@ -4,10 +4,7 @@
   variables:
     GOPATH: ${CI_PROJECT_DIR}/${PROJECT_PATH}/.cache
   cache:
-    key:
-      files:
-        - go.sum
-      prefix: ${PROJECT_CACHE_KEY}
+    key: ${PROJECT_CACHE_KEY}
     policy: pull
     when: always
     paths:

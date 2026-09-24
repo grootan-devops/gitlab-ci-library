@@ -44,6 +44,8 @@ Image:Build:
     - |
       DOCKER_BUILD_ARGS+=(
         --build-arg "VERSION=${APP_PUSH_VERSION}"
+        --build-arg "CI_PROJECT_DIR=${CI_PROJECT_DIR}"
+        --build-arg "PROJECT_PATH=${PROJECT_PATH}"
         --build-arg "CI_DEPENDENCY_PROXY_GROUP_IMAGE_PREFIX=${CI_DEPENDENCY_PROXY_GROUP_IMAGE_PREFIX}/"
         --build-arg "MICRO_ROOT_BASE_IMAGE=${CI_DEPENDENCY_PROXY_GROUP_IMAGE_PREFIX}/${MICRO_ROOT_BASE_IMAGE_REPO}:${MICRO_ROOT_BASE_IMAGE_TAG}"
         --build-arg "NGINX_MICRO_BASE_IMAGE=${CI_DEPENDENCY_PROXY_GROUP_IMAGE_PREFIX}/${NGINX_MICRO_BASE_IMAGE_REPO}:${NGINX_MICRO_BASE_IMAGE_TAG}"
@@ -126,6 +128,9 @@ Image:Build:
     - job: Project:Build
       artifacts: true
       optional: true
-    - job: Dependency:Download
+    - job: Node:Dependency:Download
+      artifacts: false
+      optional: true
+    - job: Python:Dependency:Download
       artifacts: false
       optional: true

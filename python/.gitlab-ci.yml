@@ -4,10 +4,7 @@
     UV_CACHE_DIR: ${CI_PROJECT_DIR}/${PROJECT_PATH}/.uv
     UV_VENV_RELOCATABLE: "1"
   cache:
-    key:
-      files:
-        - uv.lock
-      prefix: ${PROJECT_CACHE_KEY}
+    key: ${PROJECT_CACHE_KEY}
     when: always
     policy: pull
     paths:
@@ -41,8 +38,8 @@
 
 .Python:12:
   image:
-    name: ${PYTHON_312_MICRO_BASE_IMAGE_REPO}:${PYTHON_312_MICRO_BASE_IMAGE_TAG}
-    entrypoint: ["/bin/bash"]
+    name: ${PYTHON_312_BUILD_IMAGE_REPO}:${PYTHON_312_BUILD_IMAGE_TAG}
+    entrypoint: [""]
   extends:
     - .python-common
 

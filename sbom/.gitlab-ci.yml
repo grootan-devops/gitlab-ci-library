@@ -30,10 +30,7 @@ SBOM:Generate:
       policy: pull
       paths:
         - ${CI_PROJECT_DIR}/.trivycache
-    - key:
-        files:
-          - pom.xml
-        prefix: ${PROJECT_CACHE_KEY}
+    - key: ${PROJECT_CACHE_KEY}
       when: always
       policy: pull
       paths:
