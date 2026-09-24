@@ -82,7 +82,7 @@ Python:Lint:Ruff:
     - .python-lint-common
     - .lint-workflow-rules
   script:
-    - ruff check ${PROJECT_PATH}
+    - ruff check --extend-exclude .venv,.uv ${PROJECT_PATH}
 
 Python:Lint:MyPy:
   stage: lint
@@ -91,7 +91,7 @@ Python:Lint:MyPy:
     - .python-lint-common
     - .lint-workflow-rules
   script:
-    - mypy ${PROJECT_PATH}
+    - mypy --exclude '(\.venv|\.uv)' ${PROJECT_PATH}
 
 Python:Lint:ISort:
   stage: lint
@@ -100,8 +100,7 @@ Python:Lint:ISort:
     - .python-lint-common
     - .lint-workflow-rules
   script:
-    - cd ${PROJECT_PATH}
-    - isort .
+    - isort --extend-skip .venv --extend-skip .uv ${PROJECT_PATH}
     - |
       if [ -n "$(git --no-pager diff)" ]; then
         echo "Please run 'isort .' locally and push the changes"
@@ -117,8 +116,7 @@ Python:Lint:PyCodeStyle:
     - .python-lint-common
     - .lint-workflow-rules
   script:
-    - cd ${PROJECT_PATH}
-    - pycodestyle --show-source .
+    - pycodestyle --exclude=.venv,.uv --show-source ${PROJECT_PATH}
 
 .Python:Test:Unit:
   stage: test
