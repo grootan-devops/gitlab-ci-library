@@ -5,17 +5,12 @@ All notable changes to this project will be documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [1.2.0] - 2026-09-23
 
 ### Changed
 
 - Use `tests` as the default mock consumer chart directory for `.Chart:UnitTest` and
   explicitly select its nested suite files.
-
-## [1.2.0] - 2026-09-23
-
-### Changed
-
 - Split the README into a task index with focused module, configuration and integration guides.
 - Restore stack-scoped dependency download examples and use the shared `PROJECT_CACHE_KEY` for cache handoff into image builds.
 - Refresh the Python microservice example with the tested BuildKit `.uv` bind mount and application layout.
