@@ -36,6 +36,17 @@ Image:Build:
     - .image-registry-login
     - .image-build-workflow-rules
   script:
+    - cd ${PROJECT_PATH}
+    - |
+      if [[ -n "${CI_DEPENDENCY_PROXY_SERVER}" && -n "${CI_DEPENDENCY_PROXY_USER}" && -n "${CI_DEPENDENCY_PROXY_PASSWORD}" ]]; then
+        echo "${CI_DEPENDENCY_PROXY_PASSWORD}" | docker login -u "${CI_DEPENDENCY_PROXY_USER}" --password-stdin "${CI_DEPENDENCY_PROXY_SERVER}" || true
+      fi
+    - REGISTRY_USER="${IMAGE_REGISTRY_USERNAME:-${CI_REGISTRY_USER:-gitlab-ci-token}}"
+    - REGISTRY_PASS="${IMAGE_REGISTRY_PASSWORD:-${CI_REGISTRY_PASSWORD:-${CI_JOB_TOKEN}}}"
+    - |
+      if [[ -n "${IMAGE_REGISTRY}" && -n "${REGISTRY_USER}" && -n "${REGISTRY_PASS}" ]]; then
+        echo "${REGISTRY_PASS}" | docker login -u "${REGISTRY_USER}" --password-stdin "${IMAGE_REGISTRY}" || true
+      fi
     - DOCKER_BUILD_ARGS=()
     - |
       for DOCKER_BUILD_VARS in $(env | grep -E '^DOCKER_BUILD_ARG_' | awk -F= '{print $1}'); do
@@ -79,6 +90,21 @@ Image:Build:
         BUILDKIT_CONTAINER="buildx_buildkit_${BUILDER_NAME}0"
 
         echo "BuildKit container: ${BUILDKIT_CONTAINER}"
+        echo "Propagating Docker authentication credentials to BuildKit..."
+        DOCKER_CFG=""
+        if [[ -f "${HOME}/.docker/config.json" ]]; then
+          DOCKER_CFG="${HOME}/.docker/config.json"
+        elif [[ -f "/root/.docker/config.json" ]]; then
+          DOCKER_CFG="/root/.docker/config.json"
+        fi
+        if [[ -n "${DOCKER_CFG}" ]]; then
+          echo "Found Docker config at ${DOCKER_CFG}, copying to BuildKit container..."
+          docker exec -u 0 "${BUILDKIT_CONTAINER}" mkdir -p /root/.docker
+          docker cp "${DOCKER_CFG}" "${BUILDKIT_CONTAINER}:/root/.docker/config.json"
+        else
+          echo "WARNING: No Docker config.json found to propagate to BuildKit."
+        fi
+
         echo "Propagating custom /etc/hosts entries to BuildKit..."
 
         while read -r ip hosts; do
@@ -100,10 +126,7 @@ Image:Build:
         echo "BuildKit /etc/hosts:"
         docker exec "${BUILDKIT_CONTAINER}" cat /etc/hosts
 
-        docker buildx build --builder "${BUILDER_NAME}" -f "${DOCKERFILE}" . --load --tag "${IMAGE_NAME}" "${DOCKER_BUILD_ARGS[@]}" "${DOCKER_LABELS[@]}" \
-          --cache-from="type=registry,ref=${IMAGE_REGISTRY}/${IMAGE_PUSH_REPOSITORY}:buildcache-${CI_COMMIT_REF_SLUG}" \
-          --cache-from="type=registry,ref=${IMAGE_REGISTRY}/${IMAGE_PUSH_REPOSITORY}:buildcache-${CI_DEFAULT_BRANCH}" \
-          --cache-to="type=registry,ref=${IMAGE_REGISTRY}/${IMAGE_PUSH_REPOSITORY}:buildcache-${CI_COMMIT_REF_SLUG},mode=max"
+        docker buildx build --builder "${BUILDER_NAME}" -f "${DOCKERFILE}" . --load --tag "${IMAGE_NAME}" "${DOCKER_BUILD_ARGS[@]}" "${DOCKER_LABELS[@]}"
       else
         echo "Building image with standard Docker..."
         docker build -f "${DOCKERFILE}" . --tag "${IMAGE_NAME}" "${DOCKER_BUILD_ARGS[@]}" "${DOCKER_LABELS[@]}"

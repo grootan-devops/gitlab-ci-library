@@ -5,6 +5,18 @@ All notable changes to this project will be documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.3.1] - 2026-09-25
+
+### Changed
+
+- Removed remote registry `buildcache` layer pushes and pulls (`--cache-from` and `--cache-to`) from BuildKit image builds.
+- Restricted `Common:Check:Library:Pin` to PRs/MRs, `check`, and `full-pipeline` workflows (excluded from single-purpose image build/scan jobs).
+
+### Fixed
+
+- Propagate `/etc/hosts` and Docker authentication credentials (`config.json`) to the BuildKit container.
+- Safeguard Dependency Proxy docker login with conditional credential check and graceful fallback.
+
 ## [1.3.0] - 2026-09-25
 
 ### Fixed

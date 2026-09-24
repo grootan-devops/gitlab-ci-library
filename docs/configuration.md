@@ -20,7 +20,7 @@
 | `TARGET_VERSION` | No | — | Unified target version/tag (e.g. `1.8.0`, `latest`). Used as: deployment version override in `deploy`, image tag in `image-scan`, remote chart version in `chart-scan`, or release version override. |
 | `DEPLOY_TARGET` | Manual deploy | `komodo-staging` | Target platform and environment when running manual `deploy` workflow. |
 | `HELM_TEST_VALUES` | No | — | YAML override content supplied to Helm lint and chart scan. |
-| `USE_DOCKER_BUILDX` | No | `"false"` | Set to `"true"` to enable BuildKit container layer caching. |
+| `USE_DOCKER_BUILDX` | No | `"true"` | Set to `"true"` to build images using a dedicated Docker BuildKit container instance (supports multi-platform and advanced container builds). |
 | `TRIVY_IGNORE_CONFIG_FILE` | No | `ignored-cves.yml` | Path to CVE and license suppression configuration. |
 | `TRIVY_IGNORE_CVES` | No | `KSV-0011 ...` | Space-separated list of default suppressed K8s/IaC misconfiguration IDs. |
 | `TRIVY_IGNORED_LICENSES` | No | `MIT,Apache-2.0,...` | Comma-separated list of default suppressed safe/permissive licenses. |
