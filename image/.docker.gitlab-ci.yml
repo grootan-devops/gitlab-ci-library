@@ -74,7 +74,7 @@ Image:Build:
           --bootstrap \
           --driver docker-container \
           --name "${BUILDER_NAME}" \
-          --driver-opt image="${BUILDKIT_IMAGE_REPO}:${BUILDKIT_IMAGE_TAG}"
+          --driver-opt image="${CI_DEPENDENCY_PROXY_GROUP_IMAGE_PREFIX}/${BUILDKIT_IMAGE_REPO}:${BUILDKIT_IMAGE_TAG}"
 
         BUILDKIT_CONTAINER="buildx_buildkit_${BUILDER_NAME}0"
 
