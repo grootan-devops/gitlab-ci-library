@@ -418,7 +418,7 @@ Common:Check:Library:Pin:
   stage: check
   extends:
     - .check-job-common
-    - .common-init-rules
+    - .skip-on-master-rules
   variables:
     ALLOW_UNSTABLE_LIBRARY_REFS: "false"
   script:
