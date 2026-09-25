@@ -9,8 +9,10 @@ this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- Excluded `RELEASE_MIGRATION.md` from package registry uploads in `Release:Upload`; preserved as a job artifact for release notes.
 - Removed remote registry `buildcache` layer pushes and pulls (`--cache-from` and `--cache-to`) from BuildKit image builds.
 - Restricted `Common:Check:Library:Pin` to PRs/MRs, `check`, and `full-pipeline` workflows (excluded from single-purpose image build/scan jobs).
+- Cleaned up orphan Python unit test suite in favor of repository self-linting.
 
 ### Fixed
 

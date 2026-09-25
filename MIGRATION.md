@@ -5,7 +5,7 @@ Breaking changes must include an entry before release.
 
 ## 1.3.1
 
-No migration is required. The GitLab template API remains unchanged.
+No consumer pipeline migration is required. Release migration notes (`RELEASE_MIGRATION.md`) are exported as job artifacts for the release notes description and are no longer uploaded to the Generic Package Registry as downloadable release assets.
 
 ## 1.3.0
 
