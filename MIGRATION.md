@@ -5,7 +5,7 @@ Breaking changes must include an entry before release.
 
 ## 1.3.1
 
-No consumer pipeline migration is required. Release migration notes (`RELEASE_MIGRATION.md`) are exported as job artifacts for the release notes description and are no longer uploaded to the Generic Package Registry as downloadable release assets.
+No consumer pipeline migration is required. Release migration notes (`RELEASE_MIGRATION.md`) are exported as job artifacts for the release notes description and are no longer uploaded to the Generic Package Registry as downloadable release assets. Default container base and builder images have been upgraded to their latest stable releases (`micro-root:1.1.0`, `micro-nginx:1.1.1`, `micro-python-3-12:1.1.1`, `micro-java-25:1.1.1`, `micro-node-24:1.1.1`, `toolkit:1.1.0`). Repositories that override these variables (`MICRO_*_BASE_IMAGE_TAG` or `TOOLKIT_IMAGE_TAG`) retain their pinned values.
 
 ## 1.3.0
 
