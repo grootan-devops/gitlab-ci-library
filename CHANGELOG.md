@@ -5,12 +5,16 @@ All notable changes to this project will be documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [1.3.1] - 2026-09-25
+## [1.4.0] - 2026-09-25
 
 ### Changed
 
+- Excluded `RELEASE_MIGRATION.md` from package registry uploads in `Release:Upload`; preserved as a job artifact for release notes.
 - Removed remote registry `buildcache` layer pushes and pulls (`--cache-from` and `--cache-to`) from BuildKit image builds.
 - Restricted `Common:Check:Library:Pin` to PRs/MRs, `check`, and `full-pipeline` workflows (excluded from single-purpose image build/scan jobs).
+- Cleaned up orphan Python unit test suite in favor of repository self-linting.
+- Bumped default container base and builder images in `common/.gitlab-ci.yml` to latest stable releases (`micro-root:1.1.0`, `micro-nginx:1.1.1`, `micro-python-3-12:1.1.1`, `micro-java-25:1.1.1`, `micro-node-24:1.1.1`, `toolkit:1.1.0`).
+- Pinned repository CI reusable workflow callers to `@1.3.1`.
 
 ### Fixed
 

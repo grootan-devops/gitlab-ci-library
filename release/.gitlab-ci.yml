@@ -261,13 +261,12 @@ Release:Upload:
         file_upload "${TEST_REPORT_DIR}.tar.gz"
       fi
     - |
-      # 5. Migration guide
-      if [[ -f "${RELEASE_MIGRATION_FILE_NAME}" && -s "${RELEASE_MIGRATION_FILE_NAME}" ]]; then
-        file_upload "${RELEASE_MIGRATION_FILE_NAME}"
-      fi
-    - |
-      # 6. Additional release artifacts
+      # 5. Additional release artifacts
       for ITEM in ${ADDITIONAL_RELEASE_ARTIFACT}; do
+        if [[ "${ITEM}" == "${RELEASE_MIGRATION_FILE_NAME:-RELEASE_MIGRATION.md}" || "${ITEM}" == "RELEASE_MIGRATION.md" ]]; then
+          echo "ℹ️ Skipping ${ITEM} from package upload (migration notes are reserved for release description)."
+          continue
+        fi
         if [[ -f "${ITEM}" ]]; then
           file_upload "${ITEM}"
         elif [[ -d "${ITEM}" ]]; then
