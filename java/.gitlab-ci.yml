@@ -44,6 +44,22 @@
   script:
     - mvn dependency:go-offline --batch-mode --no-transfer-progress -T 1C
 
+.Java:Build:
+  stage: build
+  extends:
+    - .build-test-rules
+  cache:
+    policy: pull
+  script:
+    - mvn clean install
+  needs:
+    - job: Common:Init
+      artifacts: true
+      optional: true
+    - job: Java:Dependency:Download
+      artifacts: false
+      optional: false
+
 .Java:Test:Unit:
   stage: test
   extends:
