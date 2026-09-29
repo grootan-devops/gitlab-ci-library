@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.7.0] - 2026-09-30
+
+### Changed
+
+- Bumped the Java 25 micro base image to `micro-java-25:1.2.0`, which adds `libstdc++` so JNI
+  libraries linked against the C++ runtime (for example RocksDB) load at runtime.
+
 ## [1.6.0] - 2026-09-30
 
 ### Added
