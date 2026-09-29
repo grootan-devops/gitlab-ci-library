@@ -3,6 +3,12 @@
 This document records required consumer actions when upgrading between releases.
 Breaking changes must include an entry before release.
 
+## 1.7.0
+
+No consumer pipeline migration is required. The default `JAVA_25_MICRO_BASE_IMAGE_TAG` is now
+`1.2.0` (adds `libstdc++`). Repositories that pin `JAVA_25_MICRO_BASE_IMAGE_TAG` keep their value;
+remove the pin or set it to `1.2.0` to pick up the fix.
+
 ## 1.6.0
 
 No migration is required. The GitLab template API remains unchanged.
