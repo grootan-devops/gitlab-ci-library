@@ -42,7 +42,7 @@
   cache:
     policy: pull-push
   script:
-    - mvn dependency:go-offline --batch-mode --no-transfer-progress
+    - mvn dependency:go-offline --batch-mode --no-transfer-progress -T 1C
 
 .Java:Test:Unit:
   stage: test
