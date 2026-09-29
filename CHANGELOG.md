@@ -10,6 +10,7 @@ this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ### Changed
 
 - Bumped micro python base iamge to `1.1.2`
+- change mvn dep download command for verbose output
 
 ## [1.4.0] - 2026-09-25
 
