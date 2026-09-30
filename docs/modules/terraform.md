@@ -23,7 +23,7 @@ publish job to maintain: the git ref *is* the version.
 
 ```hcl
 module "vpc" {
-  source = "git::git@gitlab.contoso.com:infra/terraform-modules.git//modules/vpc?ref=1.0.0"
+  source = "git::git@gitlab.contoso.com:infra/terraform-modules.git//modules/vpc?ref=<version>"
 }
 
 module "eks" {

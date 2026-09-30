@@ -61,7 +61,36 @@ spec:
       type: string
       default: "start"
       description: "GitLab environment action (start, prepare, stop, verify, access)"
+    validate_image:
+      type: boolean
+      default: true
+      description: "Verify the target container image exists before deploying. Set false when the deployed chart does not use an image built by this project."
+    gitops_repo_username:
+      type: string
+      default: ""
+      description: "Username for cloning and pushing the GitOps repository with gitops_repo_token (defaults to GITOPS_REPO_USERNAME, then oauth2)"
+    gitops_repo_token:
+      type: string
+      default: ""
+      description: "Token for cloning and pushing the GitOps repository, e.g. a project access token with write_repository (defaults to GITOPS_REPO_TOKEN; CI_JOB_TOKEN when both are empty)"
 ---
+
+.Deploy:ArgoCD:Chart:Repository:
+  script:
+    - |
+      argocd_chart_repository() {
+        if [[ "${TARGET_VERSION}" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+          ARGOCD_CHART_CHANNEL="stable"
+          ARGOCD_CHART_OCI_REPOSITORY="${CHART_REPOSITORY}"
+        else
+          ARGOCD_CHART_CHANNEL="dev"
+          ARGOCD_CHART_OCI_REPOSITORY="${CHART_REPOSITORY}${CHART_DEV_REPOSITORY_SUFFIX-/dev}"
+        fi
+        case "${CHART_REGISTRY}" in
+          docker.io|index.docker.io|registry-1.docker.io) ARGOCD_CHART_OCI_REPOSITORY="${CHART_REPOSITORY}" ;;
+        esac
+        ARGOCD_CHART_CHANNEL="${HELM_CHANNEL:-${ARGOCD_CHART_CHANNEL}}"
+      }
 
 Deploy:ArgoCD:Validate:Chart:$[[ inputs.environment ]]:
   stage: check
@@ -79,16 +108,14 @@ Deploy:ArgoCD:Validate:Chart:$[[ inputs.environment ]]:
       if [[ -n "${CHART_USER}" && -n "${CHART_PASS}" && -n "${CHART_REGISTRY}" ]]; then
         echo "${CHART_PASS}" | helm registry login "${CHART_REGISTRY}" --username "${CHART_USER}" --password-stdin
       fi
+    - !reference [.Deploy:ArgoCD:Chart:Repository, script]
     - |
       RESOLVED_CHART_NAME="${CHART_NAME}"
       if [[ -z "${RESOLVED_CHART_NAME}" && -f "${CHART_DIR}/${CHART_FILE}" ]]; then
         RESOLVED_CHART_NAME=$(yq '.name // ""' "${CHART_DIR}/${CHART_FILE}" 2>/dev/null || true)
       fi
-      if [[ "${TARGET_VERSION}" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-        CHART_VERIFY_REPO="${CHART_REPOSITORY}"
-      else
-        CHART_VERIFY_REPO="${CHART_REPOSITORY}${CHART_DEV_REPOSITORY_SUFFIX}"
-      fi
+      argocd_chart_repository
+      CHART_VERIFY_REPO="${ARGOCD_CHART_OCI_REPOSITORY}"
     - |
       if [[ -n "${CHART_REGISTRY}" ]]; then
         if [[ -n "${RESOLVED_CHART_NAME}" ]] && helm show chart "oci://${CHART_REGISTRY}/${CHART_VERIFY_REPO}/${RESOLVED_CHART_NAME}" --version "${TARGET_VERSION}" > /dev/null 2>&1; then
@@ -100,13 +127,13 @@ Deploy:ArgoCD:Validate:Chart:$[[ inputs.environment ]]:
           exit 1
         fi
       elif [[ -n "${CI_API_V4_URL}" && -n "${CI_PROJECT_ID}" && -n "${CI_JOB_TOKEN}" ]]; then
-        PKG_CHECK_RESP=$(curl --silent --fail --header "JOB-TOKEN: ${CI_JOB_TOKEN}" \
-          "${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/packages?package_type=helm&package_name=${RESOLVED_CHART_NAME}&package_version=${TARGET_VERSION}" 2>/dev/null || true)
-        PKG_FOUND=$(echo "${PKG_CHECK_RESP}" | jq '. | length' 2>/dev/null || echo "0")
-        if [[ "${PKG_FOUND}" -gt 0 ]]; then
-          echo "✅ Helm chart '${RESOLVED_CHART_NAME}:${TARGET_VERSION}' verified in GitLab Package Registry."
+        CHART_CHANNEL_URL="${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/packages/helm/${ARGOCD_CHART_CHANNEL}"
+        if helm repo add argocd-target "${CHART_CHANNEL_URL}" --force-update \
+             --username gitlab-ci-token --password "${CI_JOB_TOKEN}" > /dev/null 2>&1 \
+           && helm show chart "argocd-target/${RESOLVED_CHART_NAME}" --version "${TARGET_VERSION}" > /dev/null 2>&1; then
+          echo "✅ Helm chart '${RESOLVED_CHART_NAME}:${TARGET_VERSION}' verified in GitLab Helm channel '${ARGOCD_CHART_CHANNEL}'."
         else
-          echo "❌ ERROR: Helm chart '${RESOLVED_CHART_NAME}:${TARGET_VERSION}' does not exist in GitLab Package Registry."
+          echo "❌ ERROR: Helm chart '${RESOLVED_CHART_NAME}:${TARGET_VERSION}' does not exist in GitLab Helm channel '${ARGOCD_CHART_CHANNEL}'."
           exit 1
         fi
       fi
@@ -117,17 +144,32 @@ Deploy:ArgoCD:Validate:Image:$[[ inputs.environment ]]:
     - .image-common
     - .image-registry-login
   rules:
-    - if: '$CI_PIPELINE_SOURCE =~ /^(web|api)$/ && $WORKFLOW == "deploy" && ("$[[ inputs.gitops_manifest_file ]]" != "" || "$[[ inputs.gitops_image_values_file ]]" != "" || "$[[ inputs.gitops_image_repo_yq_path ]]" != "" || "$[[ inputs.gitops_image_tag_yq_path ]]" != "") && ($DEPLOY_TARGET == "argocd-$[[ inputs.environment ]]" || $DEPLOY_TARGET == "$[[ inputs.environment ]]-argocd" || $DEPLOY_TARGET == "$[[ inputs.environment ]]")'
+    - if: '$CI_PIPELINE_SOURCE =~ /^(web|api)$/ && $WORKFLOW == "deploy" && "$[[ inputs.validate_image ]]" == "true" && ($DEPLOY_TARGET == "argocd-$[[ inputs.environment ]]" || $DEPLOY_TARGET == "$[[ inputs.environment ]]-argocd" || $DEPLOY_TARGET == "$[[ inputs.environment ]]")'
     - when: never
   needs:
     - job: Workflow:Validate:Variables
       artifacts: false
       optional: true
+  before_script:
+    - |
+      # Same GitLab registry defaults as Common:Init, which does not run for WORKFLOW=deploy.
+      if [[ -z "${IMAGE_REGISTRY}" && ( -n "${CI_REGISTRY}" || "${GITLAB_CI}" == "true" ) ]]; then
+        IMAGE_REGISTRY="${CI_REGISTRY}"
+        if [[ -z "${IMAGE_REPOSITORY}" || "${IMAGE_REPOSITORY}" != "${CI_PROJECT_PATH}"* ]]; then
+          IMAGE_REPOSITORY="${CI_PROJECT_PATH}"
+        fi
+      fi
+      export IMAGE_REGISTRY IMAGE_REPOSITORY
+    - !reference [.image-registry-login, before_script]
   script:
     - |
       if [[ -n "$[[ inputs.gitops_new_image ]]" ]]; then
         TARGET_IMG="$[[ inputs.gitops_new_image ]]"
       else
+        if [[ -z "${IMAGE_REGISTRY}" || -z "${IMAGE_REPOSITORY}" ]]; then
+          echo "❌ ERROR: IMAGE_REGISTRY and IMAGE_REPOSITORY must be set to verify the target image (or set gitops_new_image, or validate_image: false)."
+          exit 1
+        fi
         if [[ "${TARGET_VERSION}" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
           IMAGE_TARGET_REPO="${IMAGE_REPOSITORY}"
         else
@@ -165,6 +207,8 @@ Deploy:ArgoCD:$[[ inputs.environment ]]:
     ARGOCD_INPUT_TOKEN: "$[[ inputs.argocd_token ]]"
     ARGOCD_APPS: "$[[ inputs.argocd_apps ]]"
     ARGOCD_SYNC_TIMEOUT: $[[ inputs.argocd_sync_timeout ]]
+    GITOPS_INPUT_REPO_USERNAME: "$[[ inputs.gitops_repo_username ]]"
+    GITOPS_INPUT_REPO_TOKEN: "$[[ inputs.gitops_repo_token ]]"
     GITOPS_GIT_USERNAME: gitlab-ci
     GITOPS_GIT_EMAIL: gitlab-ci@gitlab.com
   rules:
@@ -194,6 +238,7 @@ Deploy:ArgoCD:$[[ inputs.environment ]]:
       optional: true
   script:
     - TARGET_VERSION="${TARGET_VERSION:-${APP_PUSH_VERSION:-${CHART_PUSH_VERSION:-${TAG}}}}"
+    - !reference [.Deploy:ArgoCD:Chart:Repository, script]
     - ARGOCD_SERVER="${ARGOCD_INPUT_SERVER:-${ARGOCD_SERVER}}"
     - ARGOCD_TOKEN="${ARGOCD_INPUT_TOKEN:-${ARGOCD_TOKEN}}"
     - MISSING=()
@@ -244,7 +289,19 @@ Deploy:ArgoCD:$[[ inputs.environment ]]:
           exit 1
         fi
       fi
-    - GITOPS_REPO_AUTH_URL="${GITOPS_REPO_URL/https:\/\//https://gitlab-ci-token:${CI_JOB_TOKEN}@}"
+    - GITOPS_AUTH_TOKEN="${GITOPS_INPUT_REPO_TOKEN:-${GITOPS_REPO_TOKEN:-}}"
+    - |
+      if [[ -n "${GITOPS_AUTH_TOKEN}" ]]; then
+        GITOPS_AUTH_USER="${GITOPS_INPUT_REPO_USERNAME:-${GITOPS_REPO_USERNAME:-oauth2}}"
+        echo "GitOps repository credentials: custom token for user '${GITOPS_AUTH_USER}'."
+      else
+        GITOPS_AUTH_USER="gitlab-ci-token"
+        GITOPS_AUTH_TOKEN="${CI_JOB_TOKEN}"
+        echo "GitOps repository credentials: CI_JOB_TOKEN."
+      fi
+    - GITOPS_AUTH_USER_ENC=$(printf '%s' "${GITOPS_AUTH_USER}" | jq -sRr @uri)
+    - GITOPS_AUTH_TOKEN_ENC=$(printf '%s' "${GITOPS_AUTH_TOKEN}" | jq -sRr @uri)
+    - GITOPS_REPO_AUTH_URL="${GITOPS_REPO_URL/https:\/\//https://${GITOPS_AUTH_USER_ENC}:${GITOPS_AUTH_TOKEN_ENC}@}"
     - git clone --depth 1 --branch "${GITOPS_BRANCH}" "${GITOPS_REPO_AUTH_URL}" "${GITOPS_TARGET_DIR}"
     - git -C "${GITOPS_TARGET_DIR}" config user.name "${GITOPS_GIT_USERNAME}"
     - git -C "${GITOPS_TARGET_DIR}" config user.email "${GITOPS_GIT_EMAIL}"
@@ -271,10 +328,11 @@ Deploy:ArgoCD:$[[ inputs.environment ]]:
           echo "❌ ERROR: chart values file not found: ${CHART_VALUES_PATH}"
           exit 1
         fi
+        argocd_chart_repository
         if [[ -n "${CHART_REGISTRY}" ]]; then
-          CHART_REPO_URL="${CHART_REGISTRY}/${CHART_PUSH_REPOSITORY:-${CHART_REPOSITORY}}"
+          CHART_REPO_URL="${CHART_REGISTRY}/${ARGOCD_CHART_OCI_REPOSITORY}"
         elif [[ -n "${CI_API_V4_URL}" && -n "${CI_PROJECT_ID}" ]]; then
-          CHART_REPO_URL="${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/packages/helm/stable"
+          CHART_REPO_URL="${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/packages/helm/${ARGOCD_CHART_CHANNEL}"
         else
           CHART_REPO_URL="${CHART_PUSH_REPOSITORY:-${CHART_REPOSITORY}}"
         fi

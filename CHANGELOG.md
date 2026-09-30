@@ -5,6 +5,36 @@ All notable changes to this project will be documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.8.1] - 2026-09-30
+
+### Added
+
+- `gitops_repo_username` and `gitops_repo_token` inputs on the ArgoCD and Komodo GitOps components
+  (defaults `GITOPS_REPO_USERNAME` / `GITOPS_REPO_TOKEN`) to clone and push the GitOps repository with
+  a custom credential. `CI_JOB_TOKEN` stays the fallback; it can push to another project only from
+  GitLab 19.
+
+### Fixed
+
+- `Deploy:ArgoCD:Validate:Image:<env>` now runs for every ArgoCD deploy, including chart-only
+  deploys; it previously ran only when an image values file, image yq path or manifest file was set.
+  A new `validate_image` input (default `true`) turns it off.
+- `Deploy:ArgoCD:Validate:Image:<env>` applies the `Common:Init` registry defaults
+  (`IMAGE_REGISTRY` from `CI_REGISTRY`, `IMAGE_REPOSITORY` from `CI_PROJECT_PATH`), which were
+  missing for `WORKFLOW=deploy`.
+- `Deploy:ArgoCD:<env>` writes `.chart.repoURL` for the channel that holds `TARGET_VERSION`
+  (GitLab Helm `dev` for candidates, `stable` for releases, `HELM_CHANNEL` when set) instead of
+  always `stable`, and resolves the OCI candidate path from `TARGET_VERSION` for `WORKFLOW=deploy`.
+- `Deploy:ArgoCD:Validate:Chart:<env>` verifies the chart in that same GitLab Helm channel instead
+  of in any channel.
+- Documentation caught up with earlier releases: `.Java:Build`,
+  `Common:Check:Library:Pin` run conditions, `SONAR_SCANNER_CLI_IMAGE_*` / `MD_LINT_IMAGE_*`,
+  Python lint `.venv`/`.uv` exclusions, and removal of the non-existent `deploy/gitlab` component
+  section.
+- Documentation no longer hard-codes versions: include examples use a `<version>` placeholder and
+  default image names and tags are referenced by variable (defaults live in `common/.gitlab-ci.yml`).
+  The ArgoCD example shows the `WORKFLOW=deploy`, `DEPLOY_TARGET` and `TARGET_VERSION` setup.
+
 ## [1.8.0] - 2026-09-30
 
 ### Changed
