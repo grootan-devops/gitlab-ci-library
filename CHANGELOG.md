@@ -27,10 +27,13 @@ this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   always `stable`, and resolves the OCI candidate path from `TARGET_VERSION` for `WORKFLOW=deploy`.
 - `Deploy:ArgoCD:Validate:Chart:<env>` verifies the chart in that same GitLab Helm channel instead
   of in any channel.
-- Documentation caught up with earlier releases: Python micro base `1.1.2`, `.Java:Build`,
+- Documentation caught up with earlier releases: `.Java:Build`,
   `Common:Check:Library:Pin` run conditions, `SONAR_SCANNER_CLI_IMAGE_*` / `MD_LINT_IMAGE_*`,
-  Python lint `.venv`/`.uv` exclusions, include examples pinned to `1.8.1`, and removal of the
-  non-existent `deploy/gitlab` component section.
+  Python lint `.venv`/`.uv` exclusions, and removal of the non-existent `deploy/gitlab` component
+  section.
+- Documentation no longer hard-codes versions: include examples use a `<version>` placeholder and
+  default image names and tags are referenced by variable (defaults live in `common/.gitlab-ci.yml`).
+  The ArgoCD example shows the `WORKFLOW=deploy`, `DEPLOY_TARGET` and `TARGET_VERSION` setup.
 
 ## [1.8.0] - 2026-09-30
 

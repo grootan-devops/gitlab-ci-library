@@ -1,6 +1,6 @@
 # Gitlab CI/CD Library
 
-Release `1.4.0` · [Compatibility](https://github.com/grootan-devops/ai-skills/blob/main/COMPATIBILITY.md) · [Security](./SECURITY.md) · [Contributing](./CONTRIBUTING.md)
+[Security](./SECURITY.md) · [Contributing](./CONTRIBUTING.md)
 
 Shared GitLab CI/CD library
 
@@ -34,7 +34,7 @@ reserved for the production container.
 Start here, select the relevant task, and follow only the linked pages needed for it.
 Resolve relative links from the containing document and keep every page on the same
 branch, tag, commit or local checkout, including uncommitted edits. Do not concatenate `docs/`.
-Example pins such as `1.0.0` show syntax; they do not override the selected library source/ref.
+The `<version>` placeholder in include examples marks the git ref; it does not override the selected library source/ref.
 Generate references from the resolved source and verify that it supports the feature being used.
 For upgrades, also read [MIGRATION.md](MIGRATION.md) and [CHANGELOG.md](CHANGELOG.md).
 

@@ -4,7 +4,7 @@
 
 ```yaml
 include:
-  - remote: 'https://raw.githubusercontent.com/grootan-devops/gitlab-ci-library/1.8.1/mono/.gitlab-ci.yml'
+  - remote: 'https://raw.githubusercontent.com/grootan-devops/gitlab-ci-library/<version>/mono/.gitlab-ci.yml'
 
 backend:
   stage: trigger
@@ -41,14 +41,14 @@ frontend:
 
 ```yaml
 include:
-  - remote: 'https://raw.githubusercontent.com/grootan-devops/gitlab-ci-library/1.8.1/common/.mono.gitlab-ci.yml'
-  - remote: 'https://raw.githubusercontent.com/grootan-devops/gitlab-ci-library/1.8.1/nodejs/.gitlab-ci.yml'
-  - remote: 'https://raw.githubusercontent.com/grootan-devops/gitlab-ci-library/1.8.1/image/.docker.gitlab-ci.yml'
-  - remote: 'https://raw.githubusercontent.com/grootan-devops/gitlab-ci-library/1.8.1/image/.gitlab-ci.yml'
-  - remote: 'https://raw.githubusercontent.com/grootan-devops/gitlab-ci-library/1.8.1/sonarqube/.gitlab-ci.yml'
-  - remote: 'https://raw.githubusercontent.com/grootan-devops/gitlab-ci-library/1.8.1/secret-scanning/.gitlab-ci.yml'
-  - remote: 'https://raw.githubusercontent.com/grootan-devops/gitlab-ci-library/1.8.1/license/.gitlab-ci.yml'
-  - remote: 'https://raw.githubusercontent.com/grootan-devops/gitlab-ci-library/1.8.1/release/.gitlab-ci.yml'
+  - remote: 'https://raw.githubusercontent.com/grootan-devops/gitlab-ci-library/<version>/common/.mono.gitlab-ci.yml'
+  - remote: 'https://raw.githubusercontent.com/grootan-devops/gitlab-ci-library/<version>/nodejs/.gitlab-ci.yml'
+  - remote: 'https://raw.githubusercontent.com/grootan-devops/gitlab-ci-library/<version>/image/.docker.gitlab-ci.yml'
+  - remote: 'https://raw.githubusercontent.com/grootan-devops/gitlab-ci-library/<version>/image/.gitlab-ci.yml'
+  - remote: 'https://raw.githubusercontent.com/grootan-devops/gitlab-ci-library/<version>/sonarqube/.gitlab-ci.yml'
+  - remote: 'https://raw.githubusercontent.com/grootan-devops/gitlab-ci-library/<version>/secret-scanning/.gitlab-ci.yml'
+  - remote: 'https://raw.githubusercontent.com/grootan-devops/gitlab-ci-library/<version>/license/.gitlab-ci.yml'
+  - remote: 'https://raw.githubusercontent.com/grootan-devops/gitlab-ci-library/<version>/release/.gitlab-ci.yml'
 
 variables:
   PROJECT_CACHE_KEY: node-backend

@@ -24,7 +24,7 @@ Deploys container images to Komodo stacks via GitOps Docker Compose updates and 
 
 ```yaml
 include:
-  - remote: 'https://raw.githubusercontent.com/grootan-devops/gitlab-ci-library/1.8.1/deploy/gitops/.komodo.gitlab-ci.yml'
+  - remote: 'https://raw.githubusercontent.com/grootan-devops/gitlab-ci-library/<version>/deploy/gitops/.komodo.gitlab-ci.yml'
     inputs:
       environment: staging
       gitops_repo_url: https://gitlab.contoso.com/devops/gitops/komodo.git
@@ -43,28 +43,56 @@ Supports both **Helm-based** (App-of-Apps values) and **Manifest-based** (raw Ku
 ### Option A: Helm-Based Deployment
 
 ```yaml
+variables:
+  WORKFLOW:
+    value: "full-pipeline"
+    options:
+      - "full-pipeline"
+      # ...other workflows...
+      - "deploy"
+  DEPLOY_TARGET:
+    value: "dev"
+    options:
+      - "dev"
+    description: "Deploy target for WORKFLOW=deploy."
+  TARGET_VERSION:
+    value: ""
+    description: "Chart/image version to deploy (WORKFLOW=deploy)."
+
 include:
-  - remote: 'https://raw.githubusercontent.com/grootan-devops/gitlab-ci-library/1.8.1/deploy/gitops/.argocd.gitlab-ci.yml'
+  - remote: 'https://raw.githubusercontent.com/grootan-devops/gitlab-ci-library/<version>/deploy/gitops/.argocd.gitlab-ci.yml'
     inputs:
-      environment: production
-      gitops_repo_url: https://gitlab.contoso.com/devops/gitops/website-gitops.git
-      gitops_branch: myapp/prod
-      gitops_chart_values_file: values.yaml
-      gitops_chart_app_yq_path: .apps.web
-      argocd_apps: acme-cloud-myapp-prod-root acme-cloud-myapp-web-prod
+      environment: "dev"
+      gitops_repo_url: "https://gitlab.contoso.com/devops/gitops/website-gitops.git"
+      gitops_branch: "myapp/dev"
+      gitops_chart_values_file: "values.yaml"
+      gitops_chart_app_yq_path: ".apps.web"
+      argocd_apps: "acme-cloud-myapp-dev-root acme-cloud-myapp-web-dev"
+      argocd_sync_timeout: 600
+      environment_url: "https://web.dev.contoso.com"
+      environment_action: "start"
+      argocd_token: "$ARGOCD_TOKEN"
+      argocd_server: https://argocd.contoso.com
+      gitops_repo_token: "$GITOPS_REPO_TOKEN"
 ```
+
+- **Triggering**: a Web/API pipeline with `WORKFLOW=deploy` and `DEPLOY_TARGET=<environment>` runs the include whose `environment` matches. In `full-pipeline` the deploy is a manual job that uses the version that pipeline built.
+- **Version**: `TARGET_VERSION` is required for `WORKFLOW=deploy`, which builds nothing.
+- **More environments**: add the environment to the `DEPLOY_TARGET` options and add another include with that `environment`.
+- **Sync order**: `argocd_apps` are synced in the order listed. Put the app-of-apps root first, then the child apps it renders.
+- **Several child apps from one chart**: use one include per environment with a yq union path, for example `gitops_chart_app_yq_path: "(.apps.web.api, .apps.web.worker)"`; job names only vary by `environment`.
 
 ### Option B: Manifest-Based Deployment
 
 ```yaml
 include:
-  - remote: 'https://raw.githubusercontent.com/grootan-devops/gitlab-ci-library/1.8.1/deploy/gitops/.argocd.gitlab-ci.yml'
+  - remote: 'https://raw.githubusercontent.com/grootan-devops/gitlab-ci-library/<version>/deploy/gitops/.argocd.gitlab-ci.yml'
     inputs:
       environment: production
       gitops_repo_url: https://gitlab.contoso.com/devops/gitops/website-gitops.git
       gitops_branch: myapp/prod
       gitops_manifest_file: extras/manifests/clamav/deployment.yaml
-      gitops_new_image: clamav/clamav:1.4.0
+      gitops_new_image: clamav/clamav:<tag>
       argocd_apps: acme-cloud-myapp-extras-prod-clamav
 ```
 

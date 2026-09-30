@@ -7,9 +7,9 @@ The `readme/.migration-guide.gitlab.yml` module provides automated migration gui
 
 ```yaml
 include:
-  - remote: 'https://raw.githubusercontent.com/grootan-devops/gitlab-ci-library/1.8.1/common/.gitlab-ci.yml'
-  - remote: 'https://raw.githubusercontent.com/grootan-devops/gitlab-ci-library/1.8.1/readme/.migration-guide.gitlab.yml'
-  - remote: 'https://raw.githubusercontent.com/grootan-devops/gitlab-ci-library/1.8.1/release/.gitlab-ci.yml'
+  - remote: 'https://raw.githubusercontent.com/grootan-devops/gitlab-ci-library/<version>/common/.gitlab-ci.yml'
+  - remote: 'https://raw.githubusercontent.com/grootan-devops/gitlab-ci-library/<version>/readme/.migration-guide.gitlab.yml'
+  - remote: 'https://raw.githubusercontent.com/grootan-devops/gitlab-ci-library/<version>/release/.gitlab-ci.yml'
 ```
 
 [Documentation index](../../README.md)

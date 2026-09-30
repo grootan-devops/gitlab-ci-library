@@ -12,10 +12,10 @@ variables:
   CHART_DIR: .
 
 include:
-  - remote: 'https://raw.githubusercontent.com/grootan-devops/gitlab-ci-library/1.8.1/common/.gitlab-ci.yml'
-  - remote: 'https://raw.githubusercontent.com/grootan-devops/gitlab-ci-library/1.8.1/chart/.gitlab-ci.yml'
-  - remote: 'https://raw.githubusercontent.com/grootan-devops/gitlab-ci-library/1.8.1/secret-scanning/.gitlab-ci.yml'
-  - remote: 'https://raw.githubusercontent.com/grootan-devops/gitlab-ci-library/1.8.1/release/.gitlab-ci.yml'
+  - remote: 'https://raw.githubusercontent.com/grootan-devops/gitlab-ci-library/<version>/common/.gitlab-ci.yml'
+  - remote: 'https://raw.githubusercontent.com/grootan-devops/gitlab-ci-library/<version>/chart/.gitlab-ci.yml'
+  - remote: 'https://raw.githubusercontent.com/grootan-devops/gitlab-ci-library/<version>/secret-scanning/.gitlab-ci.yml'
+  - remote: 'https://raw.githubusercontent.com/grootan-devops/gitlab-ci-library/<version>/release/.gitlab-ci.yml'
 ```
 
 [Documentation index](../../README.md)

@@ -15,17 +15,17 @@ Every container image built by this platform adheres strictly to the **Packaging
    - If the application writes logs, cache, or PID files at runtime, ensure the target directories exist and are owned by `10001:10001` before the `USER` directive.
    - Non-privileged listening port: standard application port is `EXPOSE 8080`.
 3. **Automatic CI Build-Arg Base Images**:
-   The `image/.docker.gitlab-ci.yml` builder automatically resolves and injects the following build-args into `docker build`. A Dockerfile pins nothing itself — bumping a base image is a change to one CI/CD variable pair in `common/.gitlab-ci.yml`.
+   The `image/.docker.gitlab-ci.yml` builder automatically resolves and injects the following build-args into `docker build`. A Dockerfile pins nothing itself — bumping a base image is a change to one CI/CD variable pair in `common/.gitlab-ci.yml`, which also holds each pair's default repository and tag.
 
-| Tech Stack | Injected CI Build-Arg | Variable pair | Current default |
-| --- | --- | --- | --- |
-| **Java** | `JAVA_25_MICRO_BASE_IMAGE` | `JAVA_25_MICRO_BASE_IMAGE_REPO` / `_TAG` | `grootantech/micro-java-25:1.2.0` |
-| **Golang** | `MICRO_ROOT_BASE_IMAGE` | `MICRO_ROOT_BASE_IMAGE_REPO` / `_TAG` | `grootantech/micro-root:1.1.0` |
-| **Python** | `PYTHON_312_MICRO_BASE_IMAGE` | `PYTHON_312_MICRO_BASE_IMAGE_REPO` / `_TAG` | `grootantech/micro-python-3-12:1.1.2` |
-| **Node.js Backend** | `NODE_JS_24_MICRO_BASE_IMAGE` | `NODE_JS_24_MICRO_BASE_IMAGE_REPO` / `_TAG` | `grootantech/micro-node-24:1.1.1` |
-| **Node.js Frontend** | `NGINX_MICRO_BASE_IMAGE` | `NGINX_MICRO_BASE_IMAGE_REPO` / `_TAG` | `grootantech/micro-nginx:1.1.1` |
-| **Multi-stage builder** | `TOOLKIT_BUILD_IMAGE` | `TOOLKIT_BUILD_IMAGE_REPO` / `_TAG` | `grootantech/toolkit:1.1.0` |
-| **All** | `VERSION` | — | `${APP_PUSH_VERSION}` |
+| Tech Stack | Injected CI Build-Arg | Variable pair |
+| --- | --- | --- |
+| **Java** | `JAVA_25_MICRO_BASE_IMAGE` | `JAVA_25_MICRO_BASE_IMAGE_REPO` / `_TAG` |
+| **Golang** | `MICRO_ROOT_BASE_IMAGE` | `MICRO_ROOT_BASE_IMAGE_REPO` / `_TAG` |
+| **Python** | `PYTHON_312_MICRO_BASE_IMAGE` | `PYTHON_312_MICRO_BASE_IMAGE_REPO` / `_TAG` |
+| **Node.js Backend** | `NODE_JS_24_MICRO_BASE_IMAGE` | `NODE_JS_24_MICRO_BASE_IMAGE_REPO` / `_TAG` |
+| **Node.js Frontend** | `NGINX_MICRO_BASE_IMAGE` | `NGINX_MICRO_BASE_IMAGE_REPO` / `_TAG` |
+| **Multi-stage builder** | `TOOLKIT_BUILD_IMAGE` | `TOOLKIT_BUILD_IMAGE_REPO` / `_TAG` |
+| **All** | `VERSION` | `${APP_PUSH_VERSION}` |
 
    GitLab additionally injects `CI_DEPENDENCY_PROXY_GROUP_IMAGE_PREFIX` (with a trailing `/`), so a public base image is written `FROM ${CI_DEPENDENCY_PROXY_GROUP_IMAGE_PREFIX}redhat/ubi9-minimal:${TAG}` with no separator. **GitHub has no Dependency Proxy and injects no equivalent** — a Dockerfile shared between the two platforms must give that ARG a default.
 

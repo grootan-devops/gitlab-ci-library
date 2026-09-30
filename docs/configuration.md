@@ -6,7 +6,7 @@
 | --- | --- | --- | --- |
 | `PROJECT_CACHE_KEY` | Yes | — | Stable cache key shared by the stack's dependency-download job and every job that restores its dependency cache, including `Image:Build`. Use the stack name (`python`, `java`, `node`, `go`, or `terraform`), optionally followed by a monorepo scope such as `node-admin`; do not append a lockfile hash. `common/` defaults it to an empty string, but declare a nonempty value so cache readers restore the warmed cache. |
 | `IMAGE_REPOSITORY` | Yes* | — | Image repository path in registry (e.g. `myorg/web-app`). |
-| `CHART_REPOSITORY` | OCI publishing | `helm` | OCI namespace/path without the chart name. Set for your registry; Docker Hub uses the namespace root, e.g. `grootantech`. Ignored by GitLab package publishing. |
+| `CHART_REPOSITORY` | OCI publishing | `helm` | OCI namespace/path without the chart name. Set for your registry; Docker Hub uses the namespace root, e.g. `<namespace>`. Ignored by GitLab package publishing. |
 | `CHART_REGISTRY` | No | Empty | OCI hostname, optionally with port. Empty selects the current project's GitLab Helm Package Registry. |
 | `CHART_DEV_REPOSITORY_SUFFIX` | No | `/dev` | Candidate OCI path suffix. Ignored on Docker Hub, where candidate and release versions share one repository. |
 | `HELM_CHANNEL` | No | `dev` (RC builds) / `stable` (releases) | GitLab Helm Package Registry channel that `Chart:Push` publishes to. Set explicitly to override the automatic RC/release split. |
@@ -15,14 +15,14 @@
 | `PROJECT_PATH` | No | `.` | Root directory of the application inside the git repository. |
 | `DOCKERFILE` | No | `Dockerfile` | Path to Dockerfile for image linting and building. |
 | `CHART_DIR` | No | `./chart` | Path to the Helm chart folder. |
-| `RELEASE_VERSION` | No | — | Semantic version (e.g. `1.5.0`). If omitted, read from `version.env` or `Chart.yaml`. |
-| `RELEASE_VERSION_SUFFIX` | No | — | Suffix appended to version (e.g. `backend` &rarr; `1.5.0-backend`). |
-| `TARGET_VERSION` | No | — | Unified target version/tag (e.g. `1.8.0`, `latest`). Used as: deployment version override in `deploy`, image tag in `image-scan`, remote chart version in `chart-scan`, or release version override. |
+| `RELEASE_VERSION` | No | — | Semantic version (e.g. `1.2.3`). If omitted, read from `version.env` or `Chart.yaml`. |
+| `RELEASE_VERSION_SUFFIX` | No | — | Suffix appended to version (e.g. `backend` &rarr; `1.2.3-backend`). |
+| `TARGET_VERSION` | No | — | Unified target version/tag (e.g. `1.2.3`, `latest`). Used as: deployment version override in `deploy`, image tag in `image-scan`, remote chart version in `chart-scan`, or release version override. |
 | `DEPLOY_TARGET` | Manual deploy | `komodo-staging` | Target platform and environment when running manual `deploy` workflow. |
 | `HELM_TEST_VALUES` | No | — | YAML override content supplied to Helm lint and chart scan. |
 | `USE_DOCKER_BUILDX` | No | `"true"` | Set to `"true"` to build images using a dedicated Docker BuildKit container instance (supports multi-platform and advanced container builds). |
-| `SONAR_SCANNER_CLI_IMAGE_REPO` / `SONAR_SCANNER_CLI_IMAGE_TAG` | No | `sonarsource/sonar-scanner-cli` / `12.2.0.4256_8.1.0` | Image for the `Sonarqube` job. |
-| `MD_LINT_IMAGE_REPO` / `MD_LINT_IMAGE_TAG` | No | `markdownlint/markdownlint` / `0.18.1` | Image for `.MD:Lint`, `Changelog:Lint` and `Migration:Lint`. |
+| `SONAR_SCANNER_CLI_IMAGE_REPO` / `SONAR_SCANNER_CLI_IMAGE_TAG` | No | Set in `common/.gitlab-ci.yml` | Image for the `Sonarqube` job. |
+| `MD_LINT_IMAGE_REPO` / `MD_LINT_IMAGE_TAG` | No | Set in `common/.gitlab-ci.yml` | Image for `.MD:Lint`, `Changelog:Lint` and `Migration:Lint`. |
 | `TRIVY_IGNORE_CONFIG_FILE` | No | `ignored-cves.yml` | Path to CVE and license suppression configuration. |
 | `TRIVY_IGNORE_CVES` | No | `KSV-0011 ...` | Space-separated list of default suppressed K8s/IaC misconfiguration IDs. |
 | `TRIVY_IGNORED_LICENSES` | No | `MIT,Apache-2.0,...` | Comma-separated list of default suppressed safe/permissive licenses. |
@@ -51,8 +51,8 @@ require their own explicit pair. Errors never switch the backend to GitLab packa
 
 - **Target**: `oci://${CHART_REGISTRY}/${CHART_REPOSITORY}`; Helm appends the chart name.
 - **Candidates**: append `CHART_DEV_REPOSITORY_SUFFIX` (default `/dev`) to the repository.
-- **Docker Hub**: set `CHART_REGISTRY=registry-1.docker.io` and `CHART_REPOSITORY=grootantech`.
-  A chart named `tpl-library` uses `grootantech/tpl-library` for candidates and releases.
+- **Docker Hub**: set `CHART_REGISTRY=registry-1.docker.io` and `CHART_REPOSITORY=<namespace>`.
+  A chart named `<chart>` uses `<namespace>/<chart>` for candidates and releases.
 - **Promotion**: pull a candidate, repackage at the release tag and publish to production.
   Confirmed absence permits the existing warned working-tree fallback; lookup and pull
   errors stop the release instead.

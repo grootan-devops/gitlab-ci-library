@@ -20,7 +20,7 @@ flowchart LR
 | `Tag:Tag Existence` | `check` | Fails if the git tag already exists in the repository. |
 | `Workflow:Validate:Variables` | `.pre` | Validates required inputs during manual `deploy` (checks `DEPLOY_TARGET`), `image-scan` (checks `TARGET_VERSION`), and `chart-scan` (checks local or remote chart). |
 | `.scan-script` | — | Base Trivy scanning engine supporting image, config, license, and SBOM scanners. |
-| `.MD:Lint` | `lint` | Reusable Markdownlint template for `LINT_MD_FILES`, run in `${MD_LINT_IMAGE_REPO}:${MD_LINT_IMAGE_TAG}` (default `markdownlint/markdownlint:0.18.1`). |
+| `.MD:Lint` | `lint` | Reusable Markdownlint template for `LINT_MD_FILES`, run in `${MD_LINT_IMAGE_REPO}:${MD_LINT_IMAGE_TAG}`. |
 | `.YAML:Lint` | `lint` | Reusable yamllint template for `LINT_YAML_FILES`. |
 
 [Documentation index](../../README.md)

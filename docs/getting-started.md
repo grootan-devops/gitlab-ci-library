@@ -4,16 +4,16 @@ Include the shared templates from the library repository in your project's `.git
 
 ```yaml
 include:
-  - remote: 'https://raw.githubusercontent.com/grootan-devops/gitlab-ci-library/1.8.1/common/.gitlab-ci.yml'
-  - remote: 'https://raw.githubusercontent.com/grootan-devops/gitlab-ci-library/1.8.1/nodejs/.gitlab-ci.yml'
-  - remote: 'https://raw.githubusercontent.com/grootan-devops/gitlab-ci-library/1.8.1/image/.docker.gitlab-ci.yml'
-  - remote: 'https://raw.githubusercontent.com/grootan-devops/gitlab-ci-library/1.8.1/image/.gitlab-ci.yml'
-  - remote: 'https://raw.githubusercontent.com/grootan-devops/gitlab-ci-library/1.8.1/chart/.gitlab-ci.yml'
-  - remote: 'https://raw.githubusercontent.com/grootan-devops/gitlab-ci-library/1.8.1/sbom/.gitlab-ci.yml'
-  - remote: 'https://raw.githubusercontent.com/grootan-devops/gitlab-ci-library/1.8.1/sonarqube/.gitlab-ci.yml'
-  - remote: 'https://raw.githubusercontent.com/grootan-devops/gitlab-ci-library/1.8.1/secret-scanning/.gitlab-ci.yml'
-  - remote: 'https://raw.githubusercontent.com/grootan-devops/gitlab-ci-library/1.8.1/license/.gitlab-ci.yml'
-  - remote: 'https://raw.githubusercontent.com/grootan-devops/gitlab-ci-library/1.8.1/release/.gitlab-ci.yml'
+  - remote: 'https://raw.githubusercontent.com/grootan-devops/gitlab-ci-library/<version>/common/.gitlab-ci.yml'
+  - remote: 'https://raw.githubusercontent.com/grootan-devops/gitlab-ci-library/<version>/nodejs/.gitlab-ci.yml'
+  - remote: 'https://raw.githubusercontent.com/grootan-devops/gitlab-ci-library/<version>/image/.docker.gitlab-ci.yml'
+  - remote: 'https://raw.githubusercontent.com/grootan-devops/gitlab-ci-library/<version>/image/.gitlab-ci.yml'
+  - remote: 'https://raw.githubusercontent.com/grootan-devops/gitlab-ci-library/<version>/chart/.gitlab-ci.yml'
+  - remote: 'https://raw.githubusercontent.com/grootan-devops/gitlab-ci-library/<version>/sbom/.gitlab-ci.yml'
+  - remote: 'https://raw.githubusercontent.com/grootan-devops/gitlab-ci-library/<version>/sonarqube/.gitlab-ci.yml'
+  - remote: 'https://raw.githubusercontent.com/grootan-devops/gitlab-ci-library/<version>/secret-scanning/.gitlab-ci.yml'
+  - remote: 'https://raw.githubusercontent.com/grootan-devops/gitlab-ci-library/<version>/license/.gitlab-ci.yml'
+  - remote: 'https://raw.githubusercontent.com/grootan-devops/gitlab-ci-library/<version>/release/.gitlab-ci.yml'
 ```
 
 > [!IMPORTANT]
@@ -23,8 +23,8 @@ include:
 > entry, so a multi-file include becomes one line per file.
 >
 > [!IMPORTANT]
-> The `1.0.0` segment in these URLs is the **git ref**. Use the published stable ref selected
-> for your project and verify it with `git ls-remote --tags --heads` before copying the
+> The `<version>` segment in these URLs is the **git ref**. Replace it with the published stable tag
+> selected for your project and verify it with `git ls-remote --tags --heads` before copying the
 > examples. Read the documentation at that same ref. Branch refs such as `dev` move and
 > should be used only for deliberate development testing, not stable releases.
 >
