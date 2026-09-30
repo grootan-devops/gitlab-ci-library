@@ -92,6 +92,70 @@ spec:
         ARGOCD_CHART_CHANNEL="${HELM_CHANNEL:-${ARGOCD_CHART_CHANNEL}}"
       }
 
+.Deploy:ArgoCD:YAML:Set:
+  script:
+    - |
+      gitops_yaml_same() {
+        local left right
+        left=$(yq -o=json -I=0 '.' "$1" 2>/dev/null) || return 1
+        right=$(yq -o=json -I=0 '.' "$2" 2>/dev/null) || return 1
+        [[ "${left}" == "${right}" ]]
+      }
+      gitops_yaml_set() {
+        local file="$1" path="$2" value="$3" expected candidate scratch rows line column style old old_text new_text plain edited=false
+        export GITOPS_YAML_VALUE="${value}"
+        expected=$(mktemp)
+        candidate=$(mktemp)
+        scratch=$(mktemp)
+        yq eval "(${path}) = strenv(GITOPS_YAML_VALUE)" "${file}" > "${expected}"
+        if gitops_yaml_same "${file}" "${expected}"; then
+          rm -f "${expected}" "${candidate}" "${scratch}"
+          return 0
+        fi
+        cp "${file}" "${candidate}"
+        if [[ "${value}" != *[\"\'\\]* ]]; then
+          plain="\"${value}\""
+          if [[ "$(printf 'v: %s\n' "${value}" | yq '.v | tag' 2>/dev/null)" == "!!str" && "$(printf 'v: %s\n' "${value}" | yq '.v' 2>/dev/null)" == "${value}" ]]; then
+            plain="${value}"
+          fi
+          rows=$(yq --header-preprocess=false -o=json -I=0 "[(${path}) | {\"line\": line, \"column\": column, \"style\": style, \"value\": .}]" "${file}" 2>/dev/null \
+            | jq -rs 'add // [] | if length > 0 and all(.[]; .line > 0 and .value != null and (.value | type) != "object" and (.value | type) != "array" and (.style | IN("", "double", "single"))) then sort_by(.line, .column) | reverse | .[] | [.line, .column, (if .style == "" then "plain" else .style end), (.value | tostring)] | @tsv else empty end') || rows=""
+          [[ -n "${rows}" ]] && edited=true
+          while [[ "${edited}" == true ]] && IFS=$'\t' read -r line column style old; do
+            case "${style}" in
+              double) old_text="\"${old}\""; new_text="\"${value}\"" ;;
+              single) old_text="'${old}'"; new_text="'${value}'" ;;
+              *) old_text="${old}"; new_text="${plain}" ;;
+            esac
+            if GITOPS_YAML_OLD="${old_text}" GITOPS_YAML_NEW="${new_text}" awk -v l="${line}" -v c="${column}" '
+                NR == l {
+                  o = ENVIRON["GITOPS_YAML_OLD"]
+                  if (substr($0, c, length(o)) != o) exit 1
+                  $0 = substr($0, 1, c - 1) ENVIRON["GITOPS_YAML_NEW"] substr($0, c + length(o))
+                }
+                { print }' "${candidate}" > "${scratch}"; then
+              cat "${scratch}" > "${candidate}"
+            else
+              edited=false
+            fi
+          done <<< "${rows}"
+        fi
+        if [[ "${edited}" == true ]] && gitops_yaml_same "${candidate}" "${expected}"; then
+          cat "${candidate}" > "${file}"
+        else
+          cp "${file}" "${candidate}"
+          diff -U0 -w -b --ignore-blank-lines "${file}" "${expected}" > "${scratch}" || true
+          if patch --silent --no-backup-if-mismatch --reject-file=- "${candidate}" "${scratch}" > /dev/null 2>&1 && gitops_yaml_same "${candidate}" "${expected}"; then
+            echo "${path}: not an existing single-line value; applied the yq change as a patch (blank lines kept)."
+            cat "${candidate}" > "${file}"
+          else
+            echo "⚠️ ${path}: could not edit in place; writing the yq output (file formatting may change)."
+            cat "${expected}" > "${file}"
+          fi
+        fi
+        rm -f "${expected}" "${candidate}" "${scratch}"
+      }
+
 Deploy:ArgoCD:Validate:Chart:$[[ inputs.environment ]]:
   stage: check
   rules:
@@ -239,6 +303,7 @@ Deploy:ArgoCD:$[[ inputs.environment ]]:
   script:
     - TARGET_VERSION="${TARGET_VERSION:-${APP_PUSH_VERSION:-${CHART_PUSH_VERSION:-${TAG}}}}"
     - !reference [.Deploy:ArgoCD:Chart:Repository, script]
+    - !reference [.Deploy:ArgoCD:YAML:Set, script]
     - ARGOCD_SERVER="${ARGOCD_INPUT_SERVER:-${ARGOCD_SERVER}}"
     - ARGOCD_TOKEN="${ARGOCD_INPUT_TOKEN:-${ARGOCD_TOKEN}}"
     - MISSING=()
@@ -319,7 +384,7 @@ Deploy:ArgoCD:$[[ inputs.environment ]]:
           exit 1
         fi
         echo "Updating manifest: ${MANIFEST_PATH} image -> ${NEW_IMAGE_VALUE}"
-        yq eval '(.spec.template.spec.containers[0].image // .spec.containers[0].image) = "'"${NEW_IMAGE_VALUE}"'"' -i "${MANIFEST_PATH}"
+        gitops_yaml_set "${MANIFEST_PATH}" '.spec.template.spec.containers[0].image // .spec.containers[0].image' "${NEW_IMAGE_VALUE}"
 
       elif [[ -n "${GITOPS_CHART_APP_YQ_PATH}" ]]; then
         GITOPS_COMMIT_MESSAGE="chore(deploy): update ${GITOPS_CHART_APP_YQ_PATH} version=${TARGET_VERSION} [skip ci]"
@@ -338,8 +403,8 @@ Deploy:ArgoCD:$[[ inputs.environment ]]:
         fi
         echo "Setting ${GITOPS_CHART_APP_YQ_PATH}.chart.repoURL = ${CHART_REPO_URL}"
         echo "Setting ${GITOPS_CHART_APP_YQ_PATH}.chart.version = ${TARGET_VERSION}"
-        yq eval "${GITOPS_CHART_APP_YQ_PATH}.chart.repoURL = \"${CHART_REPO_URL}\"" -i "${CHART_VALUES_PATH}"
-        yq eval "${GITOPS_CHART_APP_YQ_PATH}.chart.version = \"${TARGET_VERSION}\"" -i "${CHART_VALUES_PATH}"
+        gitops_yaml_set "${CHART_VALUES_PATH}" "${GITOPS_CHART_APP_YQ_PATH}.chart.repoURL" "${CHART_REPO_URL}"
+        gitops_yaml_set "${CHART_VALUES_PATH}" "${GITOPS_CHART_APP_YQ_PATH}.chart.version" "${TARGET_VERSION}"
         if [[ -n "${GITOPS_IMAGE_VALUES_FILE}" ]]; then
           IMAGE_VALUES_PATH="${GITOPS_TARGET_DIR}/${GITOPS_IMAGE_VALUES_FILE}"
           if [[ ! -f "${IMAGE_VALUES_PATH}" ]]; then
@@ -349,11 +414,11 @@ Deploy:ArgoCD:$[[ inputs.environment ]]:
           if [[ -n "${GITOPS_IMAGE_REPO_YQ_PATH}" ]]; then
             IMAGE_FULL_REPO="${IMAGE_REGISTRY}/${IMAGE_PUSH_REPOSITORY:-${IMAGE_REPOSITORY}}"
             echo "Setting ${GITOPS_IMAGE_REPO_YQ_PATH} = ${IMAGE_FULL_REPO}"
-            yq eval "${GITOPS_IMAGE_REPO_YQ_PATH} = \"${IMAGE_FULL_REPO}\"" -i "${IMAGE_VALUES_PATH}"
+            gitops_yaml_set "${IMAGE_VALUES_PATH}" "${GITOPS_IMAGE_REPO_YQ_PATH}" "${IMAGE_FULL_REPO}"
           fi
           if [[ -n "${GITOPS_IMAGE_TAG_YQ_PATH}" ]]; then
             echo "Setting ${GITOPS_IMAGE_TAG_YQ_PATH} = ${TARGET_VERSION}"
-            yq eval "${GITOPS_IMAGE_TAG_YQ_PATH} = \"${TARGET_VERSION}\"" -i "${IMAGE_VALUES_PATH}"
+            gitops_yaml_set "${IMAGE_VALUES_PATH}" "${GITOPS_IMAGE_TAG_YQ_PATH}" "${TARGET_VERSION}"
           fi
         fi
       else
