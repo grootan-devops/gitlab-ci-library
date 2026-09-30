@@ -7,6 +7,13 @@ this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [1.8.1] - 2026-09-30
 
+### Added
+
+- `gitops_repo_username` and `gitops_repo_token` inputs on the ArgoCD and Komodo GitOps components
+  (defaults `GITOPS_REPO_USERNAME` / `GITOPS_REPO_TOKEN`) to clone and push the GitOps repository with
+  a custom credential. `CI_JOB_TOKEN` stays the fallback; it can push to another project only from
+  GitLab 19.
+
 ### Fixed
 
 - `Deploy:ArgoCD:Validate:Image:<env>` now runs for every ArgoCD deploy, including chart-only

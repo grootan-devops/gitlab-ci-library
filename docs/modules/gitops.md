@@ -74,6 +74,7 @@ include:
 - **Mutual Exclusivity**: You cannot specify both `gitops_chart_values_file` and `gitops_manifest_file`.
 - **Helm Mode**: If `gitops_chart_values_file` is specified, `gitops_chart_app_yq_path` is strictly mandatory. If `gitops_image_values_file` is also provided, `gitops_image_repo_yq_path` and `gitops_image_tag_yq_path` are both mandatory.
 - **Manifest Mode**: If `gitops_manifest_file` is specified, `gitops_new_image` is strictly mandatory. Direct container image update occurs without container name filtering.
+- **GitOps repository credentials**: Both components clone and push the GitOps repository with `gitops_repo_token` (username `gitops_repo_username`, default `oauth2`), falling back to the `GITOPS_REPO_TOKEN` / `GITOPS_REPO_USERNAME` CI/CD variables and then to `CI_JOB_TOKEN`. Use a token with `write_repository`, such as a project access token on the GitOps project, when the GitOps repository is another project and GitLab is older than 19 (`CI_JOB_TOKEN` cross-project push). Pass it as a masked variable, e.g. `gitops_repo_token: "$GITOPS_REPO_TOKEN"`.
 - **Chart repoURL**: In Helm mode `Deploy:ArgoCD:<env>` writes `<gitops_chart_app_yq_path>.chart.repoURL` for the channel or OCI path that holds `TARGET_VERSION`, and `.chart.version` as `TARGET_VERSION`.
 
 ## Direct GitLab Deployment Component (`deploy/gitlab/.gitlab-ci.yml`)

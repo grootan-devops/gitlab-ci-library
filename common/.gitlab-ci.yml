@@ -79,6 +79,8 @@ variables:
   # ARGOCD_TOKEN: ""
   # GITOPS_REPO_URL: "https://gitlab.example.com/devops/gitops/app-gitops.git"
   # GITOPS_BRANCH: "main"
+  # GITOPS_REPO_USERNAME: ""   # GitOps repo clone/push user for GITOPS_REPO_TOKEN (default: oauth2)
+  # GITOPS_REPO_TOKEN: ""      # GitOps repo clone/push token (default: CI_JOB_TOKEN)
   #
   # --- GitOps Deployment: Komodo ---
   # KOMODO_SERVER: "https://komodo.example.com"

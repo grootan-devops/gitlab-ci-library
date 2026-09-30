@@ -35,7 +35,8 @@ Configure at the top-level GitLab Group (or instance settings) to automatically 
 - **Registries**: `IMAGE_REGISTRY`, `IMAGE_REGISTRY_USERNAME`, `IMAGE_REGISTRY_PASSWORD`, `CHART_REGISTRY`, `CHART_REGISTRY_USERNAME`, `CHART_REGISTRY_PASSWORD`
   - Chart settings are independent of image settings. A nonempty `CHART_REGISTRY` selects OCI publishing; leave it unset for GitLab packages.
 - **Security & Quality**: `SONAR_URL`, `SONAR_EXTERNAL_URL`, `SONARQUBE_TOKEN`, `TRIVY_HOST`
-- **Deployment (GitOps)**: `ARGOCD_SERVER`, `ARGOCD_TOKEN`, `KOMODO_SERVER`, `KOMODO_API_KEY`, `KOMODO_API_SECRET`
+- **Deployment (GitOps)**: `ARGOCD_SERVER`, `ARGOCD_TOKEN`, `KOMODO_SERVER`, `KOMODO_API_KEY`, `KOMODO_API_SECRET`, `GITOPS_REPO_USERNAME`, `GITOPS_REPO_TOKEN`
+  - `GITOPS_REPO_TOKEN` (or the `gitops_repo_token` input) clones and pushes the GitOps repository; without it the job uses `CI_JOB_TOKEN`, which can push to another project only from GitLab 19.
 - **Notifications**: `RELEASE_MESSAGE_TEAMS_WORKFLOWS_URL`
 
 ### Helm Chart Publishing & Authentication

@@ -43,6 +43,14 @@ spec:
       type: string
       default: "start"
       description: "GitLab environment action (start, prepare, stop, verify, access)"
+    gitops_repo_username:
+      type: string
+      default: ""
+      description: "Username for cloning and pushing the GitOps repository with gitops_repo_token (defaults to GITOPS_REPO_USERNAME, then oauth2)"
+    gitops_repo_token:
+      type: string
+      default: ""
+      description: "Token for cloning and pushing the GitOps repository, e.g. a project access token with write_repository (defaults to GITOPS_REPO_TOKEN; CI_JOB_TOKEN when both are empty)"
 ---
 
 Deploy:Komodo:Validate:Image:$[[ inputs.environment ]]:
@@ -92,6 +100,8 @@ Deploy:Komodo:$[[ inputs.environment ]]:
     KOMODO_STACK_NAME: "$[[ inputs.komodo_stack_name ]]"
     KOMODO_SYNC_TIMEOUT: $[[ inputs.komodo_sync_timeout ]]
     KOMODO_POLL_INTERVAL: 10
+    GITOPS_INPUT_REPO_USERNAME: "$[[ inputs.gitops_repo_username ]]"
+    GITOPS_INPUT_REPO_TOKEN: "$[[ inputs.gitops_repo_token ]]"
     GITOPS_GIT_USERNAME: gitlab-ci
     GITOPS_GIT_EMAIL: gitlab-ci@gitlab.com
   rules:
@@ -133,7 +143,21 @@ Deploy:Komodo:$[[ inputs.environment ]]:
         echo "❌ [HARD FAILURE] Missing mandatory deployment configuration: ${MISSING[*]}"
         exit 1
       fi
-    - GITOPS_REPO_AUTH_URL="${GITOPS_REPO_URL/https:\/\//https://gitlab-ci-token:${CI_JOB_TOKEN}@}"
+    - |
+      # Pull and push with one credential: gitops_repo_token / GITOPS_REPO_TOKEN when set (needed for a
+      # cross-project push before GitLab 19), otherwise this job's CI_JOB_TOKEN.
+      GITOPS_AUTH_TOKEN="${GITOPS_INPUT_REPO_TOKEN:-${GITOPS_REPO_TOKEN:-}}"
+      if [[ -n "${GITOPS_AUTH_TOKEN}" ]]; then
+        GITOPS_AUTH_USER="${GITOPS_INPUT_REPO_USERNAME:-${GITOPS_REPO_USERNAME:-oauth2}}"
+        echo "GitOps repository credentials: custom token for user '${GITOPS_AUTH_USER}'."
+      else
+        GITOPS_AUTH_USER="gitlab-ci-token"
+        GITOPS_AUTH_TOKEN="${CI_JOB_TOKEN}"
+        echo "GitOps repository credentials: CI_JOB_TOKEN."
+      fi
+      GITOPS_AUTH_USER_ENC=$(printf '%s' "${GITOPS_AUTH_USER}" | jq -sRr @uri)
+      GITOPS_AUTH_TOKEN_ENC=$(printf '%s' "${GITOPS_AUTH_TOKEN}" | jq -sRr @uri)
+      GITOPS_REPO_AUTH_URL="${GITOPS_REPO_URL/https:\/\//https://${GITOPS_AUTH_USER_ENC}:${GITOPS_AUTH_TOKEN_ENC}@}"
     - git clone --depth 1 --branch "${GITOPS_BRANCH}" "${GITOPS_REPO_AUTH_URL}" "${GITOPS_TARGET_DIR}"
     - git -C "${GITOPS_TARGET_DIR}" config user.name "${GITOPS_GIT_USERNAME}"
     - git -C "${GITOPS_TARGET_DIR}" config user.email "${GITOPS_GIT_EMAIL}"
