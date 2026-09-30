@@ -5,6 +5,16 @@ All notable changes to this project will be documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.8.2] - 2026-10-01
+
+### Fixed
+
+- `Deploy:ArgoCD:<env>` and `Deploy:Komodo:<env>` edit the GitOps file in place. Only the text of the
+  value being set changes, and blank lines, spacing, comments and quoting are left as they were.
+  Previously `yq -i` rewrote the whole file and dropped blank lines and extra spaces. A new key, or a
+  value that cannot be edited in place, still goes through `yq`, applied as a patch that keeps blank
+  lines where possible.
+
 ## [1.8.1] - 2026-09-30
 
 ### Added

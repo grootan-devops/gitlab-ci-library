@@ -3,6 +3,10 @@
 This document records required consumer actions when upgrading between releases.
 Breaking changes must include an entry before release.
 
+## 1.8.2
+
+No migration is required. The GitLab template API remains unchanged.
+
 ## 1.8.1
 
 The ArgoCD component now verifies the target image for every deploy. If the deployed chart does not

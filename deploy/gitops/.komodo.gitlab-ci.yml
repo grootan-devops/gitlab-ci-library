@@ -53,6 +53,70 @@ spec:
       description: "Token for cloning and pushing the GitOps repository, e.g. a project access token with write_repository (defaults to GITOPS_REPO_TOKEN; CI_JOB_TOKEN when both are empty)"
 ---
 
+.Deploy:Komodo:YAML:Set:
+  script:
+    - |
+      gitops_yaml_same() {
+        local left right
+        left=$(yq -o=json -I=0 '.' "$1" 2>/dev/null) || return 1
+        right=$(yq -o=json -I=0 '.' "$2" 2>/dev/null) || return 1
+        [[ "${left}" == "${right}" ]]
+      }
+      gitops_yaml_set() {
+        local file="$1" path="$2" value="$3" expected candidate scratch rows line column style old old_text new_text plain edited=false
+        export GITOPS_YAML_VALUE="${value}"
+        expected=$(mktemp)
+        candidate=$(mktemp)
+        scratch=$(mktemp)
+        yq eval "(${path}) = strenv(GITOPS_YAML_VALUE)" "${file}" > "${expected}"
+        if gitops_yaml_same "${file}" "${expected}"; then
+          rm -f "${expected}" "${candidate}" "${scratch}"
+          return 0
+        fi
+        cp "${file}" "${candidate}"
+        if [[ "${value}" != *[\"\'\\]* ]]; then
+          plain="\"${value}\""
+          if [[ "$(printf 'v: %s\n' "${value}" | yq '.v | tag' 2>/dev/null)" == "!!str" && "$(printf 'v: %s\n' "${value}" | yq '.v' 2>/dev/null)" == "${value}" ]]; then
+            plain="${value}"
+          fi
+          rows=$(yq --header-preprocess=false -o=json -I=0 "[(${path}) | {\"line\": line, \"column\": column, \"style\": style, \"value\": .}]" "${file}" 2>/dev/null \
+            | jq -rs 'add // [] | if length > 0 and all(.[]; .line > 0 and .value != null and (.value | type) != "object" and (.value | type) != "array" and (.style | IN("", "double", "single"))) then sort_by(.line, .column) | reverse | .[] | [.line, .column, (if .style == "" then "plain" else .style end), (.value | tostring)] | @tsv else empty end') || rows=""
+          [[ -n "${rows}" ]] && edited=true
+          while [[ "${edited}" == true ]] && IFS=$'\t' read -r line column style old; do
+            case "${style}" in
+              double) old_text="\"${old}\""; new_text="\"${value}\"" ;;
+              single) old_text="'${old}'"; new_text="'${value}'" ;;
+              *) old_text="${old}"; new_text="${plain}" ;;
+            esac
+            if GITOPS_YAML_OLD="${old_text}" GITOPS_YAML_NEW="${new_text}" awk -v l="${line}" -v c="${column}" '
+                NR == l {
+                  o = ENVIRON["GITOPS_YAML_OLD"]
+                  if (substr($0, c, length(o)) != o) exit 1
+                  $0 = substr($0, 1, c - 1) ENVIRON["GITOPS_YAML_NEW"] substr($0, c + length(o))
+                }
+                { print }' "${candidate}" > "${scratch}"; then
+              cat "${scratch}" > "${candidate}"
+            else
+              edited=false
+            fi
+          done <<< "${rows}"
+        fi
+        if [[ "${edited}" == true ]] && gitops_yaml_same "${candidate}" "${expected}"; then
+          cat "${candidate}" > "${file}"
+        else
+          cp "${file}" "${candidate}"
+          diff -U0 -w -b --ignore-blank-lines "${file}" "${expected}" > "${scratch}" || true
+          if patch --silent --no-backup-if-mismatch --reject-file=- "${candidate}" "${scratch}" > /dev/null 2>&1 && gitops_yaml_same "${candidate}" "${expected}"; then
+            echo "${path}: not an existing single-line value; applied the yq change as a patch (blank lines kept)."
+            cat "${candidate}" > "${file}"
+          else
+            echo "⚠️ ${path}: could not edit in place; writing the yq output (file formatting may change)."
+            cat "${expected}" > "${file}"
+          fi
+        fi
+        rm -f "${expected}" "${candidate}" "${scratch}"
+      }
+
 Deploy:Komodo:Validate:Image:$[[ inputs.environment ]]:
   stage: check
   extends:
@@ -125,6 +189,7 @@ Deploy:Komodo:$[[ inputs.environment ]]:
       optional: true
   script:
     - TARGET_VERSION="${TARGET_VERSION:-${APP_PUSH_VERSION:-${TAG}}}"
+    - !reference [.Deploy:Komodo:YAML:Set, script]
     - KOMODO_SERVER="${KOMODO_INPUT_SERVER:-${KOMODO_SERVER}}"
     - KOMODO_API_KEY="${KOMODO_INPUT_API_KEY:-${KOMODO_API_KEY}}"
     - KOMODO_API_SECRET="${KOMODO_INPUT_API_SECRET:-${KOMODO_API_SECRET}}"
@@ -175,7 +240,7 @@ Deploy:Komodo:$[[ inputs.environment ]]:
     - NEW_IMAGE="${IMAGE_REGISTRY}/${IMAGE_PUSH_REPOSITORY:-${IMAGE_REPOSITORY}}:${TARGET_VERSION}"
     - >
       echo "Updating ${GITOPS_COMPOSE_FILE}: ${CURRENT_IMAGE} -> ${NEW_IMAGE}"
-    - yq eval "${GITOPS_SERVICE_IMAGE_YQ_PATH} = \"${NEW_IMAGE}\"" -i "${COMPOSE_PATH}"
+    - gitops_yaml_set "${COMPOSE_PATH}" "${GITOPS_SERVICE_IMAGE_YQ_PATH}" "${NEW_IMAGE}"
     - |
       if git -C "${GITOPS_TARGET_DIR}" diff --quiet; then
         echo "No changes detected in ${GITOPS_COMPOSE_FILE}. Image is already ${NEW_IMAGE}."
