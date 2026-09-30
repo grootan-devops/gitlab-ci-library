@@ -16,7 +16,7 @@ flowchart LR
 ```
 
 - **Komodo**: `Deploy:Komodo:Validate:Image:<env>` verifies target container image in OCI registry before `Deploy:Komodo:<env>` begins.
-- **ArgoCD**: `Deploy:ArgoCD:Validate:Chart:<env>` and `Deploy:ArgoCD:Validate:Image:<env>` verify target chart and image exist in OCI registry before `Deploy:ArgoCD:<env>` commits GitOps changes and syncs ArgoCD.
+- **ArgoCD**: `Deploy:ArgoCD:Validate:Chart:<env>` and `Deploy:ArgoCD:Validate:Image:<env>` verify the target chart and image exist before `Deploy:ArgoCD:<env>` commits GitOps changes and syncs ArgoCD. The chart is checked where `Chart:Push` publishes it: the GitLab Helm channel `dev` for candidates or `stable` for releases (`HELM_CHANNEL` overrides), or the OCI release or candidate path. Set `validate_image: false` when the deployed chart does not use an image built by the project.
 
 ## Komodo Deployment Component (`deploy/gitops/.komodo.gitlab-ci.yml`)
 
@@ -74,6 +74,7 @@ include:
 - **Mutual Exclusivity**: You cannot specify both `gitops_chart_values_file` and `gitops_manifest_file`.
 - **Helm Mode**: If `gitops_chart_values_file` is specified, `gitops_chart_app_yq_path` is strictly mandatory. If `gitops_image_values_file` is also provided, `gitops_image_repo_yq_path` and `gitops_image_tag_yq_path` are both mandatory.
 - **Manifest Mode**: If `gitops_manifest_file` is specified, `gitops_new_image` is strictly mandatory. Direct container image update occurs without container name filtering.
+- **Chart repoURL**: In Helm mode `Deploy:ArgoCD:<env>` writes `<gitops_chart_app_yq_path>.chart.repoURL` for the channel or OCI path that holds `TARGET_VERSION`, and `.chart.version` as `TARGET_VERSION`.
 
 ## Direct GitLab Deployment Component (`deploy/gitlab/.gitlab-ci.yml`)
 

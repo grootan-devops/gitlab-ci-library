@@ -5,6 +5,22 @@ All notable changes to this project will be documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.8.1] - 2026-09-30
+
+### Fixed
+
+- `Deploy:ArgoCD:Validate:Image:<env>` now runs for every ArgoCD deploy, including chart-only
+  deploys; it previously ran only when an image values file, image yq path or manifest file was set.
+  A new `validate_image` input (default `true`) turns it off.
+- `Deploy:ArgoCD:Validate:Image:<env>` applies the `Common:Init` registry defaults
+  (`IMAGE_REGISTRY` from `CI_REGISTRY`, `IMAGE_REPOSITORY` from `CI_PROJECT_PATH`), which were
+  missing for `WORKFLOW=deploy`.
+- `Deploy:ArgoCD:<env>` writes `.chart.repoURL` for the channel that holds `TARGET_VERSION`
+  (GitLab Helm `dev` for candidates, `stable` for releases, `HELM_CHANNEL` when set) instead of
+  always `stable`, and resolves the OCI candidate path from `TARGET_VERSION` for `WORKFLOW=deploy`.
+- `Deploy:ArgoCD:Validate:Chart:<env>` verifies the chart in that same GitLab Helm channel instead
+  of in any channel.
+
 ## [1.8.0] - 2026-09-30
 
 ### Changed

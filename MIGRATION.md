@@ -3,6 +3,17 @@
 This document records required consumer actions when upgrading between releases.
 Breaking changes must include an entry before release.
 
+## 1.8.1
+
+The ArgoCD component now verifies the target image for every deploy. If the deployed chart does not
+use an image built by the project (so no `${IMAGE_REGISTRY}/${IMAGE_REPOSITORY}` image exists for
+`TARGET_VERSION`), set the new input `validate_image: false` on the
+`deploy/gitops/.argocd.gitlab-ci.yml` include. No other change is required.
+
+Candidate deploys from the GitLab Helm Package Registry now write
+`.../packages/helm/dev` as the chart `repoURL`, matching where `Chart:Push` publishes them.
+Release versions still write `.../packages/helm/stable`, and `HELM_CHANNEL` is honoured.
+
 ## 1.8.0
 
 No migration is required. The GitLab template API remains unchanged.
