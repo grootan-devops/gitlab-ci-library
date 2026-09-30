@@ -143,10 +143,8 @@ Deploy:Komodo:$[[ inputs.environment ]]:
         echo "❌ [HARD FAILURE] Missing mandatory deployment configuration: ${MISSING[*]}"
         exit 1
       fi
+    - GITOPS_AUTH_TOKEN="${GITOPS_INPUT_REPO_TOKEN:-${GITOPS_REPO_TOKEN:-}}"
     - |
-      # Pull and push with one credential: gitops_repo_token / GITOPS_REPO_TOKEN when set (needed for a
-      # cross-project push before GitLab 19), otherwise this job's CI_JOB_TOKEN.
-      GITOPS_AUTH_TOKEN="${GITOPS_INPUT_REPO_TOKEN:-${GITOPS_REPO_TOKEN:-}}"
       if [[ -n "${GITOPS_AUTH_TOKEN}" ]]; then
         GITOPS_AUTH_USER="${GITOPS_INPUT_REPO_USERNAME:-${GITOPS_REPO_USERNAME:-oauth2}}"
         echo "GitOps repository credentials: custom token for user '${GITOPS_AUTH_USER}'."
@@ -155,9 +153,9 @@ Deploy:Komodo:$[[ inputs.environment ]]:
         GITOPS_AUTH_TOKEN="${CI_JOB_TOKEN}"
         echo "GitOps repository credentials: CI_JOB_TOKEN."
       fi
-      GITOPS_AUTH_USER_ENC=$(printf '%s' "${GITOPS_AUTH_USER}" | jq -sRr @uri)
-      GITOPS_AUTH_TOKEN_ENC=$(printf '%s' "${GITOPS_AUTH_TOKEN}" | jq -sRr @uri)
-      GITOPS_REPO_AUTH_URL="${GITOPS_REPO_URL/https:\/\//https://${GITOPS_AUTH_USER_ENC}:${GITOPS_AUTH_TOKEN_ENC}@}"
+    - GITOPS_AUTH_USER_ENC=$(printf '%s' "${GITOPS_AUTH_USER}" | jq -sRr @uri)
+    - GITOPS_AUTH_TOKEN_ENC=$(printf '%s' "${GITOPS_AUTH_TOKEN}" | jq -sRr @uri)
+    - GITOPS_REPO_AUTH_URL="${GITOPS_REPO_URL/https:\/\//https://${GITOPS_AUTH_USER_ENC}:${GITOPS_AUTH_TOKEN_ENC}@}"
     - git clone --depth 1 --branch "${GITOPS_BRANCH}" "${GITOPS_REPO_AUTH_URL}" "${GITOPS_TARGET_DIR}"
     - git -C "${GITOPS_TARGET_DIR}" config user.name "${GITOPS_GIT_USERNAME}"
     - git -C "${GITOPS_TARGET_DIR}" config user.email "${GITOPS_GIT_EMAIL}"
