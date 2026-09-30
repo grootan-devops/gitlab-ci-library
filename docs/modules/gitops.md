@@ -24,7 +24,7 @@ Deploys container images to Komodo stacks via GitOps Docker Compose updates and 
 
 ```yaml
 include:
-  - remote: 'https://raw.githubusercontent.com/grootan-devops/gitlab-ci-library/1.0.0/deploy/gitops/.komodo.gitlab-ci.yml'
+  - remote: 'https://raw.githubusercontent.com/grootan-devops/gitlab-ci-library/1.8.1/deploy/gitops/.komodo.gitlab-ci.yml'
     inputs:
       environment: staging
       gitops_repo_url: https://gitlab.contoso.com/devops/gitops/komodo.git
@@ -44,7 +44,7 @@ Supports both **Helm-based** (App-of-Apps values) and **Manifest-based** (raw Ku
 
 ```yaml
 include:
-  - remote: 'https://raw.githubusercontent.com/grootan-devops/gitlab-ci-library/1.0.0/deploy/gitops/.argocd.gitlab-ci.yml'
+  - remote: 'https://raw.githubusercontent.com/grootan-devops/gitlab-ci-library/1.8.1/deploy/gitops/.argocd.gitlab-ci.yml'
     inputs:
       environment: production
       gitops_repo_url: https://gitlab.contoso.com/devops/gitops/website-gitops.git
@@ -58,7 +58,7 @@ include:
 
 ```yaml
 include:
-  - remote: 'https://raw.githubusercontent.com/grootan-devops/gitlab-ci-library/1.0.0/deploy/gitops/.argocd.gitlab-ci.yml'
+  - remote: 'https://raw.githubusercontent.com/grootan-devops/gitlab-ci-library/1.8.1/deploy/gitops/.argocd.gitlab-ci.yml'
     inputs:
       environment: production
       gitops_repo_url: https://gitlab.contoso.com/devops/gitops/website-gitops.git
@@ -76,19 +76,5 @@ include:
 - **Manifest Mode**: If `gitops_manifest_file` is specified, `gitops_new_image` is strictly mandatory. Direct container image update occurs without container name filtering.
 - **GitOps repository credentials**: Both components clone and push the GitOps repository with `gitops_repo_token` (username `gitops_repo_username`, default `oauth2`), falling back to the `GITOPS_REPO_TOKEN` / `GITOPS_REPO_USERNAME` CI/CD variables and then to `CI_JOB_TOKEN`. Use a token with `write_repository`, such as a project access token on the GitOps project, when the GitOps repository is another project and GitLab is older than 19 (`CI_JOB_TOKEN` cross-project push). Pass it as a masked variable, e.g. `gitops_repo_token: "$GITOPS_REPO_TOKEN"`.
 - **Chart repoURL**: In Helm mode `Deploy:ArgoCD:<env>` writes `<gitops_chart_app_yq_path>.chart.repoURL` for the channel or OCI path that holds `TARGET_VERSION`, and `.chart.version` as `TARGET_VERSION`.
-
-## Direct GitLab Deployment Component (`deploy/gitlab/.gitlab-ci.yml`)
-
-```yaml
-include:
-  - remote: 'https://raw.githubusercontent.com/grootan-devops/gitlab-ci-library/1.0.0/deploy/gitlab/.gitlab-ci.yml'
-    inputs:
-      environment: production
-      environment_name: production
-      environment_url: https://myapp.contoso.com
-      script:
-        - echo "Deploying to production..."
-        - ./deploy-script.sh
-```
 
 [Documentation index](../../README.md)

@@ -38,4 +38,6 @@ flowchart LR
 | `Python:Lint:PyCodeStyle` | Job | `lint` | PEP8 code style enforcement. |
 | `.Python:Test:Unit` | Template | `test` | Unit test execution base with JUnit report collection. |
 
+All four `Python:Lint:*` jobs skip the `.venv` and `.uv` directories.
+
 [Documentation index](../../README.md)

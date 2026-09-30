@@ -21,7 +21,7 @@ Every container image built by this platform adheres strictly to the **Packaging
 | --- | --- | --- | --- |
 | **Java** | `JAVA_25_MICRO_BASE_IMAGE` | `JAVA_25_MICRO_BASE_IMAGE_REPO` / `_TAG` | `grootantech/micro-java-25:1.2.0` |
 | **Golang** | `MICRO_ROOT_BASE_IMAGE` | `MICRO_ROOT_BASE_IMAGE_REPO` / `_TAG` | `grootantech/micro-root:1.1.0` |
-| **Python** | `PYTHON_312_MICRO_BASE_IMAGE` | `PYTHON_312_MICRO_BASE_IMAGE_REPO` / `_TAG` | `grootantech/micro-python-3-12:1.1.1` |
+| **Python** | `PYTHON_312_MICRO_BASE_IMAGE` | `PYTHON_312_MICRO_BASE_IMAGE_REPO` / `_TAG` | `grootantech/micro-python-3-12:1.1.2` |
 | **Node.js Backend** | `NODE_JS_24_MICRO_BASE_IMAGE` | `NODE_JS_24_MICRO_BASE_IMAGE_REPO` / `_TAG` | `grootantech/micro-node-24:1.1.1` |
 | **Node.js Frontend** | `NGINX_MICRO_BASE_IMAGE` | `NGINX_MICRO_BASE_IMAGE_REPO` / `_TAG` | `grootantech/micro-nginx:1.1.1` |
 | **Multi-stage builder** | `TOOLKIT_BUILD_IMAGE` | `TOOLKIT_BUILD_IMAGE_REPO` / `_TAG` | `grootantech/toolkit:1.1.0` |

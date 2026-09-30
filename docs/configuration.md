@@ -21,6 +21,8 @@
 | `DEPLOY_TARGET` | Manual deploy | `komodo-staging` | Target platform and environment when running manual `deploy` workflow. |
 | `HELM_TEST_VALUES` | No | — | YAML override content supplied to Helm lint and chart scan. |
 | `USE_DOCKER_BUILDX` | No | `"true"` | Set to `"true"` to build images using a dedicated Docker BuildKit container instance (supports multi-platform and advanced container builds). |
+| `SONAR_SCANNER_CLI_IMAGE_REPO` / `SONAR_SCANNER_CLI_IMAGE_TAG` | No | `sonarsource/sonar-scanner-cli` / `12.2.0.4256_8.1.0` | Image for the `Sonarqube` job. |
+| `MD_LINT_IMAGE_REPO` / `MD_LINT_IMAGE_TAG` | No | `markdownlint/markdownlint` / `0.18.1` | Image for `.MD:Lint`, `Changelog:Lint` and `Migration:Lint`. |
 | `TRIVY_IGNORE_CONFIG_FILE` | No | `ignored-cves.yml` | Path to CVE and license suppression configuration. |
 | `TRIVY_IGNORE_CVES` | No | `KSV-0011 ...` | Space-separated list of default suppressed K8s/IaC misconfiguration IDs. |
 | `TRIVY_IGNORED_LICENSES` | No | `MIT,Apache-2.0,...` | Comma-separated list of default suppressed safe/permissive licenses. |
