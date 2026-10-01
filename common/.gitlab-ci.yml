@@ -75,7 +75,7 @@ variables:
   # ADDITIONAL_RELEASE_ARTIFACT: ""
   #
   # --- GitOps Deployment: ArgoCD ---
-  # ARGOCD_SERVER: "https://argocd.example.com"
+  # ARGOCD_SERVER: "argocd.example.com"
   # ARGOCD_TOKEN: ""
   # GITOPS_REPO_URL: "https://gitlab.example.com/devops/gitops/app-gitops.git"
   # GITOPS_BRANCH: "main"

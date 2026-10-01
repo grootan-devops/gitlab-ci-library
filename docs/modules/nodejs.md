@@ -24,4 +24,14 @@ flowchart LR
 | `Node:Lint` | Job | `lint` | Runs `biome check` against `biome.json`. |
 | `.Node:Test:Unit` | Template | `test` | Base unit test job with JUnit artifact collection and pull cache. |
 
+## Project rules
+
+- `npm ci`, never `npm install`, in a job script: `install` can rewrite the lockfile, so the
+  tree tested is not the tree committed.
+- Build-time variables of a single-page application (`VITE_*`, `NEXT_PUBLIC_*`) are baked into
+  the bundle and readable by anyone who loads the page. Never pass a secret that way; substitute
+  a placeholder at container start instead.
+- A monorepo caches on the workspace lockfile and fans out per package rather than one job that
+  builds everything.
+
 [Documentation index](../../README.md)

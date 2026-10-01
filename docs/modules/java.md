@@ -22,4 +22,11 @@ flowchart LR
 | `.Java:Build` | Template | `build` | Runs `mvn clean install` with the pulled `.m2` cache; needs `Java:Dependency:Download`. Combine with `.Java:25`. |
 | `.Java:Test:Unit` | Template | `test` | Maven test runner with Surefire XML report collection. |
 
+## Project rules
+
+- Maven runs in batch mode (`mvn -B`), or the log fills with download progress.
+- `package -DskipTests` and `test` are separate, so a test failure does not rebuild.
+- The local repository (`~/.m2`, or Gradle's cache) is cached under one stable key shared by
+  its warmer and its readers.
+
 [Documentation index](../../README.md)

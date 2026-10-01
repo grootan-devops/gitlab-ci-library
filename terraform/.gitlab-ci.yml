@@ -53,6 +53,13 @@
         - ${PROJECT_PATH}/main.tf
     - when: never
 
+.terraform-check-rules:
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event" && ($CI_MERGE_REQUEST_TARGET_BRANCH_NAME == $CI_DEFAULT_BRANCH || ($CI_MERGE_REQUEST_TARGET_BRANCH_NAME =~ $MASTER_BRANCH_REGEX && $CI_MERGE_REQUEST_TARGET_BRANCH_PROTECTED == "true"))'
+    - if: '$CI_PIPELINE_SOURCE == "parent_pipeline"'
+    - if: '$CI_PIPELINE_SOURCE =~ /^(web|api)$/ && ($WORKFLOW == "full-pipeline" || $WORKFLOW == "check")'
+    - when: never
+
 Terraform:Init:
   stage: init
   extends:
@@ -97,7 +104,7 @@ Terraform:Lint:
 Terraform:Check:README:
   extends:
     - .check-job-common
-    - .lint-workflow-rules
+    - .terraform-check-rules
   script:
     - |
       if [[ -d modules ]]; then

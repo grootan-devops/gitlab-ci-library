@@ -25,7 +25,7 @@
 | `MD_LINT_IMAGE_REPO` / `MD_LINT_IMAGE_TAG` | No | Set in `common/.gitlab-ci.yml` | Image for `.MD:Lint`, `Changelog:Lint` and `Migration:Lint`. |
 | `TRIVY_IGNORE_CONFIG_FILE` | No | `ignored-cves.yml` | Path to CVE and license suppression configuration. |
 | `TRIVY_IGNORE_CVES` | No | `KSV-0011 ...` | Space-separated list of default suppressed K8s/IaC misconfiguration IDs. |
-| `TRIVY_IGNORED_LICENSES` | No | `MIT,Apache-2.0,...` | Comma-separated list of default suppressed safe/permissive licenses. |
+| `TRIVY_IGNORED_LICENSE_CLASSIFICATIONS` | No | `notice,permissive,unencumbered` | Comma-separated Trivy license classifications `License:Scan` does not report. Accepts classification names or the groups `low` (notice, permissive, unencumbered), `medium` (reciprocal, unrecognized) and `high` (restricted). Waive an individual license in `ignored-cves.yml`. |
 | `RELEASE_MESSAGE_TEAMS_WORKFLOWS_URL` | Teams | — | Power Automate webhook URL(s) for release notification cards. |
 
 ## DevOps Reference & Platform Defaults

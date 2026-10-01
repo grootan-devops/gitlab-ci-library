@@ -72,7 +72,7 @@ include:
       environment_url: "https://web.dev.contoso.com"
       environment_action: "start"
       argocd_token: "$ARGOCD_TOKEN"
-      argocd_server: https://argocd.contoso.com
+      argocd_server: argocd.contoso.com
       gitops_repo_token: "$GITOPS_REPO_TOKEN"
 ```
 
