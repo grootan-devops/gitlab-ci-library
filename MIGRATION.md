@@ -3,6 +3,42 @@
 This document records required consumer actions when upgrading between releases.
 Breaking changes must include an entry before release.
 
+To upgrade, apply every section after your pinned version up to the target, oldest first.
+Newer sections are split into **Required** (the upgrade breaks or misbehaves without it),
+**Recommended** (aligns an existing project with the current standards) and **Verify**.
+
+## 1.9.0
+
+### Required
+
+- `Terraform:Check:README` follows the `check` workflow. A manual (web or API) pipeline runs it
+  when `WORKFLOW` is `check` or `full-pipeline`, no longer for `lint`; merge request and parent
+  pipelines are unchanged. A Terraform repository that declares its own `WORKFLOW` options
+  includes `check` (`full-pipeline`, `check`, `lint`).
+- `argocd_server` and the `ARGOCD_SERVER` CI/CD variable hold the Argo CD host without a scheme,
+  for example `argocd.example.com`. The deploy jobs pass it to `argocd --server`, which does not
+  accept `https://`; remove the scheme where a project copied the earlier example.
+
+### Recommended
+
+The Dockerfile standards and project-job conventions are now documented in full. Align an
+existing project with them:
+
+- PID 1 is `ENTRYPOINT ["/usr/bin/dumb-init", "--"]`, with the process, or a start script that
+  ends in `exec`, in `CMD`.
+- Base images come from the injected build-arg `ARG`s. A `# renovate:` annotation goes only on a
+  public-registry image version held in an `ARG`, and no secret is passed as an `ARG`.
+- Paths the application writes at runtime, and a single-page application's runtime
+  configuration, are chart mounts rather than files built into the image.
+- Project jobs use the canonical `Project:Build` and `Project:Unit:Test` names, and `WORKFLOW`
+  declares only the options whose modules are included.
+
+### Verify
+
+- In a Terraform repository, a manual pipeline with `WORKFLOW=check` lists
+  `Terraform:Check:README`.
+- A deploy's `argocd app get` reaches the server named by `argocd_server`.
+
 ## 1.8.2
 
 No migration is required. The GitLab template API remains unchanged.

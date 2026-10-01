@@ -32,4 +32,12 @@ flowchart LR
 | `Chart:Scan` | `security` | Renders templates and runs Trivy. Remote charts (`TARGET_VERSION`) come from the selected backend; pull failures never substitute a local chart. |
 | `Chart:Promote` | `release` | Pulls a candidate from the selected backend, repackages at the release tag and publishes to production. |
 
+## Chart-only repositories
+
+A repository whose only artifact is a chart has no dependency, build or test jobs; its path is
+`helm dependency update` → `helm lint --strict` → `helm template`. Set `CHART_DIR` to `.` when
+`Chart.yaml` is at the repository root, as library and umbrella charts usually are. A
+`type: library` chart has no `values.schema.json`, no `manifest.yaml` and no `tpl-library`
+dependency of its own, so the application-chart standards do not apply to it.
+
 [Documentation index](../../README.md)

@@ -23,4 +23,9 @@ flowchart LR
 | `.Go` | Template | `build` | Go build base image + cache configuration. |
 | `.Go:Test:Unit` | Template | `test` | Unit test runner with JUnit conversion. |
 
+## Project rules
+
+- Unit tests run with `-race`; it catches what local runs do not.
+- The Go module cache is warmed and restored under one project cache identity.
+
 [Documentation index](../../README.md)

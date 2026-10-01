@@ -5,6 +5,29 @@ All notable changes to this project will be documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.9.0] - 2026-10-01
+
+### Added
+
+- `docs/project-jobs.md`: job wrappers, the canonical `Project:Build` / `Project:Unit:Test` names, extends order, `optional:` on every `needs:`, inherited keys, `Project:Build`, split build and test jobs, script formatting.
+- `docs/getting-started.md`: the complete include set, image-only repositories, conditional modules, module prerequisites and `.gitignore` entries.
+- `docs/pipeline-lifecycle.md`: job responsibilities, declaring `WORKFLOW` options per project shape, the job class each workflow admits, and disabling an inherited job.
+- `docs/docker.md`: micro base image limits, `DOCKER_BUILD_ARG_<NAME>` build arguments, the cache handoff to `Image:Build`, final-layer cleanup, `.dockerignore` rules, and a project base image with its `Dockerfile.base` and builder.
+- `docs/security.md`: reviewing a consumer repository — secrets by value, pipeline posture and GitLab specifics.
+- The per-stack project rules in the Node.js, Python, Go, Java and chart module guides; the SemVer requirement and changelog heading rule in `docs/modules/common.md`; `.betterleaksignore` baselines in `docs/modules/secret-scanning.md`.
+
+### Changed
+
+- `docs/docker.md`: PID 1 is always `ENTRYPOINT ["/usr/bin/dumb-init", "--"]` with the process or start script in `CMD`; `# renovate:` annotations are required only for public-registry image versions held in an `ARG`; comments are one line saying why; runtime-writable paths are chart mounts; never `ARG` a secret; the stack examples follow these rules, and the SPA example no longer copies `nginx.conf` into the image.
+
+### Fixed
+
+- `Terraform:Check:README` runs in the `check` workflow instead of `lint`, like every other drift check (new `.terraform-check-rules`).
+- `argocd_server` / `ARGOCD_SERVER` take the Argo CD host without a scheme, as `argocd --server` expects: the input description, the `common/` example and the GitOps guide no longer show `https://`, and the sync-failure log prints a full link.
+- `docs/pipeline-lifecycle.md`: the stage diagram and table follow the order `common/.gitlab-ci.yml` declares (`check` runs after `lint`) and list each job in the stage it runs in, including `Image:Promote` and `Chart:Promote`.
+- `docs/configuration.md` documents `TRIVY_IGNORED_LICENSE_CLASSIFICATIONS` instead of the unused `TRIVY_IGNORED_LICENSES`.
+- `docs/docker.md` numbers its rules continuously; the Python examples expose port 8080 and run under `dumb-init`.
+
 ## [1.8.2] - 2026-10-01
 
 ### Fixed

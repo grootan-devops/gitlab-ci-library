@@ -2,32 +2,50 @@
 
 ## Pipeline Stages & Lifecycle
 
-Every pipeline follows a strict, standardized linear stage sequence:
+Every pipeline follows the stage sequence `common/.gitlab-ci.yml` declares:
 
 ```mermaid
 flowchart LR
-    pre[".pre"] --> init["init"] --> prepare["prepare"] --> lint["lint"] --> test["test"] --> build["build"] --> push["push"] --> security["security"] --> qa["qa"] --> report["report"] --> check["check"] --> deploy["deploy"] --> release["release"] --> notify["notify"] --> trigger["trigger"] --> destroy["destroy"] --> post[".post"]
+    pre[".pre"] --> init["init"] --> prepare["prepare"] --> lint["lint"] --> check["check"] --> test["test"] --> build["build"] --> push["push"] --> security["security"] --> qa["qa"] --> report["report"] --> deploy["deploy"] --> release["release"] --> notify["notify"] --> trigger["trigger"] --> destroy["destroy"] --> post[".post"]
 ```
 
 | Stage | Purpose | Typical Jobs |
 | --- | --- | --- |
-| `.pre` | Pre-flight variable validation & version discovery | `Workflow:Validate:Variables` *(gatekeeper)*, `Project:Version:Init` |
+| `.pre` | Pre-flight variable validation & version discovery | `Workflow:Validate:Variables` *(gatekeeper)*, `Project:Version:Init` (extends `.Node:`, `.Python:` or `.Java:Project:Version:Init`) |
 | `init` | Environment initialization & metadata resolution | `Common:Init`, `Terraform:Init` |
-| `prepare` | Warm package manager caches (with dev dependencies) | `Node:Dependency:Download`, `Python:Dependency:Download`, `Java:Dependency:Download`, `Go:Dependency:Download` |
-| `lint` | Code style, syntax, YAML, Hadolint linting | `Node:Lint`, `Python:Lint:*`, `Docker:Lint`, `Chart:Lint`, `Changelog:Lint` |
-| `test` | Unit testing & code coverage reports | `Project:Unit:Test` (`.Node:Test:Unit`, `.Python:Test:Unit`, `.Go:Test:Unit`) |
-| `build` | Compile code, package container images, package Helm charts | `Project:Build`, `Image:Build`, `Chart:Build`, `SBOM:Generate` |
+| `prepare` | Warm package manager caches (with dev dependencies) and the Trivy database | `Node:Dependency:Download`, `Python:Dependency:Download`, `Java:Dependency:Download` (project wrappers), `Go:Dependency:Download`, `Trivy:Cache:Warm` |
+| `lint` | Code style, syntax, YAML, Hadolint linting | `Node:Lint`, `Python:Lint:*`, `Go:Fmt`, `Go:Vet`, `Go:Lint`, `Go:Security:Scan`, `Docker:Lint`, `Chart:Lint`, `Chart:Values:Lint`, `Terraform:Validate`, `Terraform:Lint`, `Migration:Lint` |
+| `check` | Release prerequisites, documentation drift and deployment pre-flight | `Tag:Tag Existence`, `Changelog:Check Existence`, `Changelog:Lint`, `Common:Check:Library:Pin`, `Image:Check Existence`, `Chart:Check Existence`, `Chart:Check:README`, `Chart:Check:Dependency`, `Terraform:Check:README`, `Migration:Check Existence`, `Deploy:*:Validate:*` |
+| `test` | Unit testing & code coverage reports | `Project:Unit:Test` (`.Node:Test:Unit`, `.Python:Test:Unit`, `.Go:Test:Unit`, `.Java:Test:Unit`), `Chart:UnitTest` (opt-in) |
+| `build` | Compile code, package container images, package Helm charts | `Project:Build` (`.Node:Build`, `.Python:Build`, `.Java:Build`), `Image:Build`, `Chart:Build`, `SBOM:Generate` |
 | `push` | Publish candidate artifacts to dev registries | `Image:Push`, `Chart:Push` |
-| `security` | Trivy vulnerability, misconfiguration, license, secret scans | `Image:Scan`, `Chart:Scan`, `License:Scan`, `Git:Secret:Scan`, `SBOM:Scan` |
+| `security` | Trivy vulnerability, misconfiguration, license, secret scans | `Image:Scan`, `Chart:Scan`, `SBOM:Scan`, `Terraform:Scan`, `License:Scan`, `Git:Secret:Scan` |
 | `qa` | Quality gates, SonarQube analysis, container verification | `Sonarqube`, `Terraform:Module:Test`, `.Image:Test` |
 | `report` | Report aggregation & parsing | Reserved for multi-job metric collection |
-| `check` | Release prerequisite & deployment pre-flight verification | `Tag:Tag Existence`, `Changelog:Check Existence`, `Deploy:*:Validate:*` |
 | `deploy` | GitOps repository updates & sync | `Deploy:Komodo:<env>`, `Deploy:ArgoCD:<env>` |
-| `release` | GitLab Release creation & Package Registry upload | `Release:Upload`, `Release`, `Promote:Image`, `Promote:Chart` |
-| `notify` | Webhook notifications (Microsoft Teams Adaptive Cards) | `Release:Notification:Teams`, `Promote:Notification:Teams` |
+| `release` | GitLab Release creation, Package Registry upload, artifact promotion | `Release:Upload`, `Release`, `Image:Promote`, `Chart:Promote` |
+| `notify` | Webhook notifications (Microsoft Teams Adaptive Cards) | `Release:Notification:Teams` |
 | `trigger` | Child pipeline orchestration for monorepos | Sub-project trigger jobs |
 | `destroy` | Infrastructure cleanup on pipeline failure | `Terraform:Module:Test:Destroy` |
 | `.post` | Final pipeline cleanup | Reserved |
+
+### Job responsibilities
+
+An application pipeline separates dependency preparation, build and test. Jobs that exchange a
+dependency cache share one cache identity and path.
+
+| Job | Responsibility | Must not |
+| --- | --- | --- |
+| dependency download | Populate the dependency cache | compile, test or lint |
+| `Project:Build` | Compile or bundle; emit the artifact later jobs consume | install ad hoc, run tests |
+| `Project:Unit:Test` | Unit tests against the built artifact | rebuild from source |
+
+- Interpreted stacks with nothing to compile go dependencies → test; leave out the build job
+  rather than adding a no-op.
+- Linters that can run standalone do not depend on the dependency job, or a lint-only
+  pipeline waits on, or fails without, a job it never needed.
+- Key a cache on something only a reviewed change moves (a lockfile or a fixed stack key),
+  never a branch name or other mutable ref that whoever can push it can poison.
 
 ---
 
@@ -80,6 +98,45 @@ Triggered on demand via GitLab **Web UI (Run pipeline)** or **API triggers** usi
 | `secret-scanning` | `▶️ Secret Scanning Security Audit` | Scans entire git history with Betterleaks for exposed API keys, secrets, and credentials (always local). | — |
 | `sonarqube` | `▶️ SonarQube Code Quality Scan` | Runs `sonar-scanner` and checks quality gate metrics against SonarQube server. | — |
 | `lint` | `▶️ Code & Config Linting` | Executes language linters (Biome, Ruff, Hadolint, yamllint, etc.) on local workspace. | — |
+
+### Declaring `WORKFLOW` in a project
+
+A project declares only the workflows it can run. An option whose providing module is not
+included produces a pipeline with no jobs — a dead button in the Run-pipeline form — and a
+module whose options are not declared hides working jobs. So every declared option needs its
+module in `include:`, and every included module's options are declared. Inherit the full enum
+from `common/` only when every module is included.
+
+| Project shape | `WORKFLOW` options |
+| --- | --- |
+| Chart only (library or umbrella chart) | `full-pipeline`, `check`, `lint`, `chart-build-and-push`, `secret-scanning`; `chart-scan` only when remote scans by `TARGET_VERSION` are used; `CHART_DIR: '.'` when `Chart.yaml` is at the root |
+| Application, no image or chart | `full-pipeline`, `build`, `check`, `lint`, `secret-scanning`, `sonarqube` |
+| Application with an image, no chart | the above plus `image-build-and-push`, `image-scan` |
+| Full service (application, image, chart, GitOps) | every module is included, so no local `WORKFLOW` block |
+| Terraform module repository | `full-pipeline`, `check`, `lint` |
+
+Each workflow admits one class of work:
+
+| Workflow | Admits | Must not admit |
+| --- | --- | --- |
+| `check` | existence and drift checks: `Tag:Tag Existence`, `Changelog:Check Existence`, `Migration:Check Existence`, `Chart:Check Existence`, `Chart:Check:README`, `Chart:Check:Dependency`, `Image:Check Existence`, `Terraform:Check:README` | builds, pushes, scans, linters |
+| `lint` | linters only | existence or drift checks, dependency downloads, builds |
+| `build` | dependency download → `Project:Build` → `Project:Unit:Test` | image or chart packaging, pushes |
+| `image-build-and-push` | `build` plus `Image:Build`, `Image:Push`, `.Image:Test`, `Image:Scan` | chart jobs |
+| `chart-build-and-push` | `Chart:Lint`, `Chart:Check Existence`, `Chart:Check:README`, `Chart:Build`, `Chart:Push`, `Chart:Scan` | `Chart:Values:Lint`, `Chart:Check:Dependency`, application or image jobs |
+| `image-scan` / `chart-scan` | the matching `*:Scan` | existence checks, builds |
+| `sonarqube`, `secret-scanning`, `license-scanning`, `sbom-scanning` | their own jobs only | everything else |
+| `deploy` | `Workflow:Validate:Variables`, `Validate:*`, `Deploy:*` | builds, scans |
+
+When a module must be included but one of its jobs does not apply, disable that job in the
+project file instead of forking the template — for example `Trivy:Cache:Warm` in a repository
+with no Trivy-backed scan:
+
+```yaml
+Trivy:Cache:Warm:
+  rules:
+    - when: never
+```
 
 ---
 

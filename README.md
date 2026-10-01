@@ -20,12 +20,13 @@ reserved for the production container.
 
 | Task | Read |
 | --- | --- |
-| Set up a pipeline | [Getting started](docs/getting-started.md) |
-| Understand triggers, dependencies and release promotion | [Pipeline lifecycle](docs/pipeline-lifecycle.md) |
+| Set up a pipeline: include set, conditional modules, ignore files | [Getting started](docs/getting-started.md) |
+| Declare the project's jobs: wrappers, extends order, `needs:`, overrides | [Project jobs](docs/project-jobs.md) |
+| Understand triggers, job responsibilities, `WORKFLOW` options and release promotion | [Pipeline lifecycle](docs/pipeline-lifecycle.md) |
 | Configure variables, secrets and registries | [Configuration](docs/configuration.md) |
 | Select reusable jobs and their contracts | [Module catalog](docs/modules/README.md) |
-| Package an application and set Docker ignore rules | [Dockerfile standards](docs/docker.md) |
-| Configure scanning, ignored CVEs and scan exit codes | [Security and scanning](docs/security.md) |
+| Package an application: base images, PID 1, build arguments and Docker ignore rules | [Dockerfile standards](docs/docker.md) |
+| Configure scanning, ignored CVEs and scan exit codes; review a repository's security | [Security and scanning](docs/security.md) |
 | Copy a complete project integration | [Integration examples](docs/examples/README.md) |
 | Maintain this library and follow release conventions | [Maintainer guide](docs/maintainer-guide.md) |
 

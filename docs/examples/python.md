@@ -69,8 +69,9 @@ COPY --chown=10001:10001 app/ /app/app/
 COPY --chown=10001:10001 main.py config.py /app/
 
 USER 10001:10001
-EXPOSE 3000
+EXPOSE 8080
 
+ENTRYPOINT ["/usr/bin/dumb-init", "--"]
 CMD ["python", "main.py"]
 ```
 

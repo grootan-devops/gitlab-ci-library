@@ -40,7 +40,7 @@ spec:
     argocd_server:
       type: string
       default: ""
-      description: "ArgoCD server URL (e.g. https://argocd.example.com). If empty, defaults to ARGOCD_SERVER CI/CD variable"
+      description: "ArgoCD server host without a scheme, as argocd --server expects (e.g. argocd.example.com). If empty, defaults to ARGOCD_SERVER CI/CD variable"
     argocd_token:
       type: string
       default: ""
@@ -448,7 +448,7 @@ Deploy:ArgoCD:$[[ inputs.environment ]]:
         echo "--- ⏳ Waiting for sync & health: ${APP} (timeout: ${ARGOCD_SYNC_TIMEOUT}s)"
         if ! argocd app wait "${APP}" --health --sync --operation --timeout "${ARGOCD_SYNC_TIMEOUT}" --auth-token "${ARGOCD_TOKEN}" --server "${ARGOCD_SERVER}" --grpc-web; then
           echo "❌ ERROR: App ${APP} failed to sync/become healthy within ${ARGOCD_SYNC_TIMEOUT}s"
-          echo "View: ${ARGOCD_SERVER}/applications/${APP}"
+          echo "View: https://${ARGOCD_SERVER}/applications/${APP}"
           ARGOCD_FAILED+=("${APP}")
         else
           echo "✅ App ${APP} is synced and healthy"

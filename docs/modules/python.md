@@ -40,4 +40,11 @@ flowchart LR
 
 All four `Python:Lint:*` jobs skip the `.venv` and `.uv` directories.
 
+## Project rules
+
+- Install from the lockfile — `uv sync --frozen` or `pip install --require-hashes` — so CI
+  cannot resolve a different tree than the one reviewed.
+- A containerised service has no build job: dependencies, then tests.
+- Linters (`ruff`, `mypy`) run standalone, without waiting on the dependency job.
+
 [Documentation index](../../README.md)

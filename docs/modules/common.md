@@ -13,8 +13,8 @@ flowchart LR
 
 | Job / Template | Stage | Description |
 | --- | --- | --- |
-| `Common:Init` | `init` | Calculates `RELEASE_VERSION`, `APP_PUSH_VERSION`, `TAG`, `MAJOR_VERSION`, `MINOR_VERSION`, `CHART_NAME`, `CHART_PUSH_VERSION`. Exports `init.env`. |
-| `Changelog:Lint` | `lint` | Validates keepachangelog format in `CHANGELOG.md`. Runs in the Markdownlint image (`MD_LINT_IMAGE_REPO` / `MD_LINT_IMAGE_TAG`). |
+| `Common:Init` | `init` | Calculates `RELEASE_VERSION`, `APP_PUSH_VERSION`, `TAG`, `MAJOR_VERSION`, `MINOR_VERSION`, `CHART_NAME`, `CHART_PUSH_VERSION`. Exports `init.env`. When `Project:Version:Init` supplies `RELEASE_VERSION`, the chart version follows it, so the project version must be SemVer — Helm rejects a four-part version. For such a project, leave out `Project:Version:Init` and the versions come from `Chart.yaml`. |
+| `Changelog:Lint` | `lint` | Validates keepachangelog format in `CHANGELOG.md` with `.MD:Lint` — every `mdl` rule except MD007, MD013, MD024 and MD047 — so the first line is the top-level heading (MD041); a licence or comment block goes below it. Runs in the Markdownlint image (`MD_LINT_IMAGE_REPO` / `MD_LINT_IMAGE_TAG`). |
 | `Changelog:Check Existence` | `check` | Ensures `CHANGELOG.md` contains an entry for the version being released. |
 | `Common:Check:Library:Pin` | `check` | Fails when an `include:` pins a branch, a commit or a pre-release instead of a published tag. Covers both `project:`/`ref:` and a `remote:` raw URL whose ref is a path segment. Set `ALLOW_UNSTABLE_LIBRARY_REFS: "true"` to downgrade it to a warning — testing only. Runs on MRs to the default or a protected master branch, in child pipelines, and for Web/API `full-pipeline` / `check` runs; never on default-branch pushes. |
 | `Tag:Tag Existence` | `check` | Fails if the git tag already exists in the repository. |
