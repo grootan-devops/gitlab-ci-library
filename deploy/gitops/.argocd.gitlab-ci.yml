@@ -79,16 +79,18 @@ spec:
   script:
     - |
       argocd_chart_repository() {
+        local repository
+        registry_primary_target chart "${CHART_REPOSITORY:-}" || return 1
+        ARGOCD_CHART_REGISTRY="${REGISTRY_PRIMARY}"
+        repository="${REGISTRY_PRIMARY_REPO}"
         if [[ "${TARGET_VERSION}" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
           ARGOCD_CHART_CHANNEL="stable"
-          ARGOCD_CHART_OCI_REPOSITORY="${CHART_REPOSITORY}"
+          ARGOCD_CHART_OCI_REPOSITORY="${repository}"
         else
           ARGOCD_CHART_CHANNEL="dev"
-          ARGOCD_CHART_OCI_REPOSITORY="${CHART_REPOSITORY}${CHART_DEV_REPOSITORY_SUFFIX-/dev}"
+          # Docker Hub keeps candidate and release charts in one namespace root.
+          ARGOCD_CHART_OCI_REPOSITORY="$(registry_dev_repository chart "${ARGOCD_CHART_REGISTRY}" "${repository}" "${CHART_DEV_REPOSITORY_SUFFIX-/dev}")"
         fi
-        case "${CHART_REGISTRY}" in
-          docker.io|index.docker.io|registry-1.docker.io) ARGOCD_CHART_OCI_REPOSITORY="${CHART_REPOSITORY}" ;;
-        esac
         ARGOCD_CHART_CHANNEL="${HELM_CHANNEL:-${ARGOCD_CHART_CHANNEL}}"
       }
 
@@ -166,25 +168,26 @@ Deploy:ArgoCD:Validate:Chart:$[[ inputs.environment ]]:
       artifacts: false
       optional: true
   script:
-    - CHART_USER="${CHART_REGISTRY_USERNAME:-${CI_REGISTRY_USER:-gitlab-ci-token}}"
-    - CHART_PASS="${CHART_REGISTRY_PASSWORD:-${CI_REGISTRY_PASSWORD:-${CI_JOB_TOKEN}}}"
+    - !reference [.registry-functions, script]
+    - registry_primary_target chart "${CHART_REPOSITORY:-}" || exit 1
     - |
-      if [[ -n "${CHART_USER}" && -n "${CHART_PASS}" && -n "${CHART_REGISTRY}" ]]; then
-        echo "${CHART_PASS}" | helm registry login "${CHART_REGISTRY}" --username "${CHART_USER}" --password-stdin
+      if [[ -n "${REGISTRY_PRIMARY}" ]]; then
+        registry_resolve chart "$(registry_primary "${CHART_REPOSITORY:-}")" || exit 1
+        registry_login --optional helm 0 || exit 1
       fi
     - !reference [.Deploy:ArgoCD:Chart:Repository, script]
+    - RESOLVED_CHART_NAME="${CHART_NAME}"
     - |
-      RESOLVED_CHART_NAME="${CHART_NAME}"
       if [[ -z "${RESOLVED_CHART_NAME}" && -f "${CHART_DIR}/${CHART_FILE}" ]]; then
         RESOLVED_CHART_NAME=$(yq '.name // ""' "${CHART_DIR}/${CHART_FILE}" 2>/dev/null || true)
       fi
-      argocd_chart_repository
-      CHART_VERIFY_REPO="${ARGOCD_CHART_OCI_REPOSITORY}"
+    - argocd_chart_repository
+    - CHART_VERIFY_REPO="${ARGOCD_CHART_OCI_REPOSITORY}"
     - |
-      if [[ -n "${CHART_REGISTRY}" ]]; then
-        if [[ -n "${RESOLVED_CHART_NAME}" ]] && helm show chart "oci://${CHART_REGISTRY}/${CHART_VERIFY_REPO}/${RESOLVED_CHART_NAME}" --version "${TARGET_VERSION}" > /dev/null 2>&1; then
+      if [[ -n "${ARGOCD_CHART_REGISTRY}" ]]; then
+        if [[ -n "${RESOLVED_CHART_NAME}" ]] && helm show chart "oci://${ARGOCD_CHART_REGISTRY}/${CHART_VERIFY_REPO}/${RESOLVED_CHART_NAME}" --version "${TARGET_VERSION}" > /dev/null 2>&1; then
           echo "✅ Helm chart '${RESOLVED_CHART_NAME}:${TARGET_VERSION}' verified in registry (${CHART_VERIFY_REPO})."
-        elif helm show chart "oci://${CHART_REGISTRY}/${CHART_VERIFY_REPO}" --version "${TARGET_VERSION}" > /dev/null 2>&1; then
+        elif helm show chart "oci://${ARGOCD_CHART_REGISTRY}/${CHART_VERIFY_REPO}" --version "${TARGET_VERSION}" > /dev/null 2>&1; then
           echo "✅ Helm chart version '${TARGET_VERSION}' verified in registry (${CHART_VERIFY_REPO})."
         else
           echo "❌ ERROR: Helm chart '${RESOLVED_CHART_NAME:-chart}:${TARGET_VERSION}' does not exist in registry (${CHART_VERIFY_REPO})."
@@ -214,32 +217,23 @@ Deploy:ArgoCD:Validate:Image:$[[ inputs.environment ]]:
     - job: Workflow:Validate:Variables
       artifacts: false
       optional: true
-  before_script:
-    - |
-      # Same GitLab registry defaults as Common:Init, which does not run for WORKFLOW=deploy.
-      if [[ -z "${IMAGE_REGISTRY}" && ( -n "${CI_REGISTRY}" || "${GITLAB_CI}" == "true" ) ]]; then
-        IMAGE_REGISTRY="${CI_REGISTRY}"
-        if [[ -z "${IMAGE_REPOSITORY}" || "${IMAGE_REPOSITORY}" != "${CI_PROJECT_PATH}"* ]]; then
-          IMAGE_REPOSITORY="${CI_PROJECT_PATH}"
-        fi
-      fi
-      export IMAGE_REGISTRY IMAGE_REPOSITORY
-    - !reference [.image-registry-login, before_script]
   script:
     - |
       if [[ -n "$[[ inputs.gitops_new_image ]]" ]]; then
         TARGET_IMG="$[[ inputs.gitops_new_image ]]"
       else
-        if [[ -z "${IMAGE_REGISTRY}" || -z "${IMAGE_REPOSITORY}" ]]; then
+        # The image is verified in the primary repository.
+        registry_primary_target image "${IMAGE_REPOSITORY}" || exit 1
+        IMAGE_TARGET_REGISTRY="${REGISTRY_PRIMARY}"
+        IMAGE_TARGET_REPO="${REGISTRY_PRIMARY_REPO}"
+        if [[ -z "${IMAGE_TARGET_REGISTRY}" || -z "${IMAGE_TARGET_REPO}" ]]; then
           echo "❌ ERROR: IMAGE_REGISTRY and IMAGE_REPOSITORY must be set to verify the target image (or set gitops_new_image, or validate_image: false)."
           exit 1
         fi
-        if [[ "${TARGET_VERSION}" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-          IMAGE_TARGET_REPO="${IMAGE_REPOSITORY}"
-        else
-          IMAGE_TARGET_REPO="${IMAGE_REPOSITORY}${IMAGE_DEV_REPOSITORY_SUFFIX}"
+        if [[ ! "${TARGET_VERSION}" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+          IMAGE_TARGET_REPO="$(registry_dev_repository image "${IMAGE_TARGET_REGISTRY}" "${IMAGE_TARGET_REPO}" "${IMAGE_DEV_REPOSITORY_SUFFIX}")"
         fi
-        TARGET_IMG="${IMAGE_REGISTRY}/${IMAGE_TARGET_REPO}:${TARGET_VERSION}"
+        TARGET_IMG="${IMAGE_TARGET_REGISTRY}/${IMAGE_TARGET_REPO}:${TARGET_VERSION}"
       fi
     - |
       if docker manifest inspect "${TARGET_IMG}" > /dev/null 2>&1; then
@@ -301,6 +295,8 @@ Deploy:ArgoCD:$[[ inputs.environment ]]:
       artifacts: false
       optional: true
   script:
+    - !reference [.registry-functions, script]
+    - registry_image_defaults
     - TARGET_VERSION="${TARGET_VERSION:-${APP_PUSH_VERSION:-${CHART_PUSH_VERSION:-${TAG}}}}"
     - !reference [.Deploy:ArgoCD:Chart:Repository, script]
     - !reference [.Deploy:ArgoCD:YAML:Set, script]
@@ -314,22 +310,23 @@ Deploy:ArgoCD:$[[ inputs.environment ]]:
       [[ -z "${ARGOCD_SERVER}" ]] && MISSING+=("argocd_server (or ARGOCD_SERVER)")
       [[ -z "${ARGOCD_TOKEN}" ]] && MISSING+=("argocd_token (or ARGOCD_TOKEN)")
       [[ -z "${ARGOCD_APPS}" ]] && MISSING+=("argocd_apps")
+    - |
       if [[ ${#MISSING[@]} -gt 0 ]]; then
         echo "❌ [HARD FAILURE] Missing mandatory deployment configuration: ${MISSING[*]}"
         exit 1
       fi
-
+    - |
       # Deployment mode validation
       if [[ -z "${GITOPS_CHART_VALUES_FILE}" && -z "${GITOPS_MANIFEST_FILE}" ]]; then
         echo "❌ [HARD FAILURE] Either gitops_chart_values_file (for Helm) or gitops_manifest_file (for Manifest) must be configured."
         exit 1
       fi
-
+    - |
       if [[ -n "${GITOPS_CHART_VALUES_FILE}" && -n "${GITOPS_MANIFEST_FILE}" ]]; then
         echo "❌ [HARD FAILURE] Both gitops_chart_values_file and gitops_manifest_file are defined. Choose either Helm or Manifest deployment."
         exit 1
       fi
-
+    - |
       # 1. Helm-based validation
       if [[ -n "${GITOPS_CHART_VALUES_FILE}" ]]; then
         if [[ -z "${GITOPS_CHART_APP_YQ_PATH}" ]]; then
@@ -346,7 +343,7 @@ Deploy:ArgoCD:$[[ inputs.environment ]]:
           fi
         fi
       fi
-
+    - |
       # 2. Manifest-based validation
       if [[ -n "${GITOPS_MANIFEST_FILE}" ]]; then
         if [[ -z "${GITOPS_NEW_IMAGE}" ]]; then
@@ -371,11 +368,14 @@ Deploy:ArgoCD:$[[ inputs.environment ]]:
     - git -C "${GITOPS_TARGET_DIR}" config user.name "${GITOPS_GIT_USERNAME}"
     - git -C "${GITOPS_TARGET_DIR}" config user.email "${GITOPS_GIT_EMAIL}"
     - git -C "${GITOPS_TARGET_DIR}" remote set-url origin "${GITOPS_REPO_AUTH_URL}"
+    - registry_primary_target image "${IMAGE_REPOSITORY}" || exit 1
+    - IMAGE_PRIMARY_REGISTRY="${REGISTRY_PRIMARY}"
+    - IMAGE_PRIMARY_REPOSITORY="${IMAGE_PUSH_REPOSITORY:-${REGISTRY_PRIMARY_REPO}}"
     - |
       if [[ -n "${GITOPS_MANIFEST_FILE}" ]]; then
         NEW_IMAGE_VALUE="${GITOPS_NEW_IMAGE}"
         if [[ -z "${NEW_IMAGE_VALUE}" ]]; then
-          NEW_IMAGE_VALUE="${IMAGE_REGISTRY}/${IMAGE_PUSH_REPOSITORY:-${IMAGE_REPOSITORY}}:${TARGET_VERSION}"
+          NEW_IMAGE_VALUE="${IMAGE_PRIMARY_REGISTRY}/${IMAGE_PRIMARY_REPOSITORY}:${TARGET_VERSION}"
         fi
         GITOPS_COMMIT_MESSAGE="chore(deploy): update ${GITOPS_MANIFEST_FILE} image to ${NEW_IMAGE_VALUE} [skip ci]"
         MANIFEST_PATH="${GITOPS_TARGET_DIR}/${GITOPS_MANIFEST_FILE}"
@@ -394,12 +394,12 @@ Deploy:ArgoCD:$[[ inputs.environment ]]:
           exit 1
         fi
         argocd_chart_repository
-        if [[ -n "${CHART_REGISTRY}" ]]; then
-          CHART_REPO_URL="${CHART_REGISTRY}/${ARGOCD_CHART_OCI_REPOSITORY}"
+        if [[ -n "${ARGOCD_CHART_REGISTRY}" ]]; then
+          CHART_REPO_URL="${ARGOCD_CHART_REGISTRY}/${ARGOCD_CHART_OCI_REPOSITORY}"
         elif [[ -n "${CI_API_V4_URL}" && -n "${CI_PROJECT_ID}" ]]; then
           CHART_REPO_URL="${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/packages/helm/${ARGOCD_CHART_CHANNEL}"
         else
-          CHART_REPO_URL="${CHART_PUSH_REPOSITORY:-${CHART_REPOSITORY}}"
+          CHART_REPO_URL="${CHART_PUSH_REPOSITORY:-$(registry_primary "${CHART_REPOSITORY}")}"
         fi
         echo "Setting ${GITOPS_CHART_APP_YQ_PATH}.chart.repoURL = ${CHART_REPO_URL}"
         echo "Setting ${GITOPS_CHART_APP_YQ_PATH}.chart.version = ${TARGET_VERSION}"
@@ -412,7 +412,7 @@ Deploy:ArgoCD:$[[ inputs.environment ]]:
             exit 1
           fi
           if [[ -n "${GITOPS_IMAGE_REPO_YQ_PATH}" ]]; then
-            IMAGE_FULL_REPO="${IMAGE_REGISTRY}/${IMAGE_PUSH_REPOSITORY:-${IMAGE_REPOSITORY}}"
+            IMAGE_FULL_REPO="${IMAGE_PRIMARY_REGISTRY}/${IMAGE_PRIMARY_REPOSITORY}"
             echo "Setting ${GITOPS_IMAGE_REPO_YQ_PATH} = ${IMAGE_FULL_REPO}"
             gitops_yaml_set "${IMAGE_VALUES_PATH}" "${GITOPS_IMAGE_REPO_YQ_PATH}" "${IMAGE_FULL_REPO}"
           fi
@@ -434,8 +434,8 @@ Deploy:ArgoCD:$[[ inputs.environment ]]:
         git -C "${GITOPS_TARGET_DIR}" push origin "${GITOPS_BRANCH}"
         echo "Pushed to ${GITOPS_BRANCH}"
       fi
+    - ARGOCD_FAILED=()
     - |
-      ARGOCD_FAILED=()
       for APP in ${ARGOCD_APPS}; do
         echo "--- 🔄 Hard refresh: ${APP}"
         if ! argocd app get "${APP}" --hard-refresh --auth-token "${ARGOCD_TOKEN}" --server "${ARGOCD_SERVER}" --grpc-web; then

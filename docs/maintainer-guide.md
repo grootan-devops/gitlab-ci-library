@@ -15,6 +15,24 @@ compatible with the selected migration guide. Shell commands live in YAML
 `script`, `before_script`, or `after_script` blocks; keep them valid Bash and
 do not print credentials. New standalone `.sh` files are checked by ShellCheck.
 
+Registry targets, credential groups and logins go through the functions in
+`.registry-functions` (`common/.gitlab-ci.yml`). YAML anchors do not cross
+included files, so a job loads them with `- !reference [.registry-functions, script]`
+as its own list item before any `registry_*` call; never put the reference inside
+an anchored scalar such as `.chart-registry`. The functions do not exist in
+`after_script`, which runs in a separate shell. They take the password on stdin
+only, suspend shell tracing while they hold credentials, and log each tool in to a
+registry once per job, so a loop over the repositories calls `registry_login` for
+each one and repeats nothing.
+
+A job extends a rule anchor from `common/` when one admits the workflows it needs. A new
+rule set starts with `- !reference [.verify-rules, rules]` (merge requests to a protected
+master, and monorepo child pipelines), adds one manual-run line,
+`'$CI_PIPELINE_SOURCE =~ /^(web|api)$/ && $WORKFLOW =~ /^(full-pipeline|lint)$/'`, and ends
+with `- when: never`. An identical set references the existing one instead of copying it. Keep
+anchors that no library job uses, such as `.mr-only-rules`, `.master-fast-track-rules`,
+`.deploy-workflow-rules` and `.full-and-mr-rules`: projects extend them in their own overrides.
+
 ## Self-linting
 
 `.github/workflows/pr.yml` runs Actionlint and ShellCheck for repository-owned

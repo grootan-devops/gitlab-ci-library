@@ -226,6 +226,7 @@ flowchart TD
 > 2. It exports the exact pre-built dev candidate version: `DEV_CANDIDATE_VERSION="${RELEASE_VERSION}-rc.${UPSTREAM_PIPELINE_ID}-${MR_IID}"`.
 > 3. `Image:Promote` uses **Crane** for layerless OCI promotion: pulls the candidate manifest directly from `registry.contoso.com/acme/<project>/dev:<DEV_CANDIDATE_VERSION>`, mutates the version label to `${TAG}`, and pushes to `registry.contoso.com/acme/<project>:${TAG}` along with `latest`, `${MAJOR_VERSION}`, and `${MINOR_VERSION}` tags.
 > 4. `Chart:Promote` pulls the candidate from the configured OCI dev repository, or the GitLab package `dev` channel when `CHART_REGISTRY` is empty, and repackages with production `${TAG}`. It publishes to the production OCI repository or package `stable` channel. Docker Hub uses the same repository for both versions.
+>    With a [credential group](configuration.md#publishing-to-several-registries), both promotions run in the primary repository; the released image is then copied by digest, with its alias tags, and the same chart package published, to every other repository.
 > 5. `Release:Upload` restores verification artifacts from the upstream MR pipeline once using `$CI_JOB_TOKEN` and publishes release assets to the Generic Package Registry.
 > 6. `Release` creates the official GitLab Release page and Git tag `${TAG}`.
 > 7. `Release:Notification:Teams` sends an Adaptive Card release summary to Microsoft Teams.

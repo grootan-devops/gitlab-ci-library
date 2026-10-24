@@ -62,6 +62,7 @@ spec:
         right=$(yq -o=json -I=0 '.' "$2" 2>/dev/null) || return 1
         [[ "${left}" == "${right}" ]]
       }
+    - |
       gitops_yaml_set() {
         local file="$1" path="$2" value="$3" expected candidate scratch rows line column style old old_text new_text plain edited=false
         export GITOPS_YAML_VALUE="${value}"
@@ -130,13 +131,14 @@ Deploy:Komodo:Validate:Image:$[[ inputs.environment ]]:
       artifacts: false
       optional: true
   script:
+    - registry_primary_target image "${IMAGE_REPOSITORY}" || exit 1
+    - IMAGE_TARGET_REGISTRY="${REGISTRY_PRIMARY}"
+    - IMAGE_TARGET_REPO="${REGISTRY_PRIMARY_REPO}"
     - |
-      if [[ "${TARGET_VERSION}" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-        IMAGE_TARGET_REPO="${IMAGE_REPOSITORY}"
-      else
-        IMAGE_TARGET_REPO="${IMAGE_REPOSITORY}${IMAGE_DEV_REPOSITORY_SUFFIX}"
+      if [[ ! "${TARGET_VERSION}" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+        IMAGE_TARGET_REPO="$(registry_dev_repository image "${IMAGE_TARGET_REGISTRY}" "${IMAGE_TARGET_REPO}" "${IMAGE_DEV_REPOSITORY_SUFFIX}")"
       fi
-    - TARGET_IMG="${IMAGE_REGISTRY}/${IMAGE_TARGET_REPO}:${TARGET_VERSION}"
+    - TARGET_IMG="${IMAGE_TARGET_REGISTRY}/${IMAGE_TARGET_REPO}:${TARGET_VERSION}"
     - |
       if docker manifest inspect "${TARGET_IMG}" > /dev/null 2>&1; then
         echo "✅ Container image '${TARGET_IMG}' verified in registry."
@@ -188,6 +190,8 @@ Deploy:Komodo:$[[ inputs.environment ]]:
       artifacts: false
       optional: true
   script:
+    - !reference [.registry-functions, script]
+    - registry_image_defaults
     - TARGET_VERSION="${TARGET_VERSION:-${APP_PUSH_VERSION:-${TAG}}}"
     - !reference [.Deploy:Komodo:YAML:Set, script]
     - KOMODO_SERVER="${KOMODO_INPUT_SERVER:-${KOMODO_SERVER}}"
@@ -237,7 +241,9 @@ Deploy:Komodo:$[[ inputs.environment ]]:
         echo "❌ ERROR: Path '${GITOPS_SERVICE_IMAGE_YQ_PATH}' not found in ${COMPOSE_PATH}"
         exit 1
       fi
-    - NEW_IMAGE="${IMAGE_REGISTRY}/${IMAGE_PUSH_REPOSITORY:-${IMAGE_REPOSITORY}}:${TARGET_VERSION}"
+    # Deployments read from the primary repository.
+    - registry_primary_target image "${IMAGE_REPOSITORY}" || exit 1
+    - NEW_IMAGE="${REGISTRY_PRIMARY}/${IMAGE_PUSH_REPOSITORY:-${REGISTRY_PRIMARY_REPO}}:${TARGET_VERSION}"
     - >
       echo "Updating ${GITOPS_COMPOSE_FILE}: ${CURRENT_IMAGE} -> ${NEW_IMAGE}"
     - gitops_yaml_set "${COMPOSE_PATH}" "${GITOPS_SERVICE_IMAGE_YQ_PATH}" "${NEW_IMAGE}"
@@ -252,9 +258,6 @@ Deploy:Komodo:$[[ inputs.environment ]]:
       fi
     - echo "Triggering redeploy for Komodo stack '${KOMODO_STACK_NAME}'..."
     - |
-      # --fail-with-body is load-bearing: without it a 401/500 returns an HTML error
-      # body, jq extracts no execution_id, and the job falls through to the "request
-      # accepted" branch below and exits 0 — reporting a deployment that never happened.
       RESPONSE=$(curl --fail-with-body --silent --show-error --location \
         --request POST "${KOMODO_SERVER}/api/v1/update-stack" \
         --header "Content-Type: application/json" \

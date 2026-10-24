@@ -129,4 +129,3 @@ Image:Build:
     - job: Common:Init
       artifacts: true
       optional: true
-    - job

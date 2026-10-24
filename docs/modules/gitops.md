@@ -15,6 +15,7 @@ flowchart LR
     end
 ```
 
+- **Registries**: deployments read from each artifact's **primary**, the first repository: with `PROJECT_REGISTRY_NAME`, the first full repository of `IMAGE_REPOSITORY` and `CHART_REPOSITORY`, whose copies the other repositories hold.
 - **Komodo**: `Deploy:Komodo:Validate:Image:<env>` verifies target container image in OCI registry before `Deploy:Komodo:<env>` begins.
 - **ArgoCD**: `Deploy:ArgoCD:Validate:Chart:<env>` and `Deploy:ArgoCD:Validate:Image:<env>` verify the target chart and image exist before `Deploy:ArgoCD:<env>` commits GitOps changes and syncs ArgoCD. The chart is checked where `Chart:Push` publishes it: the GitLab Helm channel `dev` for candidates or `stable` for releases (`HELM_CHANNEL` overrides), or the OCI release or candidate path. Set `validate_image: false` when the deployed chart does not use an image built by the project.
 

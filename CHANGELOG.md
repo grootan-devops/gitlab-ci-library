@@ -5,6 +5,54 @@ All notable changes to this project will be documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.10.0] - 2026-10-24
+
+### Added
+
+- Publishing to several registries with a credential group:
+  - `REGISTRY_CONFIG`, a group File variable, holds credential groups as YAML or JSON. Each group, such as `client/org`, maps registry hosts like `docker.io` or `quay.io` to a `username` and `password`.
+  - `PROJECT_REGISTRY_NAME` names the one group a project publishes with.
+  - `IMAGE_REPOSITORY` and `CHART_REPOSITORY` then list the full repositories, `<registry>/<path>`, separated by spaces or commas. Every registry they name must be in the group, or be `CI_REGISTRY`, which the CI job token logs in to; repositories on one registry share its account. A `CHART_REPOSITORY` without a registry, such as the default `helm`, is still the project's Helm package registry.
+  - Every candidate and release goes to each listed repository. The first is the primary that base images, scans and deployments read from.
+- `Common:Init` fails as its very first step when `PROJECT_REGISTRY_NAME` is set together with `IMAGE_REGISTRY` or `CHART_REGISTRY`, so no other job runs. `Workflow:Validate:Variables` does the same for the `image-scan`, `chart-scan` and `deploy` workflows.
+- `.registry-functions` (`common/.gitlab-ci.yml`): the registry functions the image, chart and deploy modules load with `!reference`.
+- `Image:Promote`, `Chart:Promote`: copy the release to every other repository. The image goes by digest with its `latest`, major and minor tags; the chart goes as the same package.
+- `docs/examples/multi-registry.md`.
+- `.verify-rules` (`common/.gitlab-ci.yml`): merge requests to the default branch or a protected `*/master`, and monorepo child pipelines. Rule sets start with `- !reference [.verify-rules, rules]` instead of repeating both conditions.
+- `.check-workflow-rules`: the `check` workflow's rule set, shared by `Chart:Check:Dependency` and `Terraform:Check:README`.
+
+### Changed
+
+- `Image:Push`, `Chart:Push`: publish to every repository, try each one, then fail naming the ones that refused.
+- `Image:Check Existence`, `Chart:Check Existence`: check every repository for a release-version collision.
+- A job logs each tool in to a registry once, however many repositories it holds there; the Docker `Image:Build` no longer repeats the login its `before_script` made.
+- Docker Hub image candidates go to `<repo>-dev`, because Docker Hub has no nested repositories and the `/dev` path was not valid there.
+- `Common:Init`:
+  - fails without a group when `IMAGE_REGISTRY` or `CHART_REGISTRY` holds several hosts, or `IMAGE_REPOSITORY` or `CHART_REPOSITORY` several repositories, pointing to `PROJECT_REGISTRY_NAME`, and with a group when a repository is not `<registry>/<path>` on one of its registries;
+  - with a group, fails when a registry the repositories name has no username and password in it, unless it is `CI_REGISTRY`;
+  - with a group, writes each artifact's primary host as `IMAGE_REGISTRY` and `CHART_REGISTRY`, the full repositories comma-joined as `IMAGE_REPOSITORY` and `CHART_REPOSITORY`, and `IMAGE_PUSH_REPOSITORY`, `IMAGE_CHECK_REPOSITORY`, `CHART_DEV_REPOSITORY` and `CHART_PUSH_REPOSITORY` for the primary; no key is added;
+  - with a single registry, writes exactly the values of 1.9.0.
+- `Deploy:ArgoCD:Validate:Chart`: logs in to the chart registry with that registry's own credentials, or reads it anonymously when it has none. The CI job token is sent only to `CI_REGISTRY`.
+- Every job that extends `.image-registry-login` defaults `IMAGE_REGISTRY` to `CI_REGISTRY` without a group, as `Common:Init` does.
+- Terraform jobs no longer look for `${PROJECT_PATH}/main.tf`: including `terraform/` opts a project in, as with every other module. `Terraform:Init`, `Terraform:Validate` and `Terraform:Lint` use the shared `.lint-workflow-rules`, and `Terraform:Module:Test` uses `.terraform-scan-rules`, as `Terraform:Scan` does.
+- `Terraform:Init` no longer runs in the `build` and `check` workflows, where no job needs it.
+- `Trivy:Cache:Warm` runs only in workflows with a Trivy scan. A repository with a `main.tf` no longer warms the cache in release pipelines or in the `lint`, `check` and `secret-scanning` workflows.
+- Rule sets name their manual workflows with one regular expression, such as `$WORKFLOW =~ /^(full-pipeline|lint)$/`, instead of a chain of comparisons. Every job is admitted to exactly the pipelines it was before.
+- `.unit-test-workflow-rules`, `.lifecycle-rules`, `.master-fast-track-rules` and `.terraform-check-rules` reference their identical `.build-test-rules`, `.common-init-rules`, `.release-rules` and `.check-workflow-rules` instead of copying them, and stay for projects that extend them. `.Node:Test:Unit` extends `.build-test-rules`, as the other unit-test templates do. `Chart:Values:Lint` and `Chart:Check:Dependency` extend `.lint-workflow-rules` and `.check-workflow-rules` instead of copying them.
+
+### Removed
+
+- `.terraform-workflow-rules` and `.terraform-module-test-rules`. Use `.lint-workflow-rules` and `.terraform-scan-rules`.
+
+### Fixed
+
+- Buildah `Image:Build`: the truncated `needs:` entry that stopped any pipeline including `image/.buildah.gitlab-ci.yml` from being created.
+- Docker `Image:Build`, `Chart:Promote`: a relative `PROJECT_PATH` is no longer applied twice when `before_script` has already entered it.
+- `WORKFLOW=image-scan`, `Deploy:Komodo:Validate:Image`: check the image in `CI_REGISTRY` when `IMAGE_REGISTRY` is unset, instead of `/<repository>`.
+- `docs/modules/image.md`: lists `Image:Promote`, which is where the alias tags are applied (not `Image:Push`).
+- A Terraform repository without `${PROJECT_PATH}/main.tf` no longer has its pipeline refused. `Terraform:Validate` and `Terraform:Lint` needed `Terraform:Init`, which that check had skipped.
+- `Terraform:Lint`: restores the `terraform` cache that `Terraform:Init` fills, so `tflint --call-module-type=all` finds git and registry modules instead of failing with `module is not found. Did you run "terraform init"?`.
+
 ## [1.9.0] - 2026-10-01
 
 ### Added
