@@ -15,7 +15,7 @@ No migration is required for a single registry, provided every include of the li
 to `1.11.0` together. The image, chart and deploy templates load the registry functions from
 `common/.gitlab-ci.yml`.
 
-- **`PROJECT_REGISTRY_NAME` now selects a credential group.** `1.10.0` and earlier ignore it. A project or
+- **`PROJECT_REGISTRY_NAME` now selects a credential group.** `1.10.1` and earlier ignore it. A project or
   group that still sets it, for example from the earlier GitLab templates, removes it or moves
   to a credential group as below: set together with `IMAGE_REGISTRY` or `CHART_REGISTRY`, it now
   stops the pipeline in `Common:Init`.
@@ -46,6 +46,16 @@ to `1.11.0` together. The image, chart and deploy templates load the registry fu
 - `init.env` carries the same keys as before.
 - After a release, every repository holds the release tag and its `latest`, major and minor
   tags, all at the same digest.
+
+## 1.10.1
+
+### Required
+
+No migration required.
+
+### Verify
+
+- A release pipeline in a project without SonarQube creates its release, with only the package link.
 
 ## 1.10.0
 

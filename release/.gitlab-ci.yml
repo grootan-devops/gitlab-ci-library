@@ -361,7 +361,13 @@ Release:
           "${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/releases/${TAG}" >/dev/null 2>&1 || true
         echo "✅ Release ${TAG} updated successfully."
       else
-        release-cli create --name "Release ${TAG}" --description "$(cat ${CONSOLIDATED_RELEASE_CHANGELOG_FILE_NAME})" --tag-name "${TAG}" --ref "${CI_COMMIT_SHA}" --assets-link "$(asset_json "📦 Release Package" "${CI_PROJECT_URL}/-/packages?version=${TAG}&orderBy=created_at&sort=desc")" --assets-link "$(asset_json "🔍 SonarQube" "${SONAR_EXTERNAL_URL:-${SONAR_URL}}/dashboard?id=${CI_PROJECT_PATH_SLUG}")" "${ASSET_LINKS[@]}"
+        ASSET_LINKS+=(--assets-link "$(asset_json "📦 Release Package" "${CI_PROJECT_URL}/-/packages?version=${TAG}&orderBy=created_at&sort=desc")")
+        # GitLab rejects a link without a scheme, so the SonarQube link needs a configured URL.
+        SONAR_LINK_URL="${SONAR_EXTERNAL_URL:-${SONAR_URL}}"
+        if [[ "${SONAR_LINK_URL}" =~ ^https?:// ]]; then
+          ASSET_LINKS+=(--assets-link "$(asset_json "🔍 SonarQube" "${SONAR_LINK_URL%/}/dashboard?id=${CI_PROJECT_PATH_SLUG}")")
+        fi
+        release-cli create --name "Release ${TAG}" --description "$(cat ${CONSOLIDATED_RELEASE_CHANGELOG_FILE_NAME})" --tag-name "${TAG}" --ref "${CI_COMMIT_SHA}" "${ASSET_LINKS[@]}"
       fi
   artifacts:
     name: Release Descriptions
