@@ -16,8 +16,11 @@ No migration is required outside Terraform, provided every include of the librar
 `common/.gitlab-ci.yml` gains in this release.
 
 - **Terraform jobs run wherever `terraform/` is included.** None checks for
-  `${PROJECT_PATH}/main.tf` any more. Point `PROJECT_PATH` at the Terraform root and set
-  `TF_STATE_NAME`, or remove the include from a project that has no Terraform.
+  `${PROJECT_PATH}/main.tf` any more. Point `PROJECT_PATH` at the Terraform root, or remove the
+  include from a project that has no Terraform.
+- **Terraform cache key.** The Terraform jobs cache `.terraform` under `PROJECT_CACHE_KEY`, as
+  every other stack's jobs do, instead of the fixed key `terraform`. A Terraform project sets it,
+  for example `PROJECT_CACHE_KEY: terraform`.
 - **Removed Terraform rule anchors.** A project that extends `.terraform-workflow-rules` or
   `.terraform-module-test-rules` extends `.lint-workflow-rules` or `.terraform-scan-rules`
   instead.
@@ -28,6 +31,12 @@ No migration is required outside Terraform, provided every include of the librar
   `/dev` path can drop it.
 - **Terraform.** A project that overrode `Terraform:Lint` to run `terraform init` first can drop
   the override.
+- **`TF_STATE_NAME`.** `Terraform:Init` runs `terraform init -backend=false`, so it reads no state
+  and needs no backend credentials. A project can drop `TF_STATE_NAME`, and any backend
+  credentials it set only for CI.
+- **Several Terraform roots.** A repository with more than one root runs the Terraform jobs once
+  per root with `parallel: matrix` over `PROJECT_PATH` and `PROJECT_CACHE_KEY`, as
+  `docs/examples/terraform.md` shows.
 - **Terraform `WORKFLOW` options.** A Terraform repository that declares its own `WORKFLOW`
   options lists `full-pipeline`, `check`, `lint` and `secret-scanning`. Drop `build`: no
   Terraform job runs in it any more.
@@ -40,7 +49,8 @@ No migration is required outside Terraform, provided every include of the librar
 
 - `init.env` carries the same keys as before.
 - In a Terraform repository whose root calls a git or registry module, `Terraform:Lint` passes.
-  A manual `check` pipeline no longer lists `Terraform:Init`, and a release pipeline no longer
+  `Terraform:Init` passes without backend credentials, also on a root whose state is
+  GitLab-managed (`backend "http"`). A manual `check` pipeline no longer lists `Terraform:Init`, and a release pipeline no longer
   lists `Trivy:Cache:Warm`.
 - A merge request pipeline and each manual workflow list the same jobs as before the upgrade,
   apart from the Terraform changes above.
