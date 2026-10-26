@@ -57,64 +57,65 @@ spec:
   script:
     - |
       gitops_yaml_same() {
-        local left right
-        left=$(yq -o=json -I=0 '.' "$1" 2>/dev/null) || return 1
-        right=$(yq -o=json -I=0 '.' "$2" 2>/dev/null) || return 1
-        [[ "${left}" == "${right}" ]]
+        local LEFT RIGHT
+        LEFT=$(yq -o=json -I=0 '.' "$1" 2>/dev/null) || return 1
+        RIGHT=$(yq -o=json -I=0 '.' "$2" 2>/dev/null) || return 1
+        [[ "${LEFT}" == "${RIGHT}" ]]
       }
+    - |
       gitops_yaml_set() {
-        local file="$1" path="$2" value="$3" expected candidate scratch rows line column style old old_text new_text plain edited=false
-        export GITOPS_YAML_VALUE="${value}"
-        expected=$(mktemp)
-        candidate=$(mktemp)
-        scratch=$(mktemp)
-        yq eval "(${path}) = strenv(GITOPS_YAML_VALUE)" "${file}" > "${expected}"
-        if gitops_yaml_same "${file}" "${expected}"; then
-          rm -f "${expected}" "${candidate}" "${scratch}"
+        local FILE="$1" YAML_PATH="$2" VALUE="$3" EXPECTED CANDIDATE SCRATCH ROWS LINE COLUMN STYLE OLD OLD_TEXT NEW_TEXT PLAIN EDITED=false
+        export GITOPS_YAML_VALUE="${VALUE}"
+        EXPECTED=$(mktemp)
+        CANDIDATE=$(mktemp)
+        SCRATCH=$(mktemp)
+        yq eval "(${YAML_PATH}) = strenv(GITOPS_YAML_VALUE)" "${FILE}" > "${EXPECTED}"
+        if gitops_yaml_same "${FILE}" "${EXPECTED}"; then
+          rm -f "${EXPECTED}" "${CANDIDATE}" "${SCRATCH}"
           return 0
         fi
-        cp "${file}" "${candidate}"
-        if [[ "${value}" != *[\"\'\\]* ]]; then
-          plain="\"${value}\""
-          if [[ "$(printf 'v: %s\n' "${value}" | yq '.v | tag' 2>/dev/null)" == "!!str" && "$(printf 'v: %s\n' "${value}" | yq '.v' 2>/dev/null)" == "${value}" ]]; then
-            plain="${value}"
+        cp "${FILE}" "${CANDIDATE}"
+        if [[ "${VALUE}" != *[\"\'\\]* ]]; then
+          PLAIN="\"${VALUE}\""
+          if [[ "$(printf 'v: %s\n' "${VALUE}" | yq '.v | tag' 2>/dev/null)" == "!!str" && "$(printf 'v: %s\n' "${VALUE}" | yq '.v' 2>/dev/null)" == "${VALUE}" ]]; then
+            PLAIN="${VALUE}"
           fi
-          rows=$(yq --header-preprocess=false -o=json -I=0 "[(${path}) | {\"line\": line, \"column\": column, \"style\": style, \"value\": .}]" "${file}" 2>/dev/null \
-            | jq -rs 'add // [] | if length > 0 and all(.[]; .line > 0 and .value != null and (.value | type) != "object" and (.value | type) != "array" and (.style | IN("", "double", "single"))) then sort_by(.line, .column) | reverse | .[] | [.line, .column, (if .style == "" then "plain" else .style end), (.value | tostring)] | @tsv else empty end') || rows=""
-          [[ -n "${rows}" ]] && edited=true
-          while [[ "${edited}" == true ]] && IFS=$'\t' read -r line column style old; do
-            case "${style}" in
-              double) old_text="\"${old}\""; new_text="\"${value}\"" ;;
-              single) old_text="'${old}'"; new_text="'${value}'" ;;
-              *) old_text="${old}"; new_text="${plain}" ;;
+          ROWS=$(yq --header-preprocess=false -o=json -I=0 "[(${YAML_PATH}) | {\"line\": line, \"column\": column, \"style\": style, \"value\": .}]" "${FILE}" 2>/dev/null \
+            | jq -rs 'add // [] | if length > 0 and all(.[]; .line > 0 and .value != null and (.value | type) != "object" and (.value | type) != "array" and (.style | IN("", "double", "single"))) then sort_by(.line, .column) | reverse | .[] | [.line, .column, (if .style == "" then "plain" else .style end), (.value | tostring)] | @tsv else empty end') || ROWS=""
+          [[ -n "${ROWS}" ]] && EDITED=true
+          while [[ "${EDITED}" == true ]] && IFS=$'\t' read -r LINE COLUMN STYLE OLD; do
+            case "${STYLE}" in
+              double) OLD_TEXT="\"${OLD}\""; NEW_TEXT="\"${VALUE}\"" ;;
+              single) OLD_TEXT="'${OLD}'"; NEW_TEXT="'${VALUE}'" ;;
+              *) OLD_TEXT="${OLD}"; NEW_TEXT="${PLAIN}" ;;
             esac
-            if GITOPS_YAML_OLD="${old_text}" GITOPS_YAML_NEW="${new_text}" awk -v l="${line}" -v c="${column}" '
+            if GITOPS_YAML_OLD="${OLD_TEXT}" GITOPS_YAML_NEW="${NEW_TEXT}" awk -v l="${LINE}" -v c="${COLUMN}" '
                 NR == l {
                   o = ENVIRON["GITOPS_YAML_OLD"]
                   if (substr($0, c, length(o)) != o) exit 1
                   $0 = substr($0, 1, c - 1) ENVIRON["GITOPS_YAML_NEW"] substr($0, c + length(o))
                 }
-                { print }' "${candidate}" > "${scratch}"; then
-              cat "${scratch}" > "${candidate}"
+                { print }' "${CANDIDATE}" > "${SCRATCH}"; then
+              cat "${SCRATCH}" > "${CANDIDATE}"
             else
-              edited=false
+              EDITED=false
             fi
-          done <<< "${rows}"
+          done <<< "${ROWS}"
         fi
-        if [[ "${edited}" == true ]] && gitops_yaml_same "${candidate}" "${expected}"; then
-          cat "${candidate}" > "${file}"
+        if [[ "${EDITED}" == true ]] && gitops_yaml_same "${CANDIDATE}" "${EXPECTED}"; then
+          cat "${CANDIDATE}" > "${FILE}"
         else
-          cp "${file}" "${candidate}"
-          diff -U0 -w -b --ignore-blank-lines "${file}" "${expected}" > "${scratch}" || true
-          if patch --silent --no-backup-if-mismatch --reject-file=- "${candidate}" "${scratch}" > /dev/null 2>&1 && gitops_yaml_same "${candidate}" "${expected}"; then
-            echo "${path}: not an existing single-line value; applied the yq change as a patch (blank lines kept)."
-            cat "${candidate}" > "${file}"
+          cp "${FILE}" "${CANDIDATE}"
+          diff -U0 -w -b --ignore-blank-lines "${FILE}" "${EXPECTED}" > "${SCRATCH}" || true
+          if patch --silent --no-backup-if-mismatch --reject-file=- "${CANDIDATE}" "${SCRATCH}" > /dev/null 2>&1 && gitops_yaml_same "${CANDIDATE}" "${EXPECTED}"; then
+            echo "${YAML_PATH}: not an existing single-line value; applied the yq change as a patch (blank lines kept)."
+            cat "${CANDIDATE}" > "${FILE}"
           else
-            echo "⚠️ ${path}: could not edit in place; writing the yq output (file formatting may change)."
-            cat "${expected}" > "${file}"
+            echo "⚠️ ${YAML_PATH}: could not edit in place; writing the yq output (file formatting may change)."
+            cat "${EXPECTED}" > "${FILE}"
           fi
         fi
-        rm -f "${expected}" "${candidate}" "${scratch}"
+        rm -f "${EXPECTED}" "${CANDIDATE}" "${SCRATCH}"
       }
 
 Deploy:Komodo:Validate:Image:$[[ inputs.environment ]]:

@@ -5,6 +5,46 @@ All notable changes to this project will be documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.10.0] - 2026-10-26
+
+### Added
+
+- `.verify-rules` (`common/.gitlab-ci.yml`): merge requests to the default branch or a protected `*/master`, and monorepo child pipelines. Rule sets start with `- !reference [.verify-rules, rules]` instead of repeating both conditions.
+- `.check-workflow-rules`: the `check` workflow's rule set, shared by `Chart:Check:Dependency` and `Terraform:Check:README`.
+- `docs/workflow-map.json`: the `WORKFLOW` options each module provides and the job that shows an option is active, for audit tools to read at the release a project pins. `docs/maintainer-guide.md` says how to keep it in step with the modules.
+- `docs/examples/terraform.md`: a repository with several Terraform roots runs the Terraform jobs once per root with `parallel: matrix` over `PROJECT_PATH` and `PROJECT_CACHE_KEY`.
+
+### Changed
+
+- CI calls the github-ci-library 1.7.0 reusable workflows instead of 1.3.1.
+- Docker Hub image candidates go to `<repo>-dev`, because Docker Hub has no nested repositories and the `/dev` path was not valid there.
+- `Deploy:ArgoCD:Validate:Chart`: logs in to the chart registry with its `CHART_REGISTRY_USERNAME` / `CHART_REGISTRY_PASSWORD` pair, or reads it anonymously when it has none. The CI job token is sent only to `CI_REGISTRY`.
+- Every job that extends `.image-registry-login` defaults `IMAGE_REGISTRY` to `CI_REGISTRY`, as `Common:Init` does.
+- `docs/maintainer-guide.md`: the release and versioning policy (public interface, semantic versioning, deprecations) replaces the initial-release note.
+- Terraform jobs no longer look for `${PROJECT_PATH}/main.tf`: including `terraform/` opts a project in, as with every other module. `Terraform:Init`, `Terraform:Validate` and `Terraform:Lint` use the shared `.lint-workflow-rules`, and `Terraform:Module:Test` uses `.terraform-scan-rules`, as `Terraform:Scan` does.
+- `Terraform:Init` no longer runs in the `build` and `check` workflows, where no job needs it.
+- `Terraform:Init` runs `terraform init -backend=false` and no longer reads `TF_STATE_NAME`: no CI job reads state, so a Terraform pipeline needs no backend credentials.
+- The Terraform jobs cache `.terraform` under `PROJECT_CACHE_KEY`, as every other stack's jobs do, instead of the fixed key `terraform`, so each root of a repository keeps its own.
+- `Trivy:Cache:Warm` runs only in workflows with a Trivy scan. A repository with a `main.tf` no longer warms the cache in release pipelines or in the `lint`, `check` and `secret-scanning` workflows.
+- Rule sets name their manual workflows with one regular expression, such as `$WORKFLOW =~ /^(full-pipeline|lint)$/`, instead of a chain of comparisons. Every job is admitted to exactly the pipelines it was before.
+- `.unit-test-workflow-rules`, `.lifecycle-rules`, `.master-fast-track-rules` and `.terraform-check-rules` reference their identical `.build-test-rules`, `.common-init-rules`, `.release-rules` and `.check-workflow-rules` instead of copying them, and stay for projects that extend them. `.Node:Test:Unit` extends `.build-test-rules`, as the other unit-test templates do. `Chart:Values:Lint` and `Chart:Check:Dependency` extend `.lint-workflow-rules` and `.check-workflow-rules` instead of copying them.
+
+### Removed
+
+- `.terraform-workflow-rules` and `.terraform-module-test-rules`. Use `.lint-workflow-rules` and `.terraform-scan-rules`.
+
+### Fixed
+
+- Buildah `Image:Build`: the truncated `needs:` entry that stopped any pipeline including `image/.buildah.gitlab-ci.yml` from being created. It needs only `Common:Init`: Buildah builds micro images, not application images, so there is no `Project:Build` or dependency download to wait for. It takes the docker job's rules (`.image-build-workflow-rules`), so it runs only for merge request verification and `full-pipeline` or `image-build-and-push` runs. Without them it would have built an unused image in every pipeline, release pipelines included.
+- Docker `Image:Build`, `Chart:Promote`: a relative `PROJECT_PATH` is no longer applied twice when `before_script` has already entered it.
+- `WORKFLOW=image-scan`, `Deploy:Komodo:Validate:Image`: check the image in `CI_REGISTRY` when `IMAGE_REGISTRY` is unset, instead of `/<repository>`.
+- `docs/modules/image.md`: lists `Image:Promote`, which is where the alias tags are applied (not `Image:Push`).
+- `docs/pipeline-lifecycle.md`: a Terraform repository's `WORKFLOW` options include `secret-scanning`, which its include set has, and not `build`, where no Terraform job runs.
+- A Terraform repository without `${PROJECT_PATH}/main.tf` no longer has its pipeline refused. `Terraform:Validate` and `Terraform:Lint` needed `Terraform:Init`, which that check had skipped.
+- `Terraform:Lint`: restores the cache that `Terraform:Init` fills, so `tflint --call-module-type=all` finds git and registry modules instead of failing with `module is not found. Did you run "terraform init"?`.
+- `Terraform:Init` on a root whose backend is not S3. It passed the S3-only `workspace_key_prefix`, so a root on GitLab-managed state (`backend "http"`) failed with `Invalid backend configuration argument`.
+- `Terraform:Scan` scans the Terraform root. Only the chart jobs set `IAC_SCAN_PATH`, so it ran `trivy config` without a path and failed with `Require at least 1 argument`.
+
 ## [1.9.0] - 2026-10-01
 
 ### Added

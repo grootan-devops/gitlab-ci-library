@@ -10,16 +10,16 @@
 .chart-registry:
   script: &chart-registry |
     chart_login() {
-      local registry="$1" user="$2" password="$3"
-      case "${registry}" in
+      local REGISTRY="$1" USERNAME="$2" PASSWORD="$3"
+      case "${REGISTRY}" in
         ""|*://*|*/*|*@*|*[[:space:]]*) echo "ERROR: Chart registry must be an OCI hostname, optionally with a port." >&2; return 1 ;;
       esac
-      if [[ -z "${user}" || -z "${password}" ]]; then
-        echo "ERROR: Set the chart registry username/password pair for ${registry}." >&2
+      if [[ -z "${USERNAME}" || -z "${PASSWORD}" ]]; then
+        echo "ERROR: Set the chart registry username/password pair for ${REGISTRY}." >&2
         return 1
       fi
-      if ! printf '%s' "${password}" | helm registry login "${registry}" --username "${user}" --password-stdin >/dev/null 2>&1; then
-        echo "ERROR: Chart registry authentication failed for ${registry}; check credentials and registry access." >&2
+      if ! printf '%s' "${PASSWORD}" | helm registry login "${REGISTRY}" --username "${USERNAME}" --password-stdin >/dev/null 2>&1; then
+        echo "ERROR: Chart registry authentication failed for ${REGISTRY}; check credentials and registry access." >&2
         return 1
       fi
     }
@@ -35,12 +35,12 @@
         case "${CHART_REGISTRY}" in
           docker.io|index.docker.io|registry-1.docker.io) DEV_CHART_REPO="${PROD_CHART_REPO}" ;;
         esac
-        local user="${CHART_REGISTRY_USERNAME:-}" password="${CHART_REGISTRY_PASSWORD:-}"
-        if [[ "${CHART_REGISTRY}" == "${CI_REGISTRY:-}" && -z "${user}${password}" ]]; then
-          user="${CI_REGISTRY_USER:-gitlab-ci-token}"
-          password="${CI_REGISTRY_PASSWORD:-${CI_JOB_TOKEN:-}}"
+        local USERNAME="${CHART_REGISTRY_USERNAME:-}" PASSWORD="${CHART_REGISTRY_PASSWORD:-}"
+        if [[ "${CHART_REGISTRY}" == "${CI_REGISTRY:-}" && -z "${USERNAME}${PASSWORD}" ]]; then
+          USERNAME="${CI_REGISTRY_USER:-gitlab-ci-token}"
+          PASSWORD="${CI_REGISTRY_PASSWORD:-${CI_JOB_TOKEN:-}}"
         fi
-        chart_login "${CHART_REGISTRY}" "${user}" "${password}" || return 1
+        chart_login "${CHART_REGISTRY}" "${USERNAME}" "${PASSWORD}" || return 1
       else
         : "${CI_API_V4_URL:?GitLab package publishing requires CI_API_V4_URL}"
         : "${CI_PROJECT_ID:?GitLab package publishing requires CI_PROJECT_ID}"
@@ -60,12 +60,12 @@
 
     # Return 0 for present, 1 for confirmed absence, 2 for an operational error.
     chart_exists() {
-      local version="$1" repository="$2" output page=1 count
+      local VERSION="$1" REPOSITORY="$2" OUTPUT PAGE=1 COUNT
       if [[ -n "${CHART_REGISTRY:-}" ]]; then
-        if output=$(helm show chart "oci://${CHART_REGISTRY}/${repository}/${RESOLVED_CHART_NAME}" --version "${version}" 2>&1); then
+        if OUTPUT=$(helm show chart "oci://${CHART_REGISTRY}/${REPOSITORY}/${RESOLVED_CHART_NAME}" --version "${VERSION}" 2>&1); then
           return 0
         fi
-        case "${output}" in
+        case "${OUTPUT}" in
           *401*|*403*|*Unauthorized*|*unauthorized*|*denied*|*timeout*|*connection*|*"no such host"*|*x509*|*executable*|*"command not found"*) ;;
           *"not found"*|*"404 Not Found"*|*MANIFEST_UNKNOWN*|*NAME_UNKNOWN*) return 1 ;;
         esac
@@ -73,54 +73,54 @@
         return 2
       fi
       while :; do
-        if ! output=$(curl --fail --silent --show-error --get --header "JOB-TOKEN: ${CI_JOB_TOKEN}" \
+        if ! OUTPUT=$(curl --fail --silent --show-error --get --header "JOB-TOKEN: ${CI_JOB_TOKEN}" \
           --data-urlencode "package_type=helm" --data-urlencode "package_name=${RESOLVED_CHART_NAME}" \
-          --data-urlencode "package_version=${version}" --data-urlencode "per_page=100" --data-urlencode "page=${page}" \
+          --data-urlencode "package_version=${VERSION}" --data-urlencode "per_page=100" --data-urlencode "page=${PAGE}" \
           "${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/packages" 2>/dev/null); then
           echo "ERROR: GitLab package lookup failed; check job-token access and service availability." >&2
           return 2
         fi
-        if ! count=$(printf '%s' "${output}" | jq -er 'if type == "array" and all(.[]; type == "object" and (.name | type) == "string" and (.version | type) == "string") then length else error("invalid packages") end' 2>/dev/null); then
+        if ! COUNT=$(printf '%s' "${OUTPUT}" | jq -er 'if type == "array" and all(.[]; type == "object" and (.name | type) == "string" and (.version | type) == "string") then length else error("invalid packages") end' 2>/dev/null); then
           echo "ERROR: Invalid GitLab package response." >&2
           return 2
         fi
-        if printf '%s' "${output}" | jq -e --arg name "${RESOLVED_CHART_NAME}" --arg version "${version}" \
-          'any(.[]; .name == $name and .version == $version)' >/dev/null; then
+        if printf '%s' "${OUTPUT}" | jq -e --arg NAME "${RESOLVED_CHART_NAME}" --arg VERSION "${VERSION}" \
+          'any(.[]; .name == $NAME and .version == $VERSION)' >/dev/null; then
           return 0
         fi
-        [[ "${count}" -eq 100 ]] || return 1
-        page=$((page + 1))
+        [[ "${COUNT}" -eq 100 ]] || return 1
+        PAGE=$((PAGE + 1))
       done
     }
 
     chart_pull() {
-      local version="$1" repository="$2" destination="$3" ref
+      local VERSION="$1" REPOSITORY="$2" DESTINATION="$3" REF
       if [[ -n "${CHART_REGISTRY:-}" ]]; then
-        ref="oci://${CHART_REGISTRY}/${repository}/${RESOLVED_CHART_NAME}"
+        REF="oci://${CHART_REGISTRY}/${REPOSITORY}/${RESOLVED_CHART_NAME}"
       else
-        if ! helm repo add ci-chart "${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/packages/helm/${repository}" \
+        if ! helm repo add ci-chart "${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/packages/helm/${REPOSITORY}" \
           --force-update --username gitlab-ci-token --password "${CI_JOB_TOKEN}" >/dev/null 2>&1; then
-          echo "ERROR: Cannot load GitLab Helm channel ${repository}." >&2
+          echo "ERROR: Cannot load GitLab Helm channel ${REPOSITORY}." >&2
           return 1
         fi
-        ref="ci-chart/${RESOLVED_CHART_NAME}"
+        REF="ci-chart/${RESOLVED_CHART_NAME}"
       fi
-      if ! helm pull "${ref}" --version "${version}" --untar --untardir "${destination}" >/dev/null 2>&1; then
-        echo "ERROR: Cannot pull chart ${RESOLVED_CHART_NAME}:${version} from ${repository}." >&2
+      if ! helm pull "${REF}" --version "${VERSION}" --untar --untardir "${DESTINATION}" >/dev/null 2>&1; then
+        echo "ERROR: Cannot pull chart ${RESOLVED_CHART_NAME}:${VERSION} from ${REPOSITORY}." >&2
         return 1
       fi
     }
 
     chart_publish() {
-      local package="$1" repository="$2"
+      local PACKAGE="$1" REPOSITORY="$2"
       if [[ -n "${CHART_REGISTRY:-}" ]]; then
-        if ! helm push "${package}" "oci://${CHART_REGISTRY}/${repository}" >/dev/null 2>&1; then
+        if ! helm push "${PACKAGE}" "oci://${CHART_REGISTRY}/${REPOSITORY}" >/dev/null 2>&1; then
           echo "ERROR: OCI chart push failed; no GitLab package fallback was attempted." >&2
           return 1
         fi
       elif ! curl --fail --silent --show-error --output /dev/null --request POST \
-        --user "gitlab-ci-token:${CI_JOB_TOKEN}" --form "chart=@${package}" \
-        "${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/packages/helm/api/${repository}/charts" 2>/dev/null; then
+        --user "gitlab-ci-token:${CI_JOB_TOKEN}" --form "chart=@${PACKAGE}" \
+        "${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/packages/helm/api/${REPOSITORY}/charts" 2>/dev/null; then
         echo "ERROR: GitLab Helm package upload failed." >&2
         return 1
       fi
@@ -137,23 +137,20 @@
 
 .chart-lint-workflow-rules:
   rules:
-    - if: '$CI_PIPELINE_SOURCE == "merge_request_event" && ($CI_MERGE_REQUEST_TARGET_BRANCH_NAME == $CI_DEFAULT_BRANCH || ($CI_MERGE_REQUEST_TARGET_BRANCH_NAME =~ $MASTER_BRANCH_REGEX && $CI_MERGE_REQUEST_TARGET_BRANCH_PROTECTED == "true"))'
-    - if: '$CI_PIPELINE_SOURCE == "parent_pipeline"'
-    - if: '$CI_PIPELINE_SOURCE =~ /^(web|api)$/ && ($WORKFLOW == "full-pipeline" || $WORKFLOW == "lint" || $WORKFLOW == "chart-build-and-push")'
+    - !reference [.verify-rules, rules]
+    - if: '$CI_PIPELINE_SOURCE =~ /^(web|api)$/ && $WORKFLOW =~ /^(full-pipeline|lint|chart-build-and-push)$/'
     - when: never
 
 .chart-check-rules:
   rules:
-    - if: '$CI_PIPELINE_SOURCE == "merge_request_event" && ($CI_MERGE_REQUEST_TARGET_BRANCH_NAME == $CI_DEFAULT_BRANCH || ($CI_MERGE_REQUEST_TARGET_BRANCH_NAME =~ $MASTER_BRANCH_REGEX && $CI_MERGE_REQUEST_TARGET_BRANCH_PROTECTED == "true"))'
-    - if: '$CI_PIPELINE_SOURCE == "parent_pipeline"'
-    - if: '$CI_PIPELINE_SOURCE =~ /^(web|api)$/ && ($WORKFLOW == "full-pipeline" || $WORKFLOW == "check" || $WORKFLOW == "chart-build-and-push" || $WORKFLOW == "chart-scan")'
+    - !reference [.verify-rules, rules]
+    - if: '$CI_PIPELINE_SOURCE =~ /^(web|api)$/ && $WORKFLOW =~ /^(full-pipeline|check|chart-build-and-push|chart-scan)$/'
     - when: never
 
 .chart-docs-dependency-check-rules:
   rules:
-    - if: '$CI_PIPELINE_SOURCE == "merge_request_event" && ($CI_MERGE_REQUEST_TARGET_BRANCH_NAME == $CI_DEFAULT_BRANCH || ($CI_MERGE_REQUEST_TARGET_BRANCH_NAME =~ $MASTER_BRANCH_REGEX && $CI_MERGE_REQUEST_TARGET_BRANCH_PROTECTED == "true"))'
-    - if: '$CI_PIPELINE_SOURCE == "parent_pipeline"'
-    - if: '$CI_PIPELINE_SOURCE =~ /^(web|api)$/ && ($WORKFLOW == "full-pipeline" || $WORKFLOW == "check" || $WORKFLOW == "chart-build-and-push")'
+    - !reference [.verify-rules, rules]
+    - if: '$CI_PIPELINE_SOURCE =~ /^(web|api)$/ && $WORKFLOW =~ /^(full-pipeline|check|chart-build-and-push)$/'
     - when: never
 
 Chart:Check Existence:
@@ -224,11 +221,7 @@ Chart:Check:Dependency:
   extends:
     - .chart-common
     - .check-job-common
-  rules:
-    - if: '$CI_PIPELINE_SOURCE == "merge_request_event" && ($CI_MERGE_REQUEST_TARGET_BRANCH_NAME == $CI_DEFAULT_BRANCH || ($CI_MERGE_REQUEST_TARGET_BRANCH_NAME =~ $MASTER_BRANCH_REGEX && $CI_MERGE_REQUEST_TARGET_BRANCH_PROTECTED == "true"))'
-    - if: '$CI_PIPELINE_SOURCE == "parent_pipeline"'
-    - if: '$CI_PIPELINE_SOURCE =~ /^(web|api)$/ && ($WORKFLOW == "full-pipeline" || $WORKFLOW == "check")'
-    - when: never
+    - .check-workflow-rules
   script:
     - |
       if cat "${CHART_DIR}/${CHART_FILE}" | grep -q "helm/dev"; then
@@ -242,11 +235,7 @@ Chart:Values:Lint:
     LINT_YAML_FILES: "${CHART_DIR}/values.yaml"
   extends:
     - .YAML:Lint
-  rules:
-    - if: '$CI_PIPELINE_SOURCE == "merge_request_event" && ($CI_MERGE_REQUEST_TARGET_BRANCH_NAME == $CI_DEFAULT_BRANCH || ($CI_MERGE_REQUEST_TARGET_BRANCH_NAME =~ $MASTER_BRANCH_REGEX && $CI_MERGE_REQUEST_TARGET_BRANCH_PROTECTED == "true"))'
-    - if: '$CI_PIPELINE_SOURCE == "parent_pipeline"'
-    - if: '$CI_PIPELINE_SOURCE =~ /^(web|api)$/ && ($WORKFLOW == "full-pipeline" || $WORKFLOW == "lint")'
-    - when: never
+    - .lint-workflow-rules
 
 Chart:Lint:
   stage: lint
@@ -283,19 +272,19 @@ Chart:Lint:
     # Kept in script rather than before_script: the library default before_script does
     # `cd ${PROJECT_PATH}`, and declaring one here would silently replace it.
     - *chart-login
-    - chart_path="${CHART_DIR}/${MOCK_CHART}"
+    - CHART_PATH="${CHART_DIR}/${MOCK_CHART}"
     - |
-      if [[ ! -f "${chart_path}/Chart.yaml" ]]; then
-        echo "ERROR: Mock chart '${chart_path}' lacks Chart.yaml." >&2
+      if [[ ! -f "${CHART_PATH}/Chart.yaml" ]]; then
+        echo "ERROR: Mock chart '${CHART_PATH}' lacks Chart.yaml." >&2
         exit 1
       fi
     - |
-      if ! compgen -G "${chart_path}/tests/*_test.yaml" >/dev/null; then
-        echo "ERROR: No Helm unittest suites under ${chart_path}/tests/." >&2
+      if ! compgen -G "${CHART_PATH}/tests/*_test.yaml" >/dev/null; then
+        echo "ERROR: No Helm unittest suites under ${CHART_PATH}/tests/." >&2
         exit 1
       fi
-    - helm dependency update "${chart_path}"
-    - helm unittest --strict --output-type JUnit --output-file unittest-report.xml --file "${chart_path}/tests/*_test.yaml" "${chart_path}"
+    - helm dependency update "${CHART_PATH}"
+    - helm unittest --strict --output-type JUnit --output-file unittest-report.xml --file "${CHART_PATH}/tests/*_test.yaml" "${CHART_PATH}"
   artifacts:
     when: always
     expire_in: 1 week
@@ -448,7 +437,8 @@ Chart:Promote:
       artifacts: true
       optional: false
   script:
-    - cd "${PROJECT_PATH}"
+    - cd ${CI_PROJECT_DIR}
+    - cd ${PROJECT_PATH}
     - *chart-registry
     - chart_registry_setup
     - |

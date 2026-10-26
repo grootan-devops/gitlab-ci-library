@@ -5,8 +5,9 @@
     TRIVY_SCAN_REPORT_NAME: ${TRIVY_SCAN_REPORT_NAME_PREFIX}_${TRIVY_SCAN_REPORT_NAME_SUFFIX}
     SCAN_TYPE: config
     CONFIG_TYPE: ${TRIVY_SCAN_REPORT_NAME_PREFIX}
+    IAC_SCAN_PATH: "."
   cache:
-    key: terraform
+    key: ${PROJECT_CACHE_KEY}
     when: always
     policy: pull-push
     paths:
@@ -14,64 +15,23 @@
       - ${PROJECT_PATH}/.cache
       - ${PROJECT_PATH}/.terraform.lock.hcl
 
-.terraform-workflow-rules:
-  rules:
-    - if: '$CI_PIPELINE_SOURCE == "merge_request_event" && ($CI_MERGE_REQUEST_TARGET_BRANCH_NAME == $CI_DEFAULT_BRANCH || ($CI_MERGE_REQUEST_TARGET_BRANCH_NAME =~ $MASTER_BRANCH_REGEX && $CI_MERGE_REQUEST_TARGET_BRANCH_PROTECTED == "true"))'
-      exists:
-        - ${PROJECT_PATH}/main.tf
-    - if: '$CI_PIPELINE_SOURCE == "parent_pipeline"'
-      exists:
-        - ${PROJECT_PATH}/main.tf
-    - if: '$CI_PIPELINE_SOURCE =~ /^(web|api)$/ && ($WORKFLOW == "full-pipeline" || $WORKFLOW == "build" || $WORKFLOW == "check" || $WORKFLOW == "lint")'
-      exists:
-        - ${PROJECT_PATH}/main.tf
-    - when: never
-
 .terraform-scan-rules:
   rules:
-    - if: '$CI_PIPELINE_SOURCE == "merge_request_event" && ($CI_MERGE_REQUEST_TARGET_BRANCH_NAME == $CI_DEFAULT_BRANCH || ($CI_MERGE_REQUEST_TARGET_BRANCH_NAME =~ $MASTER_BRANCH_REGEX && $CI_MERGE_REQUEST_TARGET_BRANCH_PROTECTED == "true"))'
-      exists:
-        - ${PROJECT_PATH}/main.tf
-    - if: '$CI_PIPELINE_SOURCE == "parent_pipeline"'
-      exists:
-        - ${PROJECT_PATH}/main.tf
+    - !reference [.verify-rules, rules]
     - if: '$CI_PIPELINE_SOURCE =~ /^(web|api)$/ && $WORKFLOW == "full-pipeline"'
-      exists:
-        - ${PROJECT_PATH}/main.tf
-    - when: never
-
-.terraform-module-test-rules:
-  rules:
-    - if: '$CI_PIPELINE_SOURCE == "merge_request_event" && ($CI_MERGE_REQUEST_TARGET_BRANCH_NAME == $CI_DEFAULT_BRANCH || ($CI_MERGE_REQUEST_TARGET_BRANCH_NAME =~ $MASTER_BRANCH_REGEX && $CI_MERGE_REQUEST_TARGET_BRANCH_PROTECTED == "true"))'
-      exists:
-        - ${PROJECT_PATH}/main.tf
-    - if: '$CI_PIPELINE_SOURCE == "parent_pipeline"'
-      exists:
-        - ${PROJECT_PATH}/main.tf
-    - if: '$CI_PIPELINE_SOURCE =~ /^(web|api)$/ && $WORKFLOW == "full-pipeline"'
-      exists:
-        - ${PROJECT_PATH}/main.tf
     - when: never
 
 .terraform-check-rules:
   rules:
-    - if: '$CI_PIPELINE_SOURCE == "merge_request_event" && ($CI_MERGE_REQUEST_TARGET_BRANCH_NAME == $CI_DEFAULT_BRANCH || ($CI_MERGE_REQUEST_TARGET_BRANCH_NAME =~ $MASTER_BRANCH_REGEX && $CI_MERGE_REQUEST_TARGET_BRANCH_PROTECTED == "true"))'
-    - if: '$CI_PIPELINE_SOURCE == "parent_pipeline"'
-    - if: '$CI_PIPELINE_SOURCE =~ /^(web|api)$/ && ($WORKFLOW == "full-pipeline" || $WORKFLOW == "check")'
-    - when: never
+    - !reference [.check-workflow-rules, rules]
 
 Terraform:Init:
   stage: init
   extends:
     - .terraform-common
-    - .terraform-workflow-rules
+    - .lint-workflow-rules
   script:
-    - |
-      if [[ -z "${TF_STATE_NAME}" ]]; then
-        echo "TF_STATE_NAME is empty. Set it to the workspace key prefix component for this Terraform root, e.g. 'network' or 'platform'. Without it every root in this project writes to the same state key."
-        exit 1
-      fi
-    - terraform init -input=false -no-color -backend-config="workspace_key_prefix=${CI_PROJECT_PATH_SLUG}/${TF_STATE_NAME}" -reconfigure
+    - terraform init -input=false -no-color -backend=false
   needs:
     - job: Common:Init
       artifacts: false
@@ -93,6 +53,7 @@ Terraform:Validate:
 Terraform:Lint:
   stage: lint
   extends:
+    - .terraform-common
     - .lint-workflow-rules
   script:
     - tflint --chdir . --recursive --filter=tests/** --call-module-type=all
@@ -140,7 +101,7 @@ Terraform:Scan:
     - .terraform-common
     - .terraform-scan-rules
   cache:
-    - key: terraform
+    - key: ${PROJECT_CACHE_KEY}
       when: always
       policy: pull-push
       paths:

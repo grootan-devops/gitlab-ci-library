@@ -8,7 +8,7 @@ Terraform:Module:Test:
   image: ${GO_BUILD_IMAGE_REPO}:${GO_BUILD_IMAGE_TAG}
   extends:
     - .terraform-common
-    - .terraform-module-test-rules
+    - .terraform-scan-rules
   script:
     - cd tests
     - go test -v -timeout ${TF_TEST_TIMEOUT} 2>&1 | tee ${TF_LOG_FILE_NAME}
@@ -37,16 +37,10 @@ Terraform:Module:Test:Destroy:
     - .terraform-common
   rules:
     - if: '$CI_PIPELINE_SOURCE == "merge_request_event" && ($CI_MERGE_REQUEST_TARGET_BRANCH_NAME == $CI_DEFAULT_BRANCH || ($CI_MERGE_REQUEST_TARGET_BRANCH_NAME =~ $MASTER_BRANCH_REGEX && $CI_MERGE_REQUEST_TARGET_BRANCH_PROTECTED == "true"))'
-      exists:
-        - ${PROJECT_PATH}/main.tf
       when: on_failure
     - if: '$CI_PIPELINE_SOURCE == "parent_pipeline"'
-      exists:
-        - ${PROJECT_PATH}/main.tf
       when: on_failure
     - if: '$CI_PIPELINE_SOURCE =~ /^(web|api)$/ && $WORKFLOW == "full-pipeline"'
-      exists:
-        - ${PROJECT_PATH}/main.tf
       when: on_failure
     - when: never
   script:

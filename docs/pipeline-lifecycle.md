@@ -113,7 +113,7 @@ from `common/` only when every module is included.
 | Application, no image or chart | `full-pipeline`, `build`, `check`, `lint`, `secret-scanning`, `sonarqube` |
 | Application with an image, no chart | the above plus `image-build-and-push`, `image-scan` |
 | Full service (application, image, chart, GitOps) | every module is included, so no local `WORKFLOW` block |
-| Terraform module repository | `full-pipeline`, `check`, `lint` |
+| Terraform module repository | `full-pipeline`, `check`, `lint`, `secret-scanning`; not `build`, where no Terraform job runs |
 
 Each workflow admits one class of work:
 

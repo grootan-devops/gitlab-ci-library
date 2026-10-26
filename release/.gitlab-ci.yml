@@ -386,29 +386,29 @@ Release:Notification:Teams:
         if [[ -f "${RELEASE_CHANGELOG_FILE_NAME}" ]]; then
           jq -R -s -c '
             def clean_text: sub("\r$"; "") | gsub("[ \t]+"; " ") | sub("^ +"; "") | sub(" +$"; "");
-            split("\n") | reduce .[] as $line (
+            split("\n") | reduce .[] as $LINE (
               [];
-              if ($line | startswith("### ")) then
+              if ($LINE | startswith("### ")) then
                 . + [{
                   type: "TextBlock",
-                  text: ($line | sub("^### +"; "") | clean_text),
+                  text: ($LINE | sub("^### +"; "") | clean_text),
                   weight: "Bolder",
                   size: "Default",
                   spacing: "Medium",
                   wrap: true
                 }]
-              elif ($line | startswith("- ")) then
+              elif ($LINE | startswith("- ")) then
                 . + [{
                   type: "TextBlock",
-                  text: ("• " + ($line | sub("^- +"; "") | clean_text)),
+                  text: ("• " + ($LINE | sub("^- +"; "") | clean_text)),
                   spacing: "Small",
                   wrap: true
                 }]
-              elif ($line | length == 0) then .
+              elif ($LINE | length == 0) then .
               else
                 . + [{
                   type: "TextBlock",
-                  text: ($line | clean_text),
+                  text: ($LINE | clean_text),
                   spacing: "Small",
                   wrap: true
                 }]
@@ -420,10 +420,10 @@ Release:Notification:Teams:
         fi
       fi
     - |
-      jq --slurpfile release_notes "${RELEASE_CHANGELOG_CARD_FILE_NAME}" '
+      jq --slurpfile RELEASE_NOTES "${RELEASE_CHANGELOG_CARD_FILE_NAME}" '
         .["$schema"] = "http://adaptivecards.io/schemas/adaptive-card.json"
         | del(.[""])
-        | (.body[] | select(.id == "release-notes") | .items) = ($release_notes[0] // [])
+        | (.body[] | select(.id == "release-notes") | .items) = ($RELEASE_NOTES[0] // [])
         | {
             type: "message",
             attachments: [
