@@ -4,6 +4,23 @@
 .image-registry-login:
   before_script:
     - cd ${PROJECT_PATH}
+    - |
+      # The GitLab Container Registry default Common:Init applies, for the workflows that run
+      # without it, such as image-scan.
+      if [[ -z "${IMAGE_REGISTRY}" && ( -n "${CI_REGISTRY}" || "${GITLAB_CI}" == "true" ) ]]; then
+        IMAGE_REGISTRY="${CI_REGISTRY}"
+        echo "ℹ️  IMAGE_REGISTRY not set. Defaulting to GitLab Container Registry: ${IMAGE_REGISTRY}"
+        if [[ -z "${IMAGE_REPOSITORY}" || "${IMAGE_REPOSITORY}" != "${CI_PROJECT_PATH}"* ]]; then
+          IMAGE_REPOSITORY="${CI_PROJECT_PATH}"
+          echo "ℹ️  Defaulting IMAGE_REPOSITORY to GitLab project path: ${IMAGE_REPOSITORY}"
+        fi
+        export IMAGE_REGISTRY IMAGE_REPOSITORY
+      fi
+      # Docker Hub has no nested repositories, so a `/` in the image dev suffix becomes `-`
+      # there: candidates go to `<repo>-dev`.
+      case "${IMAGE_REGISTRY}" in
+        docker.io|index.docker.io|registry-1.docker.io) IMAGE_DEV_REPOSITORY_SUFFIX="${IMAGE_DEV_REPOSITORY_SUFFIX//\//-}" ;;
+      esac
     - >
       echo Authenticating Registry: ${IMAGE_REGISTRY}
     - |

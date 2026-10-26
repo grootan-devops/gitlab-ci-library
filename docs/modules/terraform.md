@@ -16,6 +16,10 @@ flowchart LR
 - **Service (`terraform/.gitlab-ci.yml`)**: `Terraform:Init` &rarr; `Terraform:Validate` &rarr; `Terraform:Lint` &rarr; `Terraform:Check:README` &rarr; `Terraform:Scan`.
 - **Module Test (`terraform/.test.gitlab-ci.yml`)**: `Terraform:Module:Test` runs Go Terratest suites with automatic `Terraform:Module:Test:Destroy` on failure.
 
+Including `terraform/` opts the project in: no job checks for a `main.tf`, so `PROJECT_PATH`
+points at the Terraform root. `Terraform:Validate`, `Terraform:Lint` and `Terraform:Scan` restore the `terraform` cache that
+`Terraform:Init` fills, so the modules the root calls are already installed.
+
 ## Consuming a module — no packaging step
 
 Modules are consumed directly from git. There is no package, no registry upload and no

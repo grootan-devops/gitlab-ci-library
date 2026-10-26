@@ -100,7 +100,7 @@ Node:Lint:
 .Node:Test:Unit:
   stage: test
   extends:
-    - .unit-test-workflow-rules
+    - .build-test-rules
   variables:
     NODE_ENV: test
   cache:

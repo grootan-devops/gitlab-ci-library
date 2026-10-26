@@ -275,6 +275,17 @@ variables:
       - stale_schedule
       - script_failure
 
+.verify-rules:
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event" && ($CI_MERGE_REQUEST_TARGET_BRANCH_NAME == $CI_DEFAULT_BRANCH || ($CI_MERGE_REQUEST_TARGET_BRANCH_NAME =~ $MASTER_BRANCH_REGEX && $CI_MERGE_REQUEST_TARGET_BRANCH_PROTECTED == "true"))'
+    - if: '$CI_PIPELINE_SOURCE == "parent_pipeline"'
+
+.check-workflow-rules:
+  rules:
+    - !reference [.verify-rules, rules]
+    - if: '$CI_PIPELINE_SOURCE =~ /^(web|api)$/ && $WORKFLOW =~ /^(full-pipeline|check)$/'
+    - when: never
+
 .release-rules:
   rules:
     - if: $CI_COMMIT_TAG
@@ -286,12 +297,7 @@ variables:
 
 .master-fast-track-rules:
   rules:
-    - if: $CI_COMMIT_TAG
-      when: never
-    - if: '$CI_PIPELINE_SOURCE =~ /^(web|api)$/'
-      when: never
-    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
-    - if: $CI_COMMIT_BRANCH =~ $MASTER_BRANCH_REGEX && $CI_COMMIT_REF_PROTECTED == "true"
+    - !reference [.release-rules, rules]
 
 .mr-only-rules:
   rules:
@@ -300,12 +306,7 @@ variables:
 
 .lifecycle-rules:
   rules:
-    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
-    - if: $CI_COMMIT_BRANCH =~ $MASTER_BRANCH_REGEX && $CI_COMMIT_REF_PROTECTED == "true"
-    - if: '$CI_PIPELINE_SOURCE == "merge_request_event" && ($CI_MERGE_REQUEST_TARGET_BRANCH_NAME == $CI_DEFAULT_BRANCH || ($CI_MERGE_REQUEST_TARGET_BRANCH_NAME =~ $MASTER_BRANCH_REGEX && $CI_MERGE_REQUEST_TARGET_BRANCH_PROTECTED == "true"))'
-    - if: '$CI_PIPELINE_SOURCE == "parent_pipeline"'
-    - if: '$CI_PIPELINE_SOURCE =~ /^(web|api)$/ && ($WORKFLOW == "full-pipeline" || $WORKFLOW == "build" || $WORKFLOW == "check" || $WORKFLOW == "image-build-and-push" || $WORKFLOW == "chart-build-and-push")'
-    - when: never
+    - !reference [.common-init-rules, rules]
 
 .full-and-mr-rules:
   rules:
@@ -313,8 +314,7 @@ variables:
       when: never
     - if: $CI_COMMIT_BRANCH =~ $MASTER_BRANCH_REGEX && $CI_COMMIT_REF_PROTECTED == "true"
       when: never
-    - if: '$CI_PIPELINE_SOURCE == "merge_request_event" && ($CI_MERGE_REQUEST_TARGET_BRANCH_NAME == $CI_DEFAULT_BRANCH || ($CI_MERGE_REQUEST_TARGET_BRANCH_NAME =~ $MASTER_BRANCH_REGEX && $CI_MERGE_REQUEST_TARGET_BRANCH_PROTECTED == "true"))'
-    - if: '$CI_PIPELINE_SOURCE == "parent_pipeline"'
+    - !reference [.verify-rules, rules]
     - if: '$CI_PIPELINE_SOURCE =~ /^(web|api)$/ && $WORKFLOW == "full-pipeline"'
     - when: never
 
@@ -325,88 +325,74 @@ variables:
 
 .sonarqube-workflow-rules:
   rules:
-    - if: '$CI_PIPELINE_SOURCE == "merge_request_event" && ($CI_MERGE_REQUEST_TARGET_BRANCH_NAME == $CI_DEFAULT_BRANCH || ($CI_MERGE_REQUEST_TARGET_BRANCH_NAME =~ $MASTER_BRANCH_REGEX && $CI_MERGE_REQUEST_TARGET_BRANCH_PROTECTED == "true"))'
-    - if: '$CI_PIPELINE_SOURCE == "parent_pipeline"'
-    - if: '$CI_PIPELINE_SOURCE =~ /^(web|api)$/ && ($WORKFLOW == "full-pipeline" || $WORKFLOW == "sonarqube")'
+    - !reference [.verify-rules, rules]
+    - if: '$CI_PIPELINE_SOURCE =~ /^(web|api)$/ && $WORKFLOW =~ /^(full-pipeline|sonarqube)$/'
     - when: never
 
 .lint-workflow-rules:
   rules:
-    - if: '$CI_PIPELINE_SOURCE == "merge_request_event" && ($CI_MERGE_REQUEST_TARGET_BRANCH_NAME == $CI_DEFAULT_BRANCH || ($CI_MERGE_REQUEST_TARGET_BRANCH_NAME =~ $MASTER_BRANCH_REGEX && $CI_MERGE_REQUEST_TARGET_BRANCH_PROTECTED == "true"))'
-    - if: '$CI_PIPELINE_SOURCE == "parent_pipeline"'
-    - if: '$CI_PIPELINE_SOURCE =~ /^(web|api)$/ && ($WORKFLOW == "full-pipeline" || $WORKFLOW == "lint")'
+    - !reference [.verify-rules, rules]
+    - if: '$CI_PIPELINE_SOURCE =~ /^(web|api)$/ && $WORKFLOW =~ /^(full-pipeline|lint)$/'
     - when: never
 
 .secret-scan-workflow-rules:
   rules:
-    - if: '$CI_PIPELINE_SOURCE == "merge_request_event" && ($CI_MERGE_REQUEST_TARGET_BRANCH_NAME == $CI_DEFAULT_BRANCH || ($CI_MERGE_REQUEST_TARGET_BRANCH_NAME =~ $MASTER_BRANCH_REGEX && $CI_MERGE_REQUEST_TARGET_BRANCH_PROTECTED == "true"))'
-    - if: '$CI_PIPELINE_SOURCE == "parent_pipeline"'
-    - if: '$CI_PIPELINE_SOURCE =~ /^(web|api)$/ && ($WORKFLOW == "full-pipeline" || $WORKFLOW == "secret-scanning")'
+    - !reference [.verify-rules, rules]
+    - if: '$CI_PIPELINE_SOURCE =~ /^(web|api)$/ && $WORKFLOW =~ /^(full-pipeline|secret-scanning)$/'
     - when: never
 
 .license-scan-workflow-rules:
   rules:
-    - if: '$CI_PIPELINE_SOURCE == "merge_request_event" && ($CI_MERGE_REQUEST_TARGET_BRANCH_NAME == $CI_DEFAULT_BRANCH || ($CI_MERGE_REQUEST_TARGET_BRANCH_NAME =~ $MASTER_BRANCH_REGEX && $CI_MERGE_REQUEST_TARGET_BRANCH_PROTECTED == "true"))'
-    - if: '$CI_PIPELINE_SOURCE == "parent_pipeline"'
-    - if: '$CI_PIPELINE_SOURCE =~ /^(web|api)$/ && ($WORKFLOW == "full-pipeline" || $WORKFLOW == "license-scanning")'
+    - !reference [.verify-rules, rules]
+    - if: '$CI_PIPELINE_SOURCE =~ /^(web|api)$/ && $WORKFLOW =~ /^(full-pipeline|license-scanning)$/'
     - when: never
 
 .sbom-scan-workflow-rules:
   rules:
-    - if: '$CI_PIPELINE_SOURCE == "merge_request_event" && ($CI_MERGE_REQUEST_TARGET_BRANCH_NAME == $CI_DEFAULT_BRANCH || ($CI_MERGE_REQUEST_TARGET_BRANCH_NAME =~ $MASTER_BRANCH_REGEX && $CI_MERGE_REQUEST_TARGET_BRANCH_PROTECTED == "true"))'
-    - if: '$CI_PIPELINE_SOURCE == "parent_pipeline"'
-    - if: '$CI_PIPELINE_SOURCE =~ /^(web|api)$/ && ($WORKFLOW == "full-pipeline" || $WORKFLOW == "sbom-scanning")'
+    - !reference [.verify-rules, rules]
+    - if: '$CI_PIPELINE_SOURCE =~ /^(web|api)$/ && $WORKFLOW =~ /^(full-pipeline|sbom-scanning)$/'
     - when: never
 
 .chart-build-workflow-rules:
   rules:
-    - if: '$CI_PIPELINE_SOURCE == "merge_request_event" && ($CI_MERGE_REQUEST_TARGET_BRANCH_NAME == $CI_DEFAULT_BRANCH || ($CI_MERGE_REQUEST_TARGET_BRANCH_NAME =~ $MASTER_BRANCH_REGEX && $CI_MERGE_REQUEST_TARGET_BRANCH_PROTECTED == "true"))'
-    - if: '$CI_PIPELINE_SOURCE == "parent_pipeline"'
-    - if: '$CI_PIPELINE_SOURCE =~ /^(web|api)$/ && ($WORKFLOW == "full-pipeline" || $WORKFLOW == "chart-build-and-push")'
+    - !reference [.verify-rules, rules]
+    - if: '$CI_PIPELINE_SOURCE =~ /^(web|api)$/ && $WORKFLOW =~ /^(full-pipeline|chart-build-and-push)$/'
     - when: never
 
 .chart-scan-workflow-rules:
   rules:
-    - if: '$CI_PIPELINE_SOURCE == "merge_request_event" && ($CI_MERGE_REQUEST_TARGET_BRANCH_NAME == $CI_DEFAULT_BRANCH || ($CI_MERGE_REQUEST_TARGET_BRANCH_NAME =~ $MASTER_BRANCH_REGEX && $CI_MERGE_REQUEST_TARGET_BRANCH_PROTECTED == "true"))'
-    - if: '$CI_PIPELINE_SOURCE == "parent_pipeline"'
-    - if: '$CI_PIPELINE_SOURCE =~ /^(web|api)$/ && ($WORKFLOW == "full-pipeline" || $WORKFLOW == "chart-build-and-push" || $WORKFLOW == "chart-scan")'
+    - !reference [.verify-rules, rules]
+    - if: '$CI_PIPELINE_SOURCE =~ /^(web|api)$/ && $WORKFLOW =~ /^(full-pipeline|chart-build-and-push|chart-scan)$/'
     - when: never
 
 .image-build-workflow-rules:
   rules:
-    - if: '$CI_PIPELINE_SOURCE == "merge_request_event" && ($CI_MERGE_REQUEST_TARGET_BRANCH_NAME == $CI_DEFAULT_BRANCH || ($CI_MERGE_REQUEST_TARGET_BRANCH_NAME =~ $MASTER_BRANCH_REGEX && $CI_MERGE_REQUEST_TARGET_BRANCH_PROTECTED == "true"))'
-    - if: '$CI_PIPELINE_SOURCE == "parent_pipeline"'
-    - if: '$CI_PIPELINE_SOURCE =~ /^(web|api)$/ && ($WORKFLOW == "full-pipeline" || $WORKFLOW == "image-build-and-push")'
+    - !reference [.verify-rules, rules]
+    - if: '$CI_PIPELINE_SOURCE =~ /^(web|api)$/ && $WORKFLOW =~ /^(full-pipeline|image-build-and-push)$/'
     - when: never
 
 .image-scan-workflow-rules:
   rules:
-    - if: '$CI_PIPELINE_SOURCE == "merge_request_event" && ($CI_MERGE_REQUEST_TARGET_BRANCH_NAME == $CI_DEFAULT_BRANCH || ($CI_MERGE_REQUEST_TARGET_BRANCH_NAME =~ $MASTER_BRANCH_REGEX && $CI_MERGE_REQUEST_TARGET_BRANCH_PROTECTED == "true"))'
-    - if: '$CI_PIPELINE_SOURCE == "parent_pipeline"'
-    - if: '$CI_PIPELINE_SOURCE =~ /^(web|api)$/ && ($WORKFLOW == "full-pipeline" || $WORKFLOW == "image-build-and-push" || $WORKFLOW == "image-scan")'
+    - !reference [.verify-rules, rules]
+    - if: '$CI_PIPELINE_SOURCE =~ /^(web|api)$/ && $WORKFLOW =~ /^(full-pipeline|image-build-and-push|image-scan)$/'
     - when: never
 
 .build-test-rules:
   rules:
-    - if: '$CI_PIPELINE_SOURCE == "merge_request_event" && ($CI_MERGE_REQUEST_TARGET_BRANCH_NAME == $CI_DEFAULT_BRANCH || ($CI_MERGE_REQUEST_TARGET_BRANCH_NAME =~ $MASTER_BRANCH_REGEX && $CI_MERGE_REQUEST_TARGET_BRANCH_PROTECTED == "true"))'
-    - if: '$CI_PIPELINE_SOURCE == "parent_pipeline"'
-    - if: '$CI_PIPELINE_SOURCE =~ /^(web|api)$/ && ($WORKFLOW == "full-pipeline" || $WORKFLOW == "build" || $WORKFLOW == "image-build-and-push")'
+    - !reference [.verify-rules, rules]
+    - if: '$CI_PIPELINE_SOURCE =~ /^(web|api)$/ && $WORKFLOW =~ /^(full-pipeline|build|image-build-and-push)$/'
     - when: never
 
 .unit-test-workflow-rules:
   rules:
-    - if: '$CI_PIPELINE_SOURCE == "merge_request_event" && ($CI_MERGE_REQUEST_TARGET_BRANCH_NAME == $CI_DEFAULT_BRANCH || ($CI_MERGE_REQUEST_TARGET_BRANCH_NAME =~ $MASTER_BRANCH_REGEX && $CI_MERGE_REQUEST_TARGET_BRANCH_PROTECTED == "true"))'
-    - if: '$CI_PIPELINE_SOURCE == "parent_pipeline"'
-    - if: '$CI_PIPELINE_SOURCE =~ /^(web|api)$/ && ($WORKFLOW == "full-pipeline" || $WORKFLOW == "build" || $WORKFLOW == "image-build-and-push")'
-    - when: never
+    - !reference [.build-test-rules, rules]
 
 .common-init-rules:
   rules:
     - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
     - if: $CI_COMMIT_BRANCH =~ $MASTER_BRANCH_REGEX && $CI_COMMIT_REF_PROTECTED == "true"
-    - if: '$CI_PIPELINE_SOURCE == "merge_request_event" && ($CI_MERGE_REQUEST_TARGET_BRANCH_NAME == $CI_DEFAULT_BRANCH || ($CI_MERGE_REQUEST_TARGET_BRANCH_NAME =~ $MASTER_BRANCH_REGEX && $CI_MERGE_REQUEST_TARGET_BRANCH_PROTECTED == "true"))'
-    - if: '$CI_PIPELINE_SOURCE == "parent_pipeline"'
-    - if: '$CI_PIPELINE_SOURCE =~ /^(web|api)$/ && ($WORKFLOW == "full-pipeline" || $WORKFLOW == "build" || $WORKFLOW == "check" || $WORKFLOW == "image-build-and-push" || $WORKFLOW == "chart-build-and-push")'
+    - !reference [.verify-rules, rules]
+    - if: '$CI_PIPELINE_SOURCE =~ /^(web|api)$/ && $WORKFLOW =~ /^(full-pipeline|build|check|image-build-and-push|chart-build-and-push)$/'
     - when: never
 
 .check-job-common:
@@ -500,9 +486,8 @@ Common:Check:Library:Pin:
       when: never
     - if: $CI_COMMIT_BRANCH =~ $MASTER_BRANCH_REGEX && $CI_COMMIT_REF_PROTECTED == "true"
       when: never
-    - if: '$CI_PIPELINE_SOURCE == "merge_request_event" && ($CI_MERGE_REQUEST_TARGET_BRANCH_NAME == $CI_DEFAULT_BRANCH || ($CI_MERGE_REQUEST_TARGET_BRANCH_NAME =~ $MASTER_BRANCH_REGEX && $CI_MERGE_REQUEST_TARGET_BRANCH_PROTECTED == "true"))'
-    - if: '$CI_PIPELINE_SOURCE == "parent_pipeline"'
-    - if: '$CI_PIPELINE_SOURCE =~ /^(web|api)$/ && ($WORKFLOW == "full-pipeline" || $WORKFLOW == "check")'
+    - !reference [.verify-rules, rules]
+    - if: '$CI_PIPELINE_SOURCE =~ /^(web|api)$/ && $WORKFLOW =~ /^(full-pipeline|check)$/'
     - when: never
 
 .image-check-rules:
@@ -511,18 +496,14 @@ Common:Check:Library:Pin:
       when: never
     - if: $CI_COMMIT_BRANCH =~ $MASTER_BRANCH_REGEX && $CI_COMMIT_REF_PROTECTED == "true"
       when: never
-    - if: '$CI_PIPELINE_SOURCE == "merge_request_event" && ($CI_MERGE_REQUEST_TARGET_BRANCH_NAME == $CI_DEFAULT_BRANCH || ($CI_MERGE_REQUEST_TARGET_BRANCH_NAME =~ $MASTER_BRANCH_REGEX && $CI_MERGE_REQUEST_TARGET_BRANCH_PROTECTED == "true"))'
-    - if: '$CI_PIPELINE_SOURCE == "parent_pipeline"'
-    - if: '$CI_PIPELINE_SOURCE =~ /^(web|api)$/ && ($WORKFLOW == "full-pipeline" || $WORKFLOW == "check" || $WORKFLOW == "image-scan")'
+    - !reference [.verify-rules, rules]
+    - if: '$CI_PIPELINE_SOURCE =~ /^(web|api)$/ && $WORKFLOW =~ /^(full-pipeline|check|image-scan)$/'
     - when: never
 
 .trivy-cache-rules:
   rules:
-    - if: '$CI_PIPELINE_SOURCE == "merge_request_event" && ($CI_MERGE_REQUEST_TARGET_BRANCH_NAME == $CI_DEFAULT_BRANCH || ($CI_MERGE_REQUEST_TARGET_BRANCH_NAME =~ $MASTER_BRANCH_REGEX && $CI_MERGE_REQUEST_TARGET_BRANCH_PROTECTED == "true"))'
-    - if: '$CI_PIPELINE_SOURCE == "parent_pipeline"'
-    - if: '$CI_PIPELINE_SOURCE =~ /^(web|api)$/ && ($WORKFLOW == "full-pipeline" || $WORKFLOW == "license-scanning" || $WORKFLOW == "sbom-scanning" || $WORKFLOW == "chart-build-and-push" || $WORKFLOW == "chart-scan" || $WORKFLOW == "image-build-and-push" || $WORKFLOW == "image-scan")'
-    - exists:
-        - ${PROJECT_PATH}/main.tf
+    - !reference [.verify-rules, rules]
+    - if: '$CI_PIPELINE_SOURCE =~ /^(web|api)$/ && $WORKFLOW =~ /^(full-pipeline|license-scanning|sbom-scanning|chart-build-and-push|chart-scan|image-build-and-push|image-scan)$/'
     - when: never
 
 Trivy:Cache:Warm:
@@ -1694,7 +1675,7 @@ workflow:
 Workflow:Validate:Variables:
   stage: .pre
   rules:
-    - if: '$CI_PIPELINE_SOURCE =~ /^(web|api)$/ && ($WORKFLOW == "image-scan" || $WORKFLOW == "chart-scan" || $WORKFLOW == "deploy")'
+    - if: '$CI_PIPELINE_SOURCE =~ /^(web|api)$/ && $WORKFLOW =~ /^(image-scan|chart-scan|deploy)$/'
     - when: never
   script:
     - |
@@ -1729,6 +1710,12 @@ Common:Init:
     - MASTER_BRANCH_PATTERN="${MASTER_BRANCH_REGEX#/}"
     - MASTER_BRANCH_PATTERN="${MASTER_BRANCH_PATTERN%/}"
     - MASTER_BRANCH_PATTERN="${MASTER_BRANCH_PATTERN//\\/}"
+    - |
+      # Docker Hub has no nested repositories, so a `/` in the image dev suffix becomes `-`
+      # there: candidates go to `<repo>-dev`.
+      case "${IMAGE_REGISTRY}" in
+        docker.io|index.docker.io|registry-1.docker.io) IMAGE_DEV_REPOSITORY_SUFFIX="${IMAGE_DEV_REPOSITORY_SUFFIX//\//-}" ;;
+      esac
     - |
       if [[ "${CI_PIPELINE_SOURCE}" =~ ^(web|api)$ && ("${CI_COMMIT_BRANCH}" == "${CI_DEFAULT_BRANCH}" || ("${CI_COMMIT_REF_NAME}" =~ ${MASTER_BRANCH_PATTERN} && "${CI_COMMIT_REF_PROTECTED}" == "true")) ]]; then
         RC_VERSION_SUFFIX=-rc.${CI_PIPELINE_ID}
@@ -1931,28 +1918,28 @@ Changelog:Check Existence:
           gsub("\u0060"; "")
           | gsub("\\*\\*"; "");
         split("\n")
-        | reduce .[] as $line (
+        | reduce .[] as $LINE (
             [];
-            if ($line | test("^#{3,} +")) then
+            if ($LINE | test("^#{3,} +")) then
               . + [{
                 type: "TextBlock",
-                text: ($line | sub("^#{3,} +"; "") | clean_text),
+                text: ($LINE | sub("^#{3,} +"; "") | clean_text),
                 weight: "Bolder",
                 spacing: (if length == 0 then "None" else "Medium" end),
                 wrap: true
               }]
-            elif ($line | test("^- +")) then
+            elif ($LINE | test("^- +")) then
               . + [{
                 type: "TextBlock",
-                text: ("• " + ($line | sub("^- +"; "") | clean_text)),
+                text: ("• " + ($LINE | sub("^- +"; "") | clean_text)),
                 spacing: "Small",
                 wrap: true
               }]
-            elif ($line | length == 0) then .
+            elif ($LINE | length == 0) then .
             else
               . + [{
                 type: "TextBlock",
-                text: ($line | clean_text),
+                text: ($LINE | clean_text),
                 spacing: "Small",
                 wrap: true
               }]

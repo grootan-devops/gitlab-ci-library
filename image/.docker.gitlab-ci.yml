@@ -16,10 +16,10 @@ Docker:Lint:
       fi
     - IFS=',' read -r -a IGNORES <<< "${FULL_HADOLINT_IGNORE}"
     - |
-      for rule in "${IGNORES[@]}"; do
-        rule="$(echo "${rule}" | xargs)"
-        if [[ -n "${rule}" ]]; then
-          HADOLINT_ARGS+=(--ignore "${rule}")
+      for RULE in "${IGNORES[@]}"; do
+        RULE="$(echo "${RULE}" | xargs)"
+        if [[ -n "${RULE}" ]]; then
+          HADOLINT_ARGS+=(--ignore "${RULE}")
         fi
       done
     - hadolint "${HADOLINT_ARGS[@]}" --disable-ignore-pragma "${DOCKERFILE}"
@@ -36,6 +36,7 @@ Image:Build:
     - .image-registry-login
     - .image-build-workflow-rules
   script:
+    - cd ${CI_PROJECT_DIR}
     - cd ${PROJECT_PATH}
     - |
       if [[ -n "${CI_DEPENDENCY_PROXY_SERVER}" && -n "${CI_DEPENDENCY_PROXY_USER}" && -n "${CI_DEPENDENCY_PROXY_PASSWORD}" ]]; then
@@ -107,19 +108,19 @@ Image:Build:
 
         echo "Propagating custom /etc/hosts entries to BuildKit..."
 
-        while read -r ip hosts; do
-          [[ -z "${ip}" ]] && continue
-          [[ "${ip}" =~ ^# ]] && continue
-          [[ "${ip}" == "127.0.0.1" ]] && continue
-          [[ "${ip}" == "::1" ]] && continue
+        while read -r IP HOSTS; do
+          [[ -z "${IP}" ]] && continue
+          [[ "${IP}" =~ ^# ]] && continue
+          [[ "${IP}" == "127.0.0.1" ]] && continue
+          [[ "${IP}" == "::1" ]] && continue
 
-          for host in ${hosts}; do
-            [[ "${host}" =~ ^# ]] && break
+          for HOST_ENTRY in ${HOSTS}; do
+            [[ "${HOST_ENTRY}" =~ ^# ]] && break
 
-            echo "Adding ${ip} ${host}"
+            echo "Adding ${IP} ${HOST_ENTRY}"
 
             docker exec -u 0 "${BUILDKIT_CONTAINER}" \
-              sh -c "grep -qE '[[:space:]]${host}([[:space:]]|\$)' /etc/hosts || echo '${ip} ${host}' >> /etc/hosts"
+              sh -c "grep -qE '[[:space:]]${HOST_ENTRY}([[:space:]]|\$)' /etc/hosts || echo '${IP} ${HOST_ENTRY}' >> /etc/hosts"
           done
         done < /etc/hosts
 
