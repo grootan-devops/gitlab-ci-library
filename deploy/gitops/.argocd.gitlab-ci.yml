@@ -101,6 +101,7 @@ spec:
         RIGHT=$(yq -o=json -I=0 '.' "$2" 2>/dev/null) || return 1
         [[ "${LEFT}" == "${RIGHT}" ]]
       }
+    - |
       gitops_yaml_set() {
         local FILE="$1" YAML_PATH="$2" VALUE="$3" EXPECTED CANDIDATE SCRATCH ROWS LINE COLUMN STYLE OLD OLD_TEXT NEW_TEXT PLAIN EDITED=false
         export GITOPS_YAML_VALUE="${VALUE}"
@@ -166,11 +167,11 @@ Deploy:ArgoCD:Validate:Chart:$[[ inputs.environment ]]:
       artifacts: false
       optional: true
   script:
+    - CHART_USER=""
+    - CHART_PASS=""
     - |
       # The chart registry's own pair, else the CI job token for this project's GitLab
       # registry only; any other registry is read anonymously, never with the job token.
-      CHART_USER=""
-      CHART_PASS=""
       if [[ -n "${CHART_REGISTRY_USERNAME}" && -n "${CHART_REGISTRY_PASSWORD}" ]]; then
         CHART_USER="${CHART_REGISTRY_USERNAME}"
         CHART_PASS="${CHART_REGISTRY_PASSWORD}"
