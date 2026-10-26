@@ -50,8 +50,9 @@ No migration is required outside Terraform, provided every include of the librar
 - `init.env` carries the same keys as before.
 - In a Terraform repository whose root calls a git or registry module, `Terraform:Lint` passes.
   `Terraform:Init` passes without backend credentials, also on a root whose state is
-  GitLab-managed (`backend "http"`). A manual `check` pipeline no longer lists `Terraform:Init`, and a release pipeline no longer
-  lists `Trivy:Cache:Warm`.
+  GitLab-managed (`backend "http"`), and `Terraform:Scan` attaches its report. A manual `check`
+  pipeline no longer lists `Terraform:Init`, and a release pipeline no longer lists
+  `Trivy:Cache:Warm`.
 - A merge request pipeline and each manual workflow list the same jobs as before the upgrade,
   apart from the Terraform changes above.
 

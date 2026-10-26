@@ -42,6 +42,7 @@ this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - A Terraform repository without `${PROJECT_PATH}/main.tf` no longer has its pipeline refused. `Terraform:Validate` and `Terraform:Lint` needed `Terraform:Init`, which that check had skipped.
 - `Terraform:Lint`: restores the cache that `Terraform:Init` fills, so `tflint --call-module-type=all` finds git and registry modules instead of failing with `module is not found. Did you run "terraform init"?`.
 - `Terraform:Init` on a root whose backend is not S3. It passed the S3-only `workspace_key_prefix`, so a root on GitLab-managed state (`backend "http"`) failed with `Invalid backend configuration argument`.
+- `Terraform:Scan` scans the Terraform root. Only the chart jobs set `IAC_SCAN_PATH`, so it ran `trivy config` without a path and failed with `Require at least 1 argument`.
 
 ## [1.9.0] - 2026-10-01
 
