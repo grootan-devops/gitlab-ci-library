@@ -38,6 +38,9 @@ branch, tag, commit or local checkout, including uncommitted edits. Do not conca
 The `<version>` placeholder in include examples marks the git ref; it does not override the selected library source/ref.
 Generate references from the resolved source and verify that it supports the feature being used.
 For upgrades, also read [MIGRATION.md](MIGRATION.md) and [CHANGELOG.md](CHANGELOG.md).
+Read the release the project's `include:` entries pin, or the latest release tag for a new
+project. Audit tools read each module's `WORKFLOW` options from
+[docs/workflow-map.json](docs/workflow-map.json) at that same ref.
 
 ## License
 

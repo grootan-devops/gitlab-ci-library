@@ -28,6 +28,9 @@ No migration is required outside Terraform, provided every include of the librar
   `/dev` path can drop it.
 - **Terraform.** A project that overrode `Terraform:Lint` to run `terraform init` first can drop
   the override.
+- **Terraform `WORKFLOW` options.** A Terraform repository that declares its own `WORKFLOW`
+  options lists `full-pipeline`, `check`, `lint` and `secret-scanning`. Drop `build`: no
+  Terraform job runs in it any more.
 - **Project rule overrides.** A project that writes its own `rules:` extends a library anchor
   when one admits the same workflows, or starts its list with
   `- !reference [.verify-rules, rules]` instead of copying the merge request and child pipeline
