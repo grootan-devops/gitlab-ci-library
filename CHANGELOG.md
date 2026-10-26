@@ -5,6 +5,31 @@ All notable changes to this project will be documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.11.0] - 2026-10-26
+
+### Added
+
+- Publishing to several registries with a credential group:
+  - `REGISTRY_CONFIG`, a group File variable, holds credential groups as YAML or JSON. Each group, such as `client/org`, maps registry hosts like `docker.io` or `quay.io` to a `username` and `password`.
+  - `PROJECT_REGISTRY_NAME` names the one group a project publishes with.
+  - `IMAGE_REPOSITORY` and `CHART_REPOSITORY` then list the full repositories, `<registry>/<path>`, separated by spaces or commas. Every registry they name must be in the group, or be `CI_REGISTRY`, which the CI job token logs in to; repositories on one registry share its account. A `CHART_REPOSITORY` without a registry, such as the default `helm`, is still the project's Helm package registry.
+  - Every candidate and release goes to each listed repository. The first is the primary that base images, scans and deployments read from.
+- `Common:Init` fails as its very first step when `PROJECT_REGISTRY_NAME` is set together with `IMAGE_REGISTRY` or `CHART_REGISTRY`, so no other job runs. `Workflow:Validate:Variables` does the same for the `image-scan`, `chart-scan` and `deploy` workflows.
+- `.registry-functions` (`common/.gitlab-ci.yml`): the registry functions the image, chart and deploy modules load with `!reference`.
+- `Image:Promote`, `Chart:Promote`: copy the release to every other repository. The image goes by digest with its `latest`, major and minor tags; the chart goes as the same package.
+- `docs/examples/multi-registry.md`.
+
+### Changed
+
+- `Image:Push`, `Chart:Push`: publish to every repository, try each one, then fail naming the ones that refused.
+- `Image:Check Existence`, `Chart:Check Existence`: check every repository for a release-version collision.
+- A job logs each tool in to a registry once, however many repositories it holds there; the Docker `Image:Build` no longer repeats the login its `before_script` made.
+- `Common:Init`:
+  - fails without a group when `IMAGE_REGISTRY` or `CHART_REGISTRY` holds several hosts, or `IMAGE_REPOSITORY` or `CHART_REPOSITORY` several repositories, pointing to `PROJECT_REGISTRY_NAME`, and with a group when a repository is not `<registry>/<path>` on one of its registries;
+  - with a group, fails when a registry the repositories name has no username and password in it, unless it is `CI_REGISTRY`;
+  - with a group, writes each artifact's primary host as `IMAGE_REGISTRY` and `CHART_REGISTRY`, the full repositories comma-joined as `IMAGE_REPOSITORY` and `CHART_REPOSITORY`, and `IMAGE_PUSH_REPOSITORY`, `IMAGE_CHECK_REPOSITORY`, `CHART_DEV_REPOSITORY` and `CHART_PUSH_REPOSITORY` for the primary; no key is added;
+  - with a single registry, writes exactly the values of 1.9.0.
+
 ## [1.10.0] - 2026-10-26
 
 ### Added

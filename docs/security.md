@@ -97,6 +97,16 @@ token scope, variable exposure and cross-project access.
 
 - **Fork MRs**: the failure is someone unprotecting a variable to "make the fork pipeline
   work", so every unprotected branch can read it.
+- **Registry credentials**: a single `IMAGE_REGISTRY` or `CHART_REGISTRY` uses its
+  `*_REGISTRY_USERNAME` / `_PASSWORD` pair or the job-token fallback. With
+  `PROJECT_REGISTRY_NAME`, each registry a project names logs in with its credentials in that
+  `REGISTRY_CONFIG` group, and the job token only ever goes to `CI_REGISTRY`, so a credential
+  never reaches a registry it was not issued for. A repository on a registry outside the group
+  fails `Common:Init` instead of falling back to another account. `REGISTRY_CONFIG` holds
+  every registry's secret and cannot be masked: keep it a File variable on the top-level
+  group, one group per client or organisation, never print it, and turn off variable
+  expansion for it. The functions parse it with `yq` and `jq` on stdin and never print their
+  errors, which can quote the input.
 - **`CI_JOB_TOKEN`** is scoped to the project and expires with the job. It reaches another
   project only through that project's **Settings → CI/CD → Token Access** allowlist. A personal
   or deploy token used where the job token would do is a standing liability; scope one that is

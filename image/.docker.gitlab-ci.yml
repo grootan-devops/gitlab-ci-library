@@ -38,15 +38,15 @@ Image:Build:
   script:
     - cd ${CI_PROJECT_DIR}
     - cd ${PROJECT_PATH}
+    - !reference [.registry-functions, script]
+    - registry_dependency_proxy_login
+    - registry_image_defaults
     - |
-      if [[ -n "${CI_DEPENDENCY_PROXY_SERVER}" && -n "${CI_DEPENDENCY_PROXY_USER}" && -n "${CI_DEPENDENCY_PROXY_PASSWORD}" ]]; then
-        echo "${CI_DEPENDENCY_PROXY_PASSWORD}" | docker login -u "${CI_DEPENDENCY_PROXY_USER}" --password-stdin "${CI_DEPENDENCY_PROXY_SERVER}" || true
-      fi
-    - REGISTRY_USER="${IMAGE_REGISTRY_USERNAME:-${CI_REGISTRY_USER:-gitlab-ci-token}}"
-    - REGISTRY_PASS="${IMAGE_REGISTRY_PASSWORD:-${CI_REGISTRY_PASSWORD:-${CI_JOB_TOKEN}}}"
-    - |
-      if [[ -n "${IMAGE_REGISTRY}" && -n "${REGISTRY_USER}" && -n "${REGISTRY_PASS}" ]]; then
-        echo "${REGISTRY_PASS}" | docker login -u "${REGISTRY_USER}" --password-stdin "${IMAGE_REGISTRY}" || true
+      if registry_named || [[ -n "${IMAGE_REGISTRY}" ]]; then
+        registry_resolve image "${IMAGE_REPOSITORY}" || exit 1
+        if ! registry_login docker 0; then
+          echo "WARNING: docker login to ${REGISTRY_PRIMARY} failed; private base images may not pull."
+        fi
       fi
     - DOCKER_BUILD_ARGS=()
     - |

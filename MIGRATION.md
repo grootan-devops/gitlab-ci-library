@@ -7,6 +7,46 @@ To upgrade, apply every section after your pinned version up to the target, olde
 Newer sections are split into **Required** (the upgrade breaks or misbehaves without it),
 **Recommended** (aligns an existing project with the current standards) and **Verify**.
 
+## 1.11.0
+
+### Required
+
+No migration is required for a single registry, provided every include of the library moves
+to `1.11.0` together. The image, chart and deploy templates load the registry functions from
+`common/.gitlab-ci.yml`.
+
+- **`PROJECT_REGISTRY_NAME` now selects a credential group.** `1.10.0` and earlier ignore it. A project or
+  group that still sets it, for example from the earlier GitLab templates, removes it or moves
+  to a credential group as below: set together with `IMAGE_REGISTRY` or `CHART_REGISTRY`, it now
+  stops the pipeline in `Common:Init`.
+
+### Recommended
+
+- **Publishing to several registries.** Add a credential group to a `REGISTRY_CONFIG` File
+  variable on the top-level group, as YAML, with variable expansion turned off: a name such as
+  `oneuptime/prod` mapping each registry host to its quoted `username` and `password`. In each
+  project that publishes to several registries, set `PROJECT_REGISTRY_NAME` to the group, list
+  the full repositories in `IMAGE_REPOSITORY` and `CHART_REPOSITORY`, primary first, and leave
+  `IMAGE_REGISTRY` and `CHART_REGISTRY` unset or empty there. See
+  [Publishing to several registries](docs/configuration.md#publishing-to-several-registries).
+- **Where to set `PROJECT_REGISTRY_NAME`.** On a project as it moves to `1.11.0`, or on a group
+  only once every project below it includes `1.11.0` or later: earlier releases ignore it and
+  would take a full repository for a path.
+- **A `REGISTRY_CONFIG` from the earlier GitLab templates** names one registry per entry,
+  `{"<name>": {"endpoint": ..., "username": ..., "password": ...}}`. Rewrite it as groups,
+  `<group>: {<endpoint>: {username: ..., password: ...}}`, before setting
+  `PROJECT_REGISTRY_NAME`.
+- **Buildah projects** keep their single `IMAGE_REGISTRY`: the Buildah `Image:Build` is for
+  internal images and is unchanged.
+
+### Verify
+
+- A project that sets both `PROJECT_REGISTRY_NAME` and `IMAGE_REGISTRY` fails in `Common:Init`,
+  and no other job runs.
+- `init.env` carries the same keys as before.
+- After a release, every repository holds the release tag and its `latest`, major and minor
+  tags, all at the same digest.
+
 ## 1.10.0
 
 ### Required
