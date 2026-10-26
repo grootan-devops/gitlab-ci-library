@@ -7,6 +7,16 @@ To upgrade, apply every section after your pinned version up to the target, olde
 Newer sections are split into **Required** (the upgrade breaks or misbehaves without it),
 **Recommended** (aligns an existing project with the current standards) and **Verify**.
 
+## 1.10.1
+
+### Required
+
+No migration required.
+
+### Verify
+
+- A release pipeline in a project without SonarQube creates its release, with only the package link.
+
 ## 1.10.0
 
 ### Required
