@@ -130,12 +130,3 @@ Image:Build:
     - job: Common:Init
       artifacts: true
       optional: true
-    - job: Project:Build
-      artifacts: true
-      optional: true
-    - job: Node:Dependency:Download
-      artifacts: false
-      optional: true
-    - job: Python:Dependency:Download
-      artifacts: false
-      optional: true
