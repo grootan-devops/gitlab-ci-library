@@ -3,6 +3,7 @@ Image:Build:
   image: ${BUILDAH_BUILD_IMAGE_REPO}:${BUILDAH_BUILD_IMAGE_TAG}
   extends:
     - .image-common
+    - .image-build-workflow-rules
   # variables:
   #   BASE_IMAGE_REPO: ""
   #   BASE_IMAGE_TAG: ""

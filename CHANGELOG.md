@@ -46,7 +46,7 @@ this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
-- Buildah `Image:Build`: the truncated `needs:` entry that stopped any pipeline including `image/.buildah.gitlab-ci.yml` from being created. Its `needs:` now match the docker `Image:Build`: `Common:Init`, `Project:Build` with its artifacts, and the dependency downloads, all optional.
+- Buildah `Image:Build`: the truncated `needs:` entry that stopped any pipeline including `image/.buildah.gitlab-ci.yml` from being created. Its `needs:` now match the docker `Image:Build`: `Common:Init`, `Project:Build` with its artifacts, and the dependency downloads, all optional. It also takes the docker job's rules (`.image-build-workflow-rules`), so it runs only for merge request verification and `full-pipeline` or `image-build-and-push` runs. Without them it would have built an unused image in every pipeline, release pipelines included.
 - Docker `Image:Build`, `Chart:Promote`: a relative `PROJECT_PATH` is no longer applied twice when `before_script` has already entered it.
 - `WORKFLOW=image-scan`, `Deploy:Komodo:Validate:Image`: check the image in `CI_REGISTRY` when `IMAGE_REGISTRY` is unset, instead of `/<repository>`.
 - `docs/modules/image.md`: lists `Image:Promote`, which is where the alias tags are applied (not `Image:Push`).
