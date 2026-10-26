@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.10.1] - 2026-10-27
+
+### Fixed
+
+- `Release`: attaches the SonarQube link only when `SONAR_EXTERNAL_URL` or `SONAR_URL` is an http(s) URL. Without one the link was `/dashboard?id=…`, and GitLab refused the whole release with `Links url is blocked: Only allowed schemes are http, https, ftp`, so a project without SonarQube could not release.
+
 ## [1.10.0] - 2026-10-26
 
 ### Added
