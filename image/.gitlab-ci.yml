@@ -71,14 +71,14 @@ Image:Check Existence:
       fi
       TAKEN=()
       UNCHECKED=()
-      for ((i = 0; i < CHECK_COUNT; i++)); do
-        HOST="${REGISTRY_HOSTS[i]}"
+      for ((I = 0; I < CHECK_COUNT; I++)); do
+        HOST="${REGISTRY_HOSTS[${I}]}"
         if [[ "${CHECK_TAG}" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-          IMAGE_CHECK_REPO="${REGISTRY_REPOS[i]}"
+          IMAGE_CHECK_REPO="${REGISTRY_REPOS[${I}]}"
         else
-          IMAGE_CHECK_REPO="$(registry_dev_repository image "${HOST}" "${REGISTRY_REPOS[i]}" "${IMAGE_DEV_REPOSITORY_SUFFIX}")"
+          IMAGE_CHECK_REPO="$(registry_dev_repository image "${HOST}" "${REGISTRY_REPOS[${I}]}" "${IMAGE_DEV_REPOSITORY_SUFFIX}")"
         fi
-        if [[ ${i} -gt 0 ]] && ! registry_login docker "${i}"; then
+        if [[ ${I} -gt 0 ]] && ! registry_login docker "${I}"; then
           UNCHECKED+=("${HOST}/${IMAGE_CHECK_REPO}")
           continue
         fi
@@ -134,15 +134,15 @@ Image:Push:
     - PUSHED=()
     - FAILED=()
     - |
-      for i in "${!REGISTRY_HOSTS[@]}"; do
-        HOST="${REGISTRY_HOSTS[i]}"
-        PUSH_REPO="$(registry_dev_repository image "${HOST}" "${REGISTRY_REPOS[i]}" "${IMAGE_REPOSITORY_SUFFIX}")"
-        if [[ ${i} -gt 0 ]] && ! registry_login docker "${i}"; then
+      for I in "${!REGISTRY_HOSTS[@]}"; do
+        HOST="${REGISTRY_HOSTS[${I}]}"
+        PUSH_REPO="$(registry_dev_repository image "${HOST}" "${REGISTRY_REPOS[${I}]}" "${IMAGE_REPOSITORY_SUFFIX}")"
+        if [[ ${I} -gt 0 ]] && ! registry_login docker "${I}"; then
           FAILED+=("${HOST}/${PUSH_REPO}")
           continue
         fi
         if docker tag ${IMAGE_LOAD_NAME} "${HOST}/${PUSH_REPO}:${APP_PUSH_VERSION}" && docker push "${HOST}/${PUSH_REPO}:${APP_PUSH_VERSION}"; then
-          PUSHED+=("${i}")
+          PUSHED+=("${I}")
         else
           FAILED+=("${HOST}/${PUSH_REPO}")
         fi
@@ -155,10 +155,10 @@ Image:Push:
         echo '```'
       } > "${IMAGE_INFO_FILE_NAME}"
     - |
-      for i in "${PUSHED[@]}"; do
-        HOST="${REGISTRY_HOSTS[i]}"
-        PUSH_TARGET="${HOST}/$(registry_dev_repository image "${HOST}" "${REGISTRY_REPOS[i]}" "${IMAGE_REPOSITORY_SUFFIX}"):${APP_PUSH_VERSION}"
-        DEV_TARGET="${HOST}/$(registry_dev_repository image "${HOST}" "${REGISTRY_REPOS[i]}" "${IMAGE_DEV_REPOSITORY_SUFFIX}"):${APP_PUSH_VERSION}"
+      for I in "${PUSHED[@]}"; do
+        HOST="${REGISTRY_HOSTS[${I}]}"
+        PUSH_TARGET="${HOST}/$(registry_dev_repository image "${HOST}" "${REGISTRY_REPOS[${I}]}" "${IMAGE_REPOSITORY_SUFFIX}"):${APP_PUSH_VERSION}"
+        DEV_TARGET="${HOST}/$(registry_dev_repository image "${HOST}" "${REGISTRY_REPOS[${I}]}" "${IMAGE_DEV_REPOSITORY_SUFFIX}"):${APP_PUSH_VERSION}"
         if [[ "${PUSH_TARGET}" != "${DEV_TARGET}" ]]; then
           if ! { docker tag ${IMAGE_LOAD_NAME} "${DEV_TARGET}" && docker push "${DEV_TARGET}"; }; then
             FAILED+=("${DEV_TARGET%:*}")
