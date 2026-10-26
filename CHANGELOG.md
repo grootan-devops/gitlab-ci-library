@@ -16,6 +16,7 @@ this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- CI calls the github-ci-library 1.7.0 reusable workflows instead of 1.3.1.
 - Docker Hub image candidates go to `<repo>-dev`, because Docker Hub has no nested repositories and the `/dev` path was not valid there.
 - `Deploy:ArgoCD:Validate:Chart`: logs in to the chart registry with its `CHART_REGISTRY_USERNAME` / `CHART_REGISTRY_PASSWORD` pair, or reads it anonymously when it has none. The CI job token is sent only to `CI_REGISTRY`.
 - Every job that extends `.image-registry-login` defaults `IMAGE_REGISTRY` to `CI_REGISTRY`, as `Common:Init` does.
