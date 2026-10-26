@@ -31,6 +31,18 @@
 | `TRIVY_IGNORED_LICENSE_CLASSIFICATIONS` | No | `notice,permissive,unencumbered` | Comma-separated Trivy license classifications `License:Scan` does not report. Accepts classification names or the groups `low` (notice, permissive, unencumbered), `medium` (reciprocal, unrecognized) and `high` (restricted). Waive an individual license in `ignored-cves.yml`. |
 | `RELEASE_MESSAGE_TEAMS_WORKFLOWS_URL` | Teams | — | Power Automate webhook URL(s) for release notification cards. |
 
+## GitLab instance requirements
+
+`Common:Init` hands its values to later jobs as a dotenv report. A release pipeline writes 21
+keys, and a chart project's three more. GitLab.com allows 50; a self-managed instance defaults
+to 20 and rejects the report with `Dotenv files cannot have more than 20 variables`, which fails
+`Common:Init` and skips the release. An administrator raises the limit once for the instance:
+
+```bash
+curl --request PUT --header "PRIVATE-TOKEN: <admin-token>" \
+  "https://<gitlab-host>/api/v4/application/plan_limits?plan_name=default&dotenv_variables=50"
+```
+
 ## DevOps Reference & Platform Defaults
 
 ### Group-Injected CI/CD Variables
