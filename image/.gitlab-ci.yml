@@ -4,42 +4,18 @@
 .image-registry-login:
   before_script:
     - cd ${PROJECT_PATH}
-    - |
-      # The GitLab Container Registry default Common:Init applies, for the workflows that run
-      # without it, such as image-scan.
-      if [[ -z "${IMAGE_REGISTRY}" && ( -n "${CI_REGISTRY}" || "${GITLAB_CI}" == "true" ) ]]; then
-        IMAGE_REGISTRY="${CI_REGISTRY}"
-        echo "ℹ️  IMAGE_REGISTRY not set. Defaulting to GitLab Container Registry: ${IMAGE_REGISTRY}"
-        if [[ -z "${IMAGE_REPOSITORY}" || "${IMAGE_REPOSITORY}" != "${CI_PROJECT_PATH}"* ]]; then
-          IMAGE_REPOSITORY="${CI_PROJECT_PATH}"
-          echo "ℹ️  Defaulting IMAGE_REPOSITORY to GitLab project path: ${IMAGE_REPOSITORY}"
-        fi
-        export IMAGE_REGISTRY IMAGE_REPOSITORY
-      fi
-    - |
-      # Docker Hub has no nested repositories, so a `/` in the image dev suffix becomes `-`
-      # there: candidates go to `<repo>-dev`.
-      case "${IMAGE_REGISTRY}" in
-        docker.io|index.docker.io|registry-1.docker.io) IMAGE_DEV_REPOSITORY_SUFFIX="${IMAGE_DEV_REPOSITORY_SUFFIX//\//-}" ;;
-      esac
+    - !reference [.registry-functions, script]
+    - registry_image_defaults
+    - registry_primary_target image "${IMAGE_REPOSITORY}" || exit 1
     - >
-      echo Authenticating Registry: ${IMAGE_REGISTRY}
+      echo Authenticating Registry: ${REGISTRY_PRIMARY}
+    - registry_dependency_proxy_login
     - |
-      if [[ -n "${CI_DEPENDENCY_PROXY_SERVER}" && -n "${CI_DEPENDENCY_PROXY_USER}" && -n "${CI_DEPENDENCY_PROXY_PASSWORD}" ]]; then
-        echo "${CI_DEPENDENCY_PROXY_PASSWORD}" | docker login -u "${CI_DEPENDENCY_PROXY_USER}" --password-stdin "${CI_DEPENDENCY_PROXY_SERVER}" || true
-      fi
-    - REGISTRY_USER="${IMAGE_REGISTRY_USERNAME:-${CI_REGISTRY_USER:-gitlab-ci-token}}"
-    - REGISTRY_PASS="${IMAGE_REGISTRY_PASSWORD:-${CI_REGISTRY_PASSWORD:-${CI_JOB_TOKEN}}}"
-    - |
-      if [[ -n "${IMAGE_REGISTRY}" ]]; then
-        if [[ -z "${REGISTRY_USER}" || -z "${REGISTRY_PASS}" ]]; then
-          echo "❌ ERROR: IMAGE_REGISTRY is set to '${IMAGE_REGISTRY}' but no credentials are available."
-          echo "   Set IMAGE_REGISTRY_USERNAME/IMAGE_REGISTRY_PASSWORD (e.g. a deploy token with read_registry+write_registry scope on the target project) as CI/CD variables."
+      if [[ -n "${REGISTRY_PRIMARY}" ]]; then
+        registry_resolve image "${IMAGE_REPOSITORY}" || exit 1
+        if ! registry_login docker 0; then
+          echo "   Set IMAGE_REGISTRY_USERNAME/IMAGE_REGISTRY_PASSWORD (e.g. a deploy token with read_registry+write_registry scope on the target project) as CI/CD variables, or the registry's credentials in the REGISTRY_CONFIG group."
           echo "   CI_JOB_TOKEN only authenticates against this project's own registry (or a target project that explicitly allowlists it) — it will not work for an unrelated registry namespace."
-          exit 1
-        fi
-        if ! echo "${REGISTRY_PASS}" | docker login -u "${REGISTRY_USER}" --password-stdin "${IMAGE_REGISTRY}"; then
-          echo "❌ ERROR: docker login failed for ${IMAGE_REGISTRY} with user '${REGISTRY_USER}'. Check that the credential is valid and has read_registry+write_registry scope on the target project/group."
           exit 1
         fi
       fi
@@ -85,34 +61,61 @@ Image:Check Existence:
     - .image-check-rules
   script:
     - CHECK_TAG="${TARGET_VERSION:-${RELEASE_VERSION}}"
-    - |
-      if [[ "${CHECK_TAG}" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-        IMAGE_CHECK_REPO="${IMAGE_REPOSITORY}"
-      else
-        IMAGE_CHECK_REPO="${IMAGE_REPOSITORY}${IMAGE_DEV_REPOSITORY_SUFFIX}"
-      fi
-    - echo "Checking image tag '${CHECK_TAG}' in ${IMAGE_REGISTRY}/${IMAGE_CHECK_REPO}..."
-    - |
-      if docker manifest inspect "${IMAGE_REGISTRY}/${IMAGE_CHECK_REPO}:${CHECK_TAG}" > /dev/null 2>&1; then
-        RESULT=0
-      else
-        RESULT=1
-      fi
+    - registry_resolve image "${IMAGE_REPOSITORY}" || exit 1
+    # A scan target must exist in the primary repository. A release tag must
+    # not exist in any repository, because the release is copied to every one.
+    - CHECK_COUNT=${#REGISTRY_HOSTS[@]}
     - |
       if [[ "${WORKFLOW}" == "image-scan" ]]; then
-        if [[ ${RESULT} -ne 0 ]]; then
-          echo "❌ Image tag '${CHECK_TAG}' not found in registry ${IMAGE_REGISTRY}/${IMAGE_CHECK_REPO}."
-          exit 1
+        CHECK_COUNT=1
+      fi
+    - TAKEN=()
+    - UNCHECKED=()
+    - |
+      for ((I = 0; I < CHECK_COUNT; I++)); do
+        HOST="${REGISTRY_HOSTS[${I}]}"
+        if [[ "${CHECK_TAG}" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+          IMAGE_CHECK_REPO="${REGISTRY_REPOS[${I}]}"
         else
-          echo "✅ Image tag '${CHECK_TAG}' exists in registry. Ready for scanning."
+          IMAGE_CHECK_REPO="$(registry_dev_repository image "${HOST}" "${REGISTRY_REPOS[${I}]}" "${IMAGE_DEV_REPOSITORY_SUFFIX}")"
         fi
-      else
-        if [[ ${RESULT} -eq 0 ]]; then
+        if [[ ${I} -gt 0 ]] && ! registry_login docker "${I}"; then
+          UNCHECKED+=("${HOST}/${IMAGE_CHECK_REPO}")
+          continue
+        fi
+        echo "Checking image tag '${CHECK_TAG}' in ${HOST}/${IMAGE_CHECK_REPO}..."
+        if docker manifest inspect "${HOST}/${IMAGE_CHECK_REPO}:${CHECK_TAG}" > /dev/null 2>&1; then
+          RESULT=0
+        else
+          RESULT=1
+        fi
+        if [[ "${WORKFLOW}" == "image-scan" ]]; then
+          if [[ ${RESULT} -ne 0 ]]; then
+            echo "❌ Image tag '${CHECK_TAG}' not found in registry ${HOST}/${IMAGE_CHECK_REPO}."
+            exit 1
+          else
+            echo "✅ Image tag '${CHECK_TAG}' exists in registry. Ready for scanning."
+          fi
+        elif [[ ${RESULT} -eq 0 ]]; then
+          if [[ ${CHECK_COUNT} -gt 1 ]]; then
+            IMAGE_CHECK_REPO="${HOST}/${IMAGE_CHECK_REPO}"
+          fi
           echo "❌ Image with tag '${CHECK_TAG}' already exists in ${IMAGE_CHECK_REPO}."
-          exit 1
-        else
-          echo "✅ Image tag '${CHECK_TAG}' is available."
+          TAKEN+=("${HOST}")
         fi
+      done
+    - |
+      if [[ ${#UNCHECKED[@]} -gt 0 ]]; then
+        UNCHECKED_TEXT="$(printf '%s, ' "${UNCHECKED[@]}")"
+        echo "❌ Image tag '${CHECK_TAG}' could not be checked in: ${UNCHECKED_TEXT%, }."
+      fi
+    - |
+      if [[ ${#TAKEN[@]} -gt 0 || ${#UNCHECKED[@]} -gt 0 ]]; then
+        exit 1
+      fi
+    - |
+      if [[ "${WORKFLOW}" != "image-scan" ]]; then
+        echo "✅ Image tag '${CHECK_TAG}' is available."
       fi
   needs:
     - job: Workflow:Validate:Variables
@@ -131,8 +134,23 @@ Image:Push:
   script:
     - echo "Pushing image to ${IMAGE_PUSH_REPOSITORY}"
     - *image-load
-    - docker tag ${IMAGE_LOAD_NAME} ${IMAGE_REGISTRY}/${IMAGE_PUSH_REPOSITORY}:${APP_PUSH_VERSION}
-    - docker push ${IMAGE_REGISTRY}/${IMAGE_PUSH_REPOSITORY}:${APP_PUSH_VERSION}
+    - registry_resolve image "${IMAGE_REPOSITORY}" || exit 1
+    - PUSHED=()
+    - FAILED=()
+    - |
+      for I in "${!REGISTRY_HOSTS[@]}"; do
+        HOST="${REGISTRY_HOSTS[${I}]}"
+        PUSH_REPO="$(registry_dev_repository image "${HOST}" "${REGISTRY_REPOS[${I}]}" "${IMAGE_REPOSITORY_SUFFIX}")"
+        if [[ ${I} -gt 0 ]] && ! registry_login docker "${I}"; then
+          FAILED+=("${HOST}/${PUSH_REPO}")
+          continue
+        fi
+        if docker tag ${IMAGE_LOAD_NAME} "${HOST}/${PUSH_REPO}:${APP_PUSH_VERSION}" && docker push "${HOST}/${PUSH_REPO}:${APP_PUSH_VERSION}"; then
+          PUSHED+=("${I}")
+        else
+          FAILED+=("${HOST}/${PUSH_REPO}")
+        fi
+      done
     - |
       {
         echo "### 🐳 Container Image Registry Info"
@@ -140,11 +158,22 @@ Image:Push:
         docker image ls --format '{{.Repository}}:{{.Tag}}@{{.Digest}}' | sed '/<none>/d'
         echo '```'
       } > "${IMAGE_INFO_FILE_NAME}"
-    - DEV_TARGET="${IMAGE_REGISTRY}/${IMAGE_REPOSITORY}${IMAGE_DEV_REPOSITORY_SUFFIX}:${APP_PUSH_VERSION}"
     - |
-      if [[ "${IMAGE_REGISTRY}/${IMAGE_PUSH_REPOSITORY}:${APP_PUSH_VERSION}" != "${DEV_TARGET}" ]]; then
-        docker tag ${IMAGE_LOAD_NAME} "${DEV_TARGET}"
-        docker push "${DEV_TARGET}"
+      for I in "${PUSHED[@]}"; do
+        HOST="${REGISTRY_HOSTS[${I}]}"
+        PUSH_TARGET="${HOST}/$(registry_dev_repository image "${HOST}" "${REGISTRY_REPOS[${I}]}" "${IMAGE_REPOSITORY_SUFFIX}"):${APP_PUSH_VERSION}"
+        DEV_TARGET="${HOST}/$(registry_dev_repository image "${HOST}" "${REGISTRY_REPOS[${I}]}" "${IMAGE_DEV_REPOSITORY_SUFFIX}"):${APP_PUSH_VERSION}"
+        if [[ "${PUSH_TARGET}" != "${DEV_TARGET}" ]]; then
+          if ! { docker tag ${IMAGE_LOAD_NAME} "${DEV_TARGET}" && docker push "${DEV_TARGET}"; }; then
+            FAILED+=("${DEV_TARGET%:*}")
+          fi
+        fi
+      done
+    - |
+      if [[ ${#FAILED[@]} -gt 0 ]]; then
+        FAILED_TEXT="$(printf '%s, ' "${FAILED[@]}")"
+        echo "❌ ERROR: The image was not pushed to: ${FAILED_TEXT%, }. Every repository was tried; re-run once they are fixed."
+        exit 1
       fi
   artifacts:
     name: Image SHA List
@@ -214,8 +243,9 @@ Image:Promote:
       artifacts: true
       optional: false
   script:
-    - DEV_IMAGE="${IMAGE_REGISTRY}/${IMAGE_REPOSITORY}${IMAGE_DEV_REPOSITORY_SUFFIX}"
-    - PROD_IMAGE="${IMAGE_REGISTRY}/${IMAGE_REPOSITORY}"
+    - registry_resolve image "${IMAGE_REPOSITORY}" || exit 1
+    - DEV_IMAGE="${REGISTRY_PRIMARY}/$(registry_dev_repository image "${REGISTRY_PRIMARY}" "${REGISTRY_REPOS[0]}" "${IMAGE_DEV_REPOSITORY_SUFFIX}")"
+    - PROD_IMAGE="${REGISTRY_PRIMARY}/${REGISTRY_REPOS[0]}"
     - echo "🔍 Looking for candidate image in dev registry -> ${DEV_IMAGE} (target version ${TAG})..."
     - |
       DEV_IMAGE_SRC=""
@@ -250,6 +280,23 @@ Image:Promote:
           crane tag "${PROD_IMAGE}:${TAG}" "${MINOR_VERSION}"
         fi
         echo "✅ Production image promoted successfully via Crane."
+        if [[ ${#REGISTRY_HOSTS[@]} -gt 1 ]]; then
+          PROMOTED_DIGEST="$(crane digest "${PROD_IMAGE}:${TAG}")"
+          RELEASE_ALIASES=(latest)
+          if [[ -n "${MAJOR_VERSION}" ]]; then
+            RELEASE_ALIASES+=("${MAJOR_VERSION}")
+          fi
+          if [[ -n "${MINOR_VERSION}" ]]; then
+            RELEASE_ALIASES+=("${MINOR_VERSION}")
+          fi
+          COPY_STATUS=0
+          registry_copy_image "${PROD_IMAGE}" "${PROMOTED_DIGEST}" "${TAG}" "${RELEASE_ALIASES[@]}" || COPY_STATUS=$?
+          if [[ ${COPY_STATUS} -ne 0 ]]; then
+            COPY_FAILED_TEXT="$(printf '%s, ' "${REGISTRY_COPY_FAILED[@]}")"
+            echo "❌ ERROR: ${PROD_IMAGE}:${TAG} was promoted but not copied to: ${COPY_FAILED_TEXT%, }. Every repository was tried; re-run once they are fixed."
+            exit 1
+          fi
+        fi
       else
         echo "⚠️ Notice: No candidate dev image found. Skipping image promotion."
       fi

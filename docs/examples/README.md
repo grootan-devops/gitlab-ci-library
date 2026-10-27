@@ -10,5 +10,6 @@
 - [audit](audit.md)
 - [build](build.md)
 - [check](check.md)
+- [multi-registry](multi-registry.md)
 
 [Documentation index](../../README.md)

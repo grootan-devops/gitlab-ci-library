@@ -2,7 +2,9 @@
 
 Helm chart validation, packaging and publishing. A configured `CHART_REGISTRY` selects OCI;
 otherwise publishing uses the current project's GitLab Helm Package Registry.
-See [registry configuration](../configuration.md#helm-chart-publishing--authentication).
+See [registry configuration](../configuration.md#helm-chart-publishing--authentication), and
+[publishing to several registries](../configuration.md#publishing-to-several-registries) when
+`PROJECT_REGISTRY_NAME` names a credential group.
 
 ```mermaid
 flowchart LR
@@ -23,14 +25,14 @@ flowchart LR
 | --- | --- | --- |
 | `Chart:Lint` | `lint` | `helm lint --strict` with optional value overrides. |
 | `.Chart:UnitTest` | `test` | **Optional, opt-in.** Renders a mock consumer chart at `${CHART_DIR}/${MOCK_CHART}` (default `tests`) and runs its `${MOCK_CHART}/tests/*_test.yaml` suite glob with `helm unittest --strict`; a missing suite is an error and JUnit is published. Hidden template — declare `Chart:UnitTest: {extends: .Chart:UnitTest}` to enable. For repositories that *ship* a chart others depend on; requires the `unittest` Helm plugin in the job image. |
-| `Chart:Check Existence` | `check` | Checks for version collisions in the selected backend. Authentication and network errors fail the check. |
+| `Chart:Check Existence` | `check` | Checks for version collisions in the selected backend, in every OCI chart registry. Authentication and network errors fail the check. |
 | `Chart:Check:README` | `check` | Validates that `helm-docs` generated documentation is up to date. |
 | `Chart:Check:Dependency` | `check` | Prevents release charts from depending on development chart repositories. *(Not run in `chart-build-and-push`.)* |
 | `Chart:Values:Lint` | `lint` | Validates YAML syntax of chart values files. *(Not run in `chart-build-and-push`.)* |
 | `Chart:Build` | `build` | Packages chart into `.tgz` artifact using `helm package`. |
-| `Chart:Push` | `push` | Publishes to OCI when configured, otherwise GitLab packages (`dev` for candidates, `stable` for releases). Stable pushes optionally mirror to dev. |
+| `Chart:Push` | `push` | Publishes to every OCI chart registry when configured, otherwise GitLab packages (`dev` for candidates, `stable` for releases). Stable pushes optionally mirror to dev. |
 | `Chart:Scan` | `security` | Renders templates and runs Trivy. Remote charts (`TARGET_VERSION`) come from the selected backend; pull failures never substitute a local chart. |
-| `Chart:Promote` | `release` | Pulls a candidate from the selected backend, repackages at the release tag and publishes to production. |
+| `Chart:Promote` | `release` | Pulls a candidate from the selected backend (the primary OCI registry), repackages at the release tag and publishes to production, then publishes the same package to every other OCI registry. |
 
 ## Chart-only repositories
 
