@@ -28,8 +28,14 @@ this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   - fails without a group when `IMAGE_REGISTRY` or `CHART_REGISTRY` holds several hosts, or `IMAGE_REPOSITORY` or `CHART_REPOSITORY` several repositories, pointing to `PROJECT_REGISTRY_NAME`, and with a group when a repository is not `<registry>/<path>` on one of its registries;
   - with a group, fails when a registry the repositories name has no username and password in it, unless it is `CI_REGISTRY`;
   - with a group, writes each artifact's primary host as `IMAGE_REGISTRY` and `CHART_REGISTRY`, the full repositories comma-joined as `IMAGE_REPOSITORY` and `CHART_REPOSITORY`, and `IMAGE_PUSH_REPOSITORY`, `IMAGE_CHECK_REPOSITORY`, `CHART_DEV_REPOSITORY` and `CHART_PUSH_REPOSITORY` for the primary; no key is added;
-  - with a single registry, writes exactly the values of 1.10.1.
+  - with a single registry, writes exactly the values of 1.10.2.
 - `docs/configuration.md`: a self-managed GitLab needs its `dotenv_variables` limit above the default 20, because `Common:Init` writes 21 keys in a release pipeline and more in a chart project's.
+
+## [1.10.2] - 2026-10-27
+
+### Fixed
+
+- `Release:Notification:Teams`: drops a card button whose URL is not absolute. Without `SONAR_EXTERNAL_URL` the SonarQube button pointed at `/dashboard?id=…`; the Teams workflow accepted the request (HTTP 202) but could not post the card, so no notification arrived.
 
 ## [1.10.1] - 2026-10-27
 
