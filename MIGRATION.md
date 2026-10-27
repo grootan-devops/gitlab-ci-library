@@ -7,6 +7,16 @@ To upgrade, apply every section after your pinned version up to the target, olde
 Newer sections are split into **Required** (the upgrade breaks or misbehaves without it),
 **Recommended** (aligns an existing project with the current standards) and **Verify**.
 
+## 1.10.2
+
+### Required
+
+No migration required.
+
+### Verify
+
+- In a project without SonarQube, the release notification arrives in Teams, without a SonarQube button.
+
 ## 1.10.1
 
 ### Required

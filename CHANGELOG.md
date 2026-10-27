@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.10.2] - 2026-10-27
+
+### Fixed
+
+- `Release:Notification:Teams`: drops a card button whose URL is not absolute. Without `SONAR_EXTERNAL_URL` the SonarQube button pointed at `/dashboard?id=…`; the Teams workflow accepted the request (HTTP 202) but could not post the card, so no notification arrived.
+
 ## [1.10.1] - 2026-10-27
 
 ### Fixed
