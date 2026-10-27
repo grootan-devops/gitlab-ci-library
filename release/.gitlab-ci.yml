@@ -430,6 +430,8 @@ Release:Notification:Teams:
         .["$schema"] = "http://adaptivecards.io/schemas/adaptive-card.json"
         | del(.[""])
         | (.body[] | select(.id == "release-notes") | .items) = ($RELEASE_NOTES[0] // [])
+        # Teams refuses to post a card whose button URL is not absolute, e.g. SonarQube without a URL.
+        | .actions |= map(select((.url // "") | test("^https?://[^/]")))
         | {
             type: "message",
             attachments: [
