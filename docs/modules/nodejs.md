@@ -17,7 +17,7 @@ flowchart LR
 
 | Job / Template | Type | Stage | Description |
 | --- | --- | --- | --- |
-| `.Node:24` | Template | — | Toolkit build image (`NODE_JS_24_BUILD_IMAGE_*`, Node.js 26 from toolkit 2.0.0) + `.npm` caching configuration. The Dockerfile runtime stays on `micro-node-24`. |
+| `.Node:24` | Template | — | Node.js 24 base image + `.npm` caching configuration. |
 | `.Node:Project:Version:Init` | Template | `.pre` | Reads `.version` from `package.json` and writes `version.env`. |
 | `.Node:Dependency:Download` | Template | `prepare` | Runs `npm ci --include=dev` into the `.npm` cache. |
 | `.Node:Build` | Template | `build` | Standard build template with pull cache and dependencies on `Common:Init` and `Node:Dependency:Download`. |
