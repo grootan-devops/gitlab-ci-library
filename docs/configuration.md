@@ -217,11 +217,11 @@ A merge request pipeline of version `1.4.0` with these variables publishes:
   repository, or the Harbor project, in every registry before the first push.
 
 > [!IMPORTANT]
-> **Upgrade every include together.** The image, chart and deploy templates of `1.11.0` load
+> **Upgrade every include together.** The image, chart and deploy templates of `1.13.0` load
 > the registry functions from `common`, so every include must point at the same release.
-> Releases before `1.11.0` ignore `PROJECT_REGISTRY_NAME` and would take a full repository for
-> a path: set the group and the full repositories on a project as it moves to `1.11.0`, or on a
-> GitLab group only once every project below it includes `1.11.0` or later.
+> Releases before `1.13.0` ignore `PROJECT_REGISTRY_NAME` and would take a full repository for
+> a path: set the group and the full repositories on a project as it moves to `1.13.0`, or on a
+> GitLab group only once every project below it includes `1.13.0` or later.
 
 ---
 

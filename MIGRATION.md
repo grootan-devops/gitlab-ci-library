@@ -7,15 +7,15 @@ To upgrade, apply every section after your pinned version up to the target, olde
 Newer sections are split into **Required** (the upgrade breaks or misbehaves without it),
 **Recommended** (aligns an existing project with the current standards) and **Verify**.
 
-## 1.11.0
+## 1.13.0
 
 ### Required
 
 No migration is required for a single registry, provided every include of the library moves
-to `1.11.0` together. The image, chart and deploy templates load the registry functions from
+to `1.13.0` together. The image, chart and deploy templates load the registry functions from
 `common/.gitlab-ci.yml`.
 
-- **`PROJECT_REGISTRY_NAME` now selects a credential group.** `1.10.2` and earlier ignore it. A project or
+- **`PROJECT_REGISTRY_NAME` now selects a credential group.** `1.12.0` and earlier ignore it. A project or
   group that still sets it, for example from the earlier GitLab templates, removes it or moves
   to a credential group as below: set together with `IMAGE_REGISTRY` or `CHART_REGISTRY`, it now
   stops the pipeline in `Common:Init`.
@@ -29,8 +29,8 @@ to `1.11.0` together. The image, chart and deploy templates load the registry fu
   the full repositories in `IMAGE_REPOSITORY` and `CHART_REPOSITORY`, primary first, and leave
   `IMAGE_REGISTRY` and `CHART_REGISTRY` unset or empty there. See
   [Publishing to several registries](docs/configuration.md#publishing-to-several-registries).
-- **Where to set `PROJECT_REGISTRY_NAME`.** On a project as it moves to `1.11.0`, or on a group
-  only once every project below it includes `1.11.0` or later: earlier releases ignore it and
+- **Where to set `PROJECT_REGISTRY_NAME`.** On a project as it moves to `1.13.0`, or on a group
+  only once every project below it includes `1.13.0` or later: earlier releases ignore it and
   would take a full repository for a path.
 - **A `REGISTRY_CONFIG` from the earlier GitLab templates** names one registry per entry,
   `{"<name>": {"endpoint": ..., "username": ..., "password": ...}}`. Rewrite it as groups,
@@ -46,6 +46,38 @@ to `1.11.0` together. The image, chart and deploy templates load the registry fu
 - `init.env` carries the same keys as before.
 - After a release, every repository holds the release tag and its `latest`, major and minor
   tags, all at the same digest.
+
+## 1.12.0
+
+### Required
+
+- **Node.js jobs run on Node.js 26.** Jobs extending `.Node:24` take the toolkit image, now
+  `grootantech/toolkit:2.0.1`, which ships Node.js 26 and npm 12.2 instead of Node.js 24. A
+  project whose `package.json` `engines` field, lockfile or tests require Node.js 24 must allow
+  26, or keep the previous build image for those jobs until it can:
+
+  ```yaml
+  variables:
+    NODE_JS_24_BUILD_IMAGE_TAG: 1.2.0
+  ```
+
+  The runtime base (`NODE_JS_24_MICRO_BASE_IMAGE_TAG`) stays on Node.js 24.
+- A project that overrides an image variable (`TOOLKIT_IMAGE_TAG`, `*_BUILD_IMAGE_TAG`,
+  `MICRO_*_BASE_IMAGE_TAG`, `DOCKER_DIND_IMAGE_TAG`, `BUILDKIT_IMAGE_TAG` or
+  `SONAR_SCANNER_CLI_IMAGE_TAG`) keeps its pinned value; drop the override to take the new
+  default.
+
+### Recommended
+
+- Run a merge request pipeline once on this release before pinning it everywhere: the toolkit
+  also moves Terraform to 1.17, OpenTofu to 1.13, Maven to 3.10 and Trivy to 0.76, which can
+  report new findings or lint warnings.
+
+### Verify
+
+- The merge request pipeline passes with the new pin.
+- `Image:Build` passes the new base image tags as build arguments (for example
+  `grootantech/micro-node-24:1.2.1`).
 
 ## 1.10.2
 

@@ -5,7 +5,7 @@ All notable changes to this project will be documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [1.11.0] - 2026-10-27
+## [1.13.0] - 2026-11-01
 
 ### Added
 
@@ -28,8 +28,24 @@ this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   - fails without a group when `IMAGE_REGISTRY` or `CHART_REGISTRY` holds several hosts, or `IMAGE_REPOSITORY` or `CHART_REPOSITORY` several repositories, pointing to `PROJECT_REGISTRY_NAME`, and with a group when a repository is not `<registry>/<path>` on one of its registries;
   - with a group, fails when a registry the repositories name has no username and password in it, unless it is `CI_REGISTRY`;
   - with a group, writes each artifact's primary host as `IMAGE_REGISTRY` and `CHART_REGISTRY`, the full repositories comma-joined as `IMAGE_REPOSITORY` and `CHART_REPOSITORY`, and `IMAGE_PUSH_REPOSITORY`, `IMAGE_CHECK_REPOSITORY`, `CHART_DEV_REPOSITORY` and `CHART_PUSH_REPOSITORY` for the primary; no key is added;
-  - with a single registry, writes exactly the values of 1.10.2.
+  - with a single registry, writes exactly the values of 1.12.0.
 - `docs/configuration.md`: a self-managed GitLab needs its `dotenv_variables` limit above the default 20, because `Common:Init` writes 21 keys in a release pipeline and more in a chart project's.
+
+## [1.12.0] - 2026-11-01
+
+### Changed
+
+- Updated the default images in `common/.gitlab-ci.yml` to their latest stable releases:
+  - [`grootantech/toolkit`](https://github.com/grootan-devops/toolkit) from [`1.1.0` to `2.0.1`](https://github.com/grootan-devops/toolkit/compare/1.1.0...2.0.1) (`TOOLKIT_IMAGE_TAG`), the default build image of every job that does not set its own. Toolkit 2.0.0 moves Node.js from 24 to 26 and npm to 12.2, and updates Helm 4.3.1, Trivy 0.76.1, Terraform 1.17.0, OpenTofu 1.13.2, yq 4.54.1, Go 1.27.3, Maven 3.10.0, uv 0.13.5, golangci-lint 2.15.0 and Biome 2.6.3.
+  - `docker` from `29.3.1-dind` to `29.9.2-dind` (`DOCKER_DIND_IMAGE_TAG`)
+  - [`moby/buildkit`](https://github.com/moby/buildkit) from [`v0.29.0` to `v0.34.1`](https://github.com/moby/buildkit/releases/tag/v0.34.1) (`BUILDKIT_IMAGE_TAG`)
+  - `sonarsource/sonar-scanner-cli` from `12.2.0.4256_8.1.0` to `12.3.0.4285_8.1.0` (`SONAR_SCANNER_CLI_IMAGE_TAG`)
+  - `grootantech/micro-root` from `1.1.0` to `1.2.0` (`MICRO_ROOT_BASE_IMAGE_TAG`)
+  - `grootantech/micro-nginx` from `1.1.1` to `1.2.1` (`NGINX_MICRO_BASE_IMAGE_TAG`)
+  - `grootantech/micro-python-3-12` from `1.1.2` to `1.2.1` (`PYTHON_312_MICRO_BASE_IMAGE_TAG`)
+  - `grootantech/micro-node-24` from `1.1.1` to `1.2.1` (`NODE_JS_24_MICRO_BASE_IMAGE_TAG`)
+  - `grootantech/micro-java-25` from `1.2.0` to `1.3.1` (`JAVA_25_MICRO_BASE_IMAGE_TAG`)
+- `docs/modules/nodejs.md`: `.Node:24` runs the toolkit build image, which ships Node.js 26 from toolkit 2.0.0; the runtime base stays on Node.js 24.
 
 ## [1.10.2] - 2026-10-27
 
