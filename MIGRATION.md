@@ -7,6 +7,38 @@ To upgrade, apply every section after your pinned version up to the target, olde
 Newer sections are split into **Required** (the upgrade breaks or misbehaves without it),
 **Recommended** (aligns an existing project with the current standards) and **Verify**.
 
+## 1.12.0
+
+### Required
+
+- **Node.js jobs run on Node.js 26.** Jobs extending `.Node:24` take the toolkit image, now
+  `grootantech/toolkit:2.0.1`, which ships Node.js 26 and npm 12.2 instead of Node.js 24. A
+  project whose `package.json` `engines` field, lockfile or tests require Node.js 24 must allow
+  26, or keep the previous build image for those jobs until it can:
+
+  ```yaml
+  variables:
+    NODE_JS_24_BUILD_IMAGE_TAG: 1.2.0
+  ```
+
+  The runtime base (`NODE_JS_24_MICRO_BASE_IMAGE_TAG`) stays on Node.js 24.
+- A project that overrides an image variable (`TOOLKIT_IMAGE_TAG`, `*_BUILD_IMAGE_TAG`,
+  `MICRO_*_BASE_IMAGE_TAG`, `DOCKER_DIND_IMAGE_TAG`, `BUILDKIT_IMAGE_TAG` or
+  `SONAR_SCANNER_CLI_IMAGE_TAG`) keeps its pinned value; drop the override to take the new
+  default.
+
+### Recommended
+
+- Run a merge request pipeline once on this release before pinning it everywhere: the toolkit
+  also moves Terraform to 1.17, OpenTofu to 1.13, Maven to 3.10 and Trivy to 0.76, which can
+  report new findings or lint warnings.
+
+### Verify
+
+- The merge request pipeline passes with the new pin.
+- `Image:Build` passes the new base image tags as build arguments (for example
+  `grootantech/micro-node-24:1.2.1`).
+
 ## 1.10.2
 
 ### Required
