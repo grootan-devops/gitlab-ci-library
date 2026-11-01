@@ -94,8 +94,10 @@ docker.io: { username: "ci-bot",   password: "...", dev: "-dev" }
 ### Credentials
 
 Every job that talks to a registry writes one Docker `config.json` from the sources below and
-points docker, buildx, crane, Trivy, buildah and helm at it (`DOCKER_CONFIG`,
-`REGISTRY_AUTH_FILE`, `HELM_REGISTRY_CONFIG`). For the same host a later source wins:
+points docker, buildx, crane, Trivy and helm at it (`DOCKER_CONFIG`,
+`REGISTRY_AUTH_FILE`, `HELM_REGISTRY_CONFIG`). Buildah builds publish to one registry and
+log in with `IMAGE_REGISTRY_USERNAME` / `_PASSWORD` as before. For the same host a later
+source wins:
 
 1. the CI job token for `CI_REGISTRY`;
 2. the dependency proxy (`CI_DEPENDENCY_PROXY_*`), so base images pull through it;

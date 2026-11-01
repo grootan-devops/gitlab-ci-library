@@ -17,7 +17,7 @@ this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ### Changed
 
 - **Breaking:** charts are always published as OCI artifacts, by default to `oci://${CI_REGISTRY_IMAGE}/helm` (candidates `/helm/dev`) with the CI job token. The GitLab Helm package registry, its `dev`/`stable` channels and `HELM_CHANNEL` are no longer used.
-- Every registry job writes one Docker `config.json` from the job token, the dependency proxy, the `*_REGISTRY_USERNAME` / `_PASSWORD` pairs and `REGISTRY_CONFIG`, and docker, buildx, crane, Trivy, buildah and helm read it. It replaces the separate `docker login`, `helm registry login` and buildah `--creds` steps.
+- Every registry job writes one Docker `config.json` from the job token, the dependency proxy, the `*_REGISTRY_USERNAME` / `_PASSWORD` pairs and `REGISTRY_CONFIG`, and docker, buildx, crane, Trivy and helm read it. It replaces the separate `docker login` and `helm registry login` steps. Buildah builds publish to a single registry and keep their own login.
 - `Common:Init` prints the resolved destinations and no longer writes `IMAGE_REGISTRY`, `IMAGE_REPOSITORY`, `IMAGE_REPOSITORY_SUFFIX`, `IMAGE_CHECK_REPOSITORY`, `IMAGE_PUSH_REPOSITORY`, `CHART_REGISTRY`, `CHART_REPOSITORY`, `CHART_DEV_REPOSITORY` or `CHART_PUSH_REPOSITORY` to `init.env`: at most 15 keys, within GitLab's default dotenv limit of 20.
 - The GitLab registry default and the Docker Hub candidate rule live in one place instead of five.
 
