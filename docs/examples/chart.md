@@ -1,10 +1,9 @@
 # 5. Pure Helm Chart Repository
 
 For repositories containing only Helm charts (no application code or Dockerfile), `Chart.yaml`
-is the version source. Leave `CHART_REGISTRY` unset or empty for this project's GitLab Helm
-Package Registry. For OCI, configure the registry, repository and chart-specific credentials
-from the [configuration guide](../configuration.md#helm-chart-publishing--authentication).
-Dependency-only authentication has separate settings; it must not select the publishing backend.
+is the version source. With nothing configured the chart goes to
+`oci://${CI_REGISTRY_IMAGE}/helm` (candidates in `/helm/dev`) with the job token. Another
+registry, or several, are configured as in [Registries](../configuration.md#registries).
 
 ```yaml
 # .gitlab-ci.yml

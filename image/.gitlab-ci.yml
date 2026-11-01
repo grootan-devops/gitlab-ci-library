@@ -4,45 +4,11 @@
 .image-registry-login:
   before_script:
     - cd ${PROJECT_PATH}
-    - |
-      # The GitLab Container Registry default Common:Init applies, for the workflows that run
-      # without it, such as image-scan.
-      if [[ -z "${IMAGE_REGISTRY}" && ( -n "${CI_REGISTRY}" || "${GITLAB_CI}" == "true" ) ]]; then
-        IMAGE_REGISTRY="${CI_REGISTRY}"
-        echo "ℹ️  IMAGE_REGISTRY not set. Defaulting to GitLab Container Registry: ${IMAGE_REGISTRY}"
-        if [[ -z "${IMAGE_REPOSITORY}" || "${IMAGE_REPOSITORY}" != "${CI_PROJECT_PATH}"* ]]; then
-          IMAGE_REPOSITORY="${CI_PROJECT_PATH}"
-          echo "ℹ️  Defaulting IMAGE_REPOSITORY to GitLab project path: ${IMAGE_REPOSITORY}"
-        fi
-        export IMAGE_REGISTRY IMAGE_REPOSITORY
-      fi
-    - |
-      # Docker Hub has no nested repositories, so a `/` in the image dev suffix becomes `-`
-      # there: candidates go to `<repo>-dev`.
-      case "${IMAGE_REGISTRY}" in
-        docker.io|index.docker.io|registry-1.docker.io) IMAGE_DEV_REPOSITORY_SUFFIX="${IMAGE_DEV_REPOSITORY_SUFFIX//\//-}" ;;
-      esac
+    - !reference [.registry-functions, script]
+    - registry_auth
+    - registry_select image ""
     - >
-      echo Authenticating Registry: ${IMAGE_REGISTRY}
-    - |
-      if [[ -n "${CI_DEPENDENCY_PROXY_SERVER}" && -n "${CI_DEPENDENCY_PROXY_USER}" && -n "${CI_DEPENDENCY_PROXY_PASSWORD}" ]]; then
-        echo "${CI_DEPENDENCY_PROXY_PASSWORD}" | docker login -u "${CI_DEPENDENCY_PROXY_USER}" --password-stdin "${CI_DEPENDENCY_PROXY_SERVER}" || true
-      fi
-    - REGISTRY_USER="${IMAGE_REGISTRY_USERNAME:-${CI_REGISTRY_USER:-gitlab-ci-token}}"
-    - REGISTRY_PASS="${IMAGE_REGISTRY_PASSWORD:-${CI_REGISTRY_PASSWORD:-${CI_JOB_TOKEN}}}"
-    - |
-      if [[ -n "${IMAGE_REGISTRY}" ]]; then
-        if [[ -z "${REGISTRY_USER}" || -z "${REGISTRY_PASS}" ]]; then
-          echo "❌ ERROR: IMAGE_REGISTRY is set to '${IMAGE_REGISTRY}' but no credentials are available."
-          echo "   Set IMAGE_REGISTRY_USERNAME/IMAGE_REGISTRY_PASSWORD (e.g. a deploy token with read_registry+write_registry scope on the target project) as CI/CD variables."
-          echo "   CI_JOB_TOKEN only authenticates against this project's own registry (or a target project that explicitly allowlists it) — it will not work for an unrelated registry namespace."
-          exit 1
-        fi
-        if ! echo "${REGISTRY_PASS}" | docker login -u "${REGISTRY_USER}" --password-stdin "${IMAGE_REGISTRY}"; then
-          echo "❌ ERROR: docker login failed for ${IMAGE_REGISTRY} with user '${REGISTRY_USER}'. Check that the credential is valid and has read_registry+write_registry scope on the target project/group."
-          exit 1
-        fi
-      fi
+      echo "Image destinations: $(registry_targets image | awk -F'\t' '{printf "%s%s/%s", (NR > 1 ? ", " : ""), $1, $2}')"
 
 .image-common:
   variables:
@@ -86,33 +52,34 @@ Image:Check Existence:
   script:
     - CHECK_TAG="${TARGET_VERSION:-${RELEASE_VERSION}}"
     - |
-      if [[ "${CHECK_TAG}" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-        IMAGE_CHECK_REPO="${IMAGE_REPOSITORY}"
-      else
-        IMAGE_CHECK_REPO="${IMAGE_REPOSITORY}${IMAGE_DEV_REPOSITORY_SUFFIX}"
-      fi
-    - echo "Checking image tag '${CHECK_TAG}' in ${IMAGE_REGISTRY}/${IMAGE_CHECK_REPO}..."
-    - |
-      if docker manifest inspect "${IMAGE_REGISTRY}/${IMAGE_CHECK_REPO}:${CHECK_TAG}" > /dev/null 2>&1; then
-        RESULT=0
-      else
-        RESULT=1
-      fi
-    - |
+      # image-scan reads one image, from the selected destination; every other workflow
+      # checks that the tag is free in every destination.
       if [[ "${WORKFLOW}" == "image-scan" ]]; then
-        if [[ ${RESULT} -ne 0 ]]; then
-          echo "❌ Image tag '${CHECK_TAG}' not found in registry ${IMAGE_REGISTRY}/${IMAGE_CHECK_REPO}."
-          exit 1
+        registry_select image "${DEPLOY_IMAGE_REPOSITORY:-}"
+        CHECK_REF="$(registry_version_repository "${CHECK_TAG}"):${CHECK_TAG}"
+        if registry_exists "${CHECK_REF}"; then
+          echo "✅ Image ${CHECK_REF} exists. Ready for scanning."
         else
-          echo "✅ Image tag '${CHECK_TAG}' exists in registry. Ready for scanning."
+          echo "❌ Image ${CHECK_REF} not found."
+          exit 1
         fi
       else
-        if [[ ${RESULT} -eq 0 ]]; then
-          echo "❌ Image with tag '${CHECK_TAG}' already exists in ${IMAGE_CHECK_REPO}."
+        FOUND=()
+        while IFS=$'\t' read -r HOST STABLE DEV; do
+          REPO="${HOST}/${STABLE}"
+          [[ "${CHECK_TAG}" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || REPO="${HOST}/${DEV}"
+          if registry_exists "${REPO}:${CHECK_TAG}"; then
+            FOUND+=("${REPO}")
+          else
+            RESULT=$?
+            [[ "${RESULT}" -eq 1 ]] || exit "${RESULT}"
+          fi
+        done <<<"$(registry_targets image)"
+        if [[ "${#FOUND[@]}" -gt 0 ]]; then
+          echo "❌ Image tag '${CHECK_TAG}' already exists in: ${FOUND[*]}"
           exit 1
-        else
-          echo "✅ Image tag '${CHECK_TAG}' is available."
         fi
+        echo "✅ Image tag '${CHECK_TAG}' is available."
       fi
   needs:
     - job: Workflow:Validate:Variables
@@ -129,10 +96,20 @@ Image:Push:
     - .image-registry-login
     - .image-build-workflow-rules
   script:
-    - echo "Pushing image to ${IMAGE_PUSH_REPOSITORY}"
     - *image-load
-    - docker tag ${IMAGE_LOAD_NAME} ${IMAGE_REGISTRY}/${IMAGE_PUSH_REPOSITORY}:${APP_PUSH_VERSION}
-    - docker push ${IMAGE_REGISTRY}/${IMAGE_PUSH_REPOSITORY}:${APP_PUSH_VERSION}
+    - |
+      # A release (no RC suffix) goes to the stable repository and is mirrored to dev;
+      # a candidate goes to dev only.
+      if [[ -z "${RC_VERSION_SUFFIX}" ]]; then
+        PUSH_WHICH=stable
+        PUSH_REPO="${SELECTED_HOST}/${SELECTED_STABLE}"
+      else
+        PUSH_WHICH=dev
+        PUSH_REPO="${SELECTED_HOST}/${SELECTED_DEV}"
+      fi
+    - echo "Pushing image to ${PUSH_REPO}"
+    - docker tag ${IMAGE_LOAD_NAME} "${PUSH_REPO}:${APP_PUSH_VERSION}"
+    - docker push "${PUSH_REPO}:${APP_PUSH_VERSION}"
     - |
       {
         echo "### 🐳 Container Image Registry Info"
@@ -140,11 +117,16 @@ Image:Push:
         docker image ls --format '{{.Repository}}:{{.Tag}}@{{.Digest}}' | sed '/<none>/d'
         echo '```'
       } > "${IMAGE_INFO_FILE_NAME}"
-    - DEV_TARGET="${IMAGE_REGISTRY}/${IMAGE_REPOSITORY}${IMAGE_DEV_REPOSITORY_SUFFIX}:${APP_PUSH_VERSION}"
+    - DEV_TARGET="${SELECTED_HOST}/${SELECTED_DEV}:${APP_PUSH_VERSION}"
     - |
-      if [[ "${IMAGE_REGISTRY}/${IMAGE_PUSH_REPOSITORY}:${APP_PUSH_VERSION}" != "${DEV_TARGET}" ]]; then
+      if [[ "${PUSH_REPO}:${APP_PUSH_VERSION}" != "${DEV_TARGET}" ]]; then
         docker tag ${IMAGE_LOAD_NAME} "${DEV_TARGET}"
         docker push "${DEV_TARGET}"
+      fi
+    - registry_mirror image "${PUSH_WHICH}" "${APP_PUSH_VERSION}"
+    - |
+      if [[ "${PUSH_WHICH}" == "stable" ]]; then
+        registry_mirror image dev "${APP_PUSH_VERSION}"
       fi
   artifacts:
     name: Image SHA List
@@ -214,8 +196,8 @@ Image:Promote:
       artifacts: true
       optional: false
   script:
-    - DEV_IMAGE="${IMAGE_REGISTRY}/${IMAGE_REPOSITORY}${IMAGE_DEV_REPOSITORY_SUFFIX}"
-    - PROD_IMAGE="${IMAGE_REGISTRY}/${IMAGE_REPOSITORY}"
+    - DEV_IMAGE="${SELECTED_HOST}/${SELECTED_DEV}"
+    - PROD_IMAGE="${SELECTED_HOST}/${SELECTED_STABLE}"
     - echo "🔍 Looking for candidate image in dev registry -> ${DEV_IMAGE} (target version ${TAG})..."
     - |
       DEV_IMAGE_SRC=""
@@ -252,4 +234,11 @@ Image:Promote:
         echo "✅ Production image promoted successfully via Crane."
       else
         echo "⚠️ Notice: No candidate dev image found. Skipping image promotion."
+      fi
+    - |
+      # The promoted release and its aliases, in every other destination's stable repository.
+      if [[ -n "${DEV_IMAGE_SRC}" ]]; then
+        MAJOR_VERSION=$(echo "${TAG}" | grep -Eo '^([0-9]+)')
+        MINOR_VERSION=$(echo "${TAG}" | grep -Eo '^([0-9]+)\.([0-9]+)')
+        registry_mirror image stable "${TAG}" latest ${MAJOR_VERSION} ${MINOR_VERSION}
       fi

@@ -225,7 +225,7 @@ flowchart TD
 > 1. `Common:Init` on `master` queries GitLab API (`/projects/:id/repository/commits/:sha/merge_requests`) to discover the upstream MR and its latest successful verification pipeline `#<UPSTREAM_PIPELINE_ID>`.
 > 2. It exports the exact pre-built dev candidate version: `DEV_CANDIDATE_VERSION="${RELEASE_VERSION}-rc.${UPSTREAM_PIPELINE_ID}-${MR_IID}"`.
 > 3. `Image:Promote` uses **Crane** for layerless OCI promotion: pulls the candidate manifest directly from `registry.contoso.com/acme/<project>/dev:<DEV_CANDIDATE_VERSION>`, mutates the version label to `${TAG}`, and pushes to `registry.contoso.com/acme/<project>:${TAG}` along with `latest`, `${MAJOR_VERSION}`, and `${MINOR_VERSION}` tags.
-> 4. `Chart:Promote` pulls the candidate from the configured OCI dev repository, or the GitLab package `dev` channel when `CHART_REGISTRY` is empty, and repackages with production `${TAG}`. It publishes to the production OCI repository or package `stable` channel. Docker Hub uses the same repository for both versions.
+> 4. `Chart:Promote` pulls the candidate from the primary's candidate repository and repackages it with production `${TAG}`. It publishes to the primary's release repository, then copies the chart by digest to every other destination. Docker Hub uses the same repository for both versions.
 > 5. `Release:Upload` restores verification artifacts from the upstream MR pipeline once using `$CI_JOB_TOKEN` and publishes release assets to the Generic Package Registry.
 > 6. `Release` creates the official GitLab Release page and Git tag `${TAG}`.
 > 7. `Release:Notification:Teams` sends an Adaptive Card release summary to Microsoft Teams.

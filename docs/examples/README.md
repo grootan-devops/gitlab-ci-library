@@ -5,6 +5,7 @@
 - [golang](golang.md)
 - [java](java.md)
 - [chart](chart.md)
+- [multi-registry](multi-registry.md)
 - [terraform](terraform.md)
 - [monorepo](monorepo.md)
 - [audit](audit.md)

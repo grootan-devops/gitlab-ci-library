@@ -16,7 +16,7 @@ flowchart LR
 ```
 
 - **Komodo**: `Deploy:Komodo:Validate:Image:<env>` verifies target container image in OCI registry before `Deploy:Komodo:<env>` begins.
-- **ArgoCD**: `Deploy:ArgoCD:Validate:Chart:<env>` and `Deploy:ArgoCD:Validate:Image:<env>` verify the target chart and image exist before `Deploy:ArgoCD:<env>` commits GitOps changes and syncs ArgoCD. The chart is checked where `Chart:Push` publishes it: the GitLab Helm channel `dev` for candidates or `stable` for releases (`HELM_CHANNEL` overrides), or the OCI release or candidate path. Set `validate_image: false` when the deployed chart does not use an image built by the project.
+- **ArgoCD**: `Deploy:ArgoCD:Validate:Chart:<env>` and `Deploy:ArgoCD:Validate:Image:<env>` verify the target chart and image exist before `Deploy:ArgoCD:<env>` commits GitOps changes and syncs ArgoCD. The chart and image are checked in the release or candidate repository that holds `TARGET_VERSION`, in the primary destination or the one `DEPLOY_CHART_REPOSITORY` / `DEPLOY_IMAGE_REPOSITORY` names (see [Registries](../configuration.md#which-registry-is-read)). Set `validate_image: false` when the deployed chart does not use an image built by the project.
 
 ## Komodo Deployment Component (`deploy/gitops/.komodo.gitlab-ci.yml`)
 
@@ -104,6 +104,6 @@ include:
 - **Manifest Mode**: If `gitops_manifest_file` is specified, `gitops_new_image` is strictly mandatory. Direct container image update occurs without container name filtering.
 - **GitOps repository credentials**: Both components clone and push the GitOps repository with `gitops_repo_token` (username `gitops_repo_username`, default `oauth2`), falling back to the `GITOPS_REPO_TOKEN` / `GITOPS_REPO_USERNAME` CI/CD variables and then to `CI_JOB_TOKEN`. Use a token with `write_repository`, such as a project access token on the GitOps project, when the GitOps repository is another project and GitLab is older than 19 (`CI_JOB_TOKEN` cross-project push). Pass it as a masked variable, e.g. `gitops_repo_token: "$GITOPS_REPO_TOKEN"`.
 - **In-place edits**: the deploy jobs change only the text of each value they set; blank lines, spacing, comments and quoting in the GitOps file are kept. A key that does not exist yet is added through `yq`.
-- **Chart repoURL**: In Helm mode `Deploy:ArgoCD:<env>` writes `<gitops_chart_app_yq_path>.chart.repoURL` for the channel or OCI path that holds `TARGET_VERSION`, and `.chart.version` as `TARGET_VERSION`.
+- **Chart repoURL**: In Helm mode `Deploy:ArgoCD:<env>` writes `<gitops_chart_app_yq_path>.chart.repoURL` as the OCI repository that holds `TARGET_VERSION`, and `.chart.version` as `TARGET_VERSION`. Image values and manifests get the image from the same destination.
 
 [Documentation index](../../README.md)

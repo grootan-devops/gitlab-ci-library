@@ -77,19 +77,14 @@ spec:
 
 .Deploy:ArgoCD:Chart:Repository:
   script:
+    - !reference [.registry-functions, script]
     - |
+      # The chart repository (host/path) the target environment pulls TARGET_VERSION from:
+      # DEPLOY_CHART_REPOSITORY when set, else the primary destination; stable for a release
+      # version, dev otherwise.
       argocd_chart_repository() {
-        if [[ "${TARGET_VERSION}" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-          ARGOCD_CHART_CHANNEL="stable"
-          ARGOCD_CHART_OCI_REPOSITORY="${CHART_REPOSITORY}"
-        else
-          ARGOCD_CHART_CHANNEL="dev"
-          ARGOCD_CHART_OCI_REPOSITORY="${CHART_REPOSITORY}${CHART_DEV_REPOSITORY_SUFFIX-/dev}"
-        fi
-        case "${CHART_REGISTRY}" in
-          docker.io|index.docker.io|registry-1.docker.io) ARGOCD_CHART_OCI_REPOSITORY="${CHART_REPOSITORY}" ;;
-        esac
-        ARGOCD_CHART_CHANNEL="${HELM_CHANNEL:-${ARGOCD_CHART_CHANNEL}}"
+        registry_select chart "${DEPLOY_CHART_REPOSITORY:-}" || return 1
+        ARGOCD_CHART_OCI_REPOSITORY=$(registry_version_repository "${TARGET_VERSION}")
       }
 
 .Deploy:ArgoCD:YAML:Set:
@@ -167,23 +162,8 @@ Deploy:ArgoCD:Validate:Chart:$[[ inputs.environment ]]:
       artifacts: false
       optional: true
   script:
-    - CHART_USER=""
-    - CHART_PASS=""
-    - |
-      # The chart registry's own pair, else the CI job token for this project's GitLab
-      # registry only; any other registry is read anonymously, never with the job token.
-      if [[ -n "${CHART_REGISTRY_USERNAME}" && -n "${CHART_REGISTRY_PASSWORD}" ]]; then
-        CHART_USER="${CHART_REGISTRY_USERNAME}"
-        CHART_PASS="${CHART_REGISTRY_PASSWORD}"
-      elif [[ -z "${CHART_REGISTRY_USERNAME}${CHART_REGISTRY_PASSWORD}" && -n "${CI_REGISTRY}" && "${CHART_REGISTRY,,}" == "${CI_REGISTRY,,}" ]]; then
-        CHART_USER="${CI_REGISTRY_USER:-gitlab-ci-token}"
-        CHART_PASS="${CI_REGISTRY_PASSWORD:-${CI_JOB_TOKEN}}"
-      fi
-    - |
-      if [[ -n "${CHART_USER}" && -n "${CHART_PASS}" && -n "${CHART_REGISTRY}" ]]; then
-        echo "${CHART_PASS}" | helm registry login "${CHART_REGISTRY}" --username "${CHART_USER}" --password-stdin
-      fi
     - !reference [.Deploy:ArgoCD:Chart:Repository, script]
+    - registry_auth
     - |
       RESOLVED_CHART_NAME="${CHART_NAME}"
       if [[ -z "${RESOLVED_CHART_NAME}" && -f "${CHART_DIR}/${CHART_FILE}" ]]; then
@@ -192,25 +172,13 @@ Deploy:ArgoCD:Validate:Chart:$[[ inputs.environment ]]:
       argocd_chart_repository
       CHART_VERIFY_REPO="${ARGOCD_CHART_OCI_REPOSITORY}"
     - |
-      if [[ -n "${CHART_REGISTRY}" ]]; then
-        if [[ -n "${RESOLVED_CHART_NAME}" ]] && helm show chart "oci://${CHART_REGISTRY}/${CHART_VERIFY_REPO}/${RESOLVED_CHART_NAME}" --version "${TARGET_VERSION}" > /dev/null 2>&1; then
-          echo "✅ Helm chart '${RESOLVED_CHART_NAME}:${TARGET_VERSION}' verified in registry (${CHART_VERIFY_REPO})."
-        elif helm show chart "oci://${CHART_REGISTRY}/${CHART_VERIFY_REPO}" --version "${TARGET_VERSION}" > /dev/null 2>&1; then
-          echo "✅ Helm chart version '${TARGET_VERSION}' verified in registry (${CHART_VERIFY_REPO})."
-        else
-          echo "❌ ERROR: Helm chart '${RESOLVED_CHART_NAME:-chart}:${TARGET_VERSION}' does not exist in registry (${CHART_VERIFY_REPO})."
-          exit 1
-        fi
-      elif [[ -n "${CI_API_V4_URL}" && -n "${CI_PROJECT_ID}" && -n "${CI_JOB_TOKEN}" ]]; then
-        CHART_CHANNEL_URL="${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/packages/helm/${ARGOCD_CHART_CHANNEL}"
-        if helm repo add argocd-target "${CHART_CHANNEL_URL}" --force-update \
-             --username gitlab-ci-token --password "${CI_JOB_TOKEN}" > /dev/null 2>&1 \
-           && helm show chart "argocd-target/${RESOLVED_CHART_NAME}" --version "${TARGET_VERSION}" > /dev/null 2>&1; then
-          echo "✅ Helm chart '${RESOLVED_CHART_NAME}:${TARGET_VERSION}' verified in GitLab Helm channel '${ARGOCD_CHART_CHANNEL}'."
-        else
-          echo "❌ ERROR: Helm chart '${RESOLVED_CHART_NAME}:${TARGET_VERSION}' does not exist in GitLab Helm channel '${ARGOCD_CHART_CHANNEL}'."
-          exit 1
-        fi
+      if [[ -n "${RESOLVED_CHART_NAME}" ]] && helm show chart "oci://${CHART_VERIFY_REPO}/${RESOLVED_CHART_NAME}" --version "${TARGET_VERSION}" > /dev/null 2>&1; then
+        echo "✅ Helm chart '${RESOLVED_CHART_NAME}:${TARGET_VERSION}' verified in oci://${CHART_VERIFY_REPO}."
+      elif helm show chart "oci://${CHART_VERIFY_REPO}" --version "${TARGET_VERSION}" > /dev/null 2>&1; then
+        echo "✅ Helm chart version '${TARGET_VERSION}' verified in oci://${CHART_VERIFY_REPO}."
+      else
+        echo "❌ ERROR: Helm chart '${RESOLVED_CHART_NAME:-chart}:${TARGET_VERSION}' does not exist in oci://${CHART_VERIFY_REPO}."
+        exit 1
       fi
 
 Deploy:ArgoCD:Validate:Image:$[[ inputs.environment ]]:
@@ -225,32 +193,13 @@ Deploy:ArgoCD:Validate:Image:$[[ inputs.environment ]]:
     - job: Workflow:Validate:Variables
       artifacts: false
       optional: true
-  before_script:
-    - |
-      # Same GitLab registry defaults as Common:Init, which does not run for WORKFLOW=deploy.
-      if [[ -z "${IMAGE_REGISTRY}" && ( -n "${CI_REGISTRY}" || "${GITLAB_CI}" == "true" ) ]]; then
-        IMAGE_REGISTRY="${CI_REGISTRY}"
-        if [[ -z "${IMAGE_REPOSITORY}" || "${IMAGE_REPOSITORY}" != "${CI_PROJECT_PATH}"* ]]; then
-          IMAGE_REPOSITORY="${CI_PROJECT_PATH}"
-        fi
-      fi
-      export IMAGE_REGISTRY IMAGE_REPOSITORY
-    - !reference [.image-registry-login, before_script]
   script:
     - |
       if [[ -n "$[[ inputs.gitops_new_image ]]" ]]; then
         TARGET_IMG="$[[ inputs.gitops_new_image ]]"
       else
-        if [[ -z "${IMAGE_REGISTRY}" || -z "${IMAGE_REPOSITORY}" ]]; then
-          echo "❌ ERROR: IMAGE_REGISTRY and IMAGE_REPOSITORY must be set to verify the target image (or set gitops_new_image, or validate_image: false)."
-          exit 1
-        fi
-        if [[ "${TARGET_VERSION}" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-          IMAGE_TARGET_REPO="${IMAGE_REPOSITORY}"
-        else
-          IMAGE_TARGET_REPO="${IMAGE_REPOSITORY}${IMAGE_DEV_REPOSITORY_SUFFIX}"
-        fi
-        TARGET_IMG="${IMAGE_REGISTRY}/${IMAGE_TARGET_REPO}:${TARGET_VERSION}"
+        registry_select image "${DEPLOY_IMAGE_REPOSITORY:-}"
+        TARGET_IMG="$(registry_version_repository "${TARGET_VERSION}"):${TARGET_VERSION}"
       fi
     - |
       if docker manifest inspect "${TARGET_IMG}" > /dev/null 2>&1; then
@@ -386,7 +335,8 @@ Deploy:ArgoCD:$[[ inputs.environment ]]:
       if [[ -n "${GITOPS_MANIFEST_FILE}" ]]; then
         NEW_IMAGE_VALUE="${GITOPS_NEW_IMAGE}"
         if [[ -z "${NEW_IMAGE_VALUE}" ]]; then
-          NEW_IMAGE_VALUE="${IMAGE_REGISTRY}/${IMAGE_PUSH_REPOSITORY:-${IMAGE_REPOSITORY}}:${TARGET_VERSION}"
+          registry_select image "${DEPLOY_IMAGE_REPOSITORY:-}"
+          NEW_IMAGE_VALUE="$(registry_version_repository "${TARGET_VERSION}"):${TARGET_VERSION}"
         fi
         GITOPS_COMMIT_MESSAGE="chore(deploy): update ${GITOPS_MANIFEST_FILE} image to ${NEW_IMAGE_VALUE} [skip ci]"
         MANIFEST_PATH="${GITOPS_TARGET_DIR}/${GITOPS_MANIFEST_FILE}"
@@ -405,13 +355,7 @@ Deploy:ArgoCD:$[[ inputs.environment ]]:
           exit 1
         fi
         argocd_chart_repository
-        if [[ -n "${CHART_REGISTRY}" ]]; then
-          CHART_REPO_URL="${CHART_REGISTRY}/${ARGOCD_CHART_OCI_REPOSITORY}"
-        elif [[ -n "${CI_API_V4_URL}" && -n "${CI_PROJECT_ID}" ]]; then
-          CHART_REPO_URL="${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/packages/helm/${ARGOCD_CHART_CHANNEL}"
-        else
-          CHART_REPO_URL="${CHART_PUSH_REPOSITORY:-${CHART_REPOSITORY}}"
-        fi
+        CHART_REPO_URL="${ARGOCD_CHART_OCI_REPOSITORY}"
         echo "Setting ${GITOPS_CHART_APP_YQ_PATH}.chart.repoURL = ${CHART_REPO_URL}"
         echo "Setting ${GITOPS_CHART_APP_YQ_PATH}.chart.version = ${TARGET_VERSION}"
         gitops_yaml_set "${CHART_VALUES_PATH}" "${GITOPS_CHART_APP_YQ_PATH}.chart.repoURL" "${CHART_REPO_URL}"
@@ -423,7 +367,8 @@ Deploy:ArgoCD:$[[ inputs.environment ]]:
             exit 1
           fi
           if [[ -n "${GITOPS_IMAGE_REPO_YQ_PATH}" ]]; then
-            IMAGE_FULL_REPO="${IMAGE_REGISTRY}/${IMAGE_PUSH_REPOSITORY:-${IMAGE_REPOSITORY}}"
+            registry_select image "${DEPLOY_IMAGE_REPOSITORY:-}"
+            IMAGE_FULL_REPO=$(registry_version_repository "${TARGET_VERSION}")
             echo "Setting ${GITOPS_IMAGE_REPO_YQ_PATH} = ${IMAGE_FULL_REPO}"
             gitops_yaml_set "${IMAGE_VALUES_PATH}" "${GITOPS_IMAGE_REPO_YQ_PATH}" "${IMAGE_FULL_REPO}"
           fi

@@ -38,16 +38,6 @@ Image:Build:
   script:
     - cd ${CI_PROJECT_DIR}
     - cd ${PROJECT_PATH}
-    - |
-      if [[ -n "${CI_DEPENDENCY_PROXY_SERVER}" && -n "${CI_DEPENDENCY_PROXY_USER}" && -n "${CI_DEPENDENCY_PROXY_PASSWORD}" ]]; then
-        echo "${CI_DEPENDENCY_PROXY_PASSWORD}" | docker login -u "${CI_DEPENDENCY_PROXY_USER}" --password-stdin "${CI_DEPENDENCY_PROXY_SERVER}" || true
-      fi
-    - REGISTRY_USER="${IMAGE_REGISTRY_USERNAME:-${CI_REGISTRY_USER:-gitlab-ci-token}}"
-    - REGISTRY_PASS="${IMAGE_REGISTRY_PASSWORD:-${CI_REGISTRY_PASSWORD:-${CI_JOB_TOKEN}}}"
-    - |
-      if [[ -n "${IMAGE_REGISTRY}" && -n "${REGISTRY_USER}" && -n "${REGISTRY_PASS}" ]]; then
-        echo "${REGISTRY_PASS}" | docker login -u "${REGISTRY_USER}" --password-stdin "${IMAGE_REGISTRY}" || true
-      fi
     - DOCKER_BUILD_ARGS=()
     - |
       for DOCKER_BUILD_VARS in $(env | grep -E '^DOCKER_BUILD_ARG_' | awk -F= '{print $1}'); do

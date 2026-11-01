@@ -9,103 +9,40 @@
 
 .chart-registry:
   script: &chart-registry |
-    chart_login() {
-      local REGISTRY="$1" USERNAME="$2" PASSWORD="$3"
-      case "${REGISTRY}" in
-        ""|*://*|*/*|*@*|*[[:space:]]*) echo "ERROR: Chart registry must be an OCI hostname, optionally with a port." >&2; return 1 ;;
-      esac
-      if [[ -z "${USERNAME}" || -z "${PASSWORD}" ]]; then
-        echo "ERROR: Set the chart registry username/password pair for ${REGISTRY}." >&2
-        return 1
-      fi
-      if ! printf '%s' "${PASSWORD}" | helm registry login "${REGISTRY}" --username "${USERNAME}" --password-stdin >/dev/null 2>&1; then
-        echo "ERROR: Chart registry authentication failed for ${REGISTRY}; check credentials and registry access." >&2
-        return 1
-      fi
-    }
-
+    # The chart helpers. They need the registry functions loaded first
+    # (`- !reference [.registry-functions, script]`). Every repository is a full OCI
+    # repository, host/path, and the chart lives at <repository>/<chart name>.
+    #
+    # PROD_CHART_REPO and DEV_CHART_REPO of the primary destination, with one auth file for
+    # every registry the job reads or writes, chart dependencies included.
     chart_registry_setup() {
-      if [[ -n "${CHART_REGISTRY:-}" ]]; then
-        case "${CHART_REGISTRY}" in
-          *://*|*/*|*@*|*[[:space:]]*) echo "ERROR: CHART_REGISTRY must be an OCI hostname, optionally with a port." >&2; return 1 ;;
-        esac
-        : "${CHART_REPOSITORY:?Set CHART_REPOSITORY to the OCI namespace/path, without the chart name}"
-        PROD_CHART_REPO="${CHART_REPOSITORY}"
-        DEV_CHART_REPO="${CHART_REPOSITORY}${CHART_DEV_REPOSITORY_SUFFIX-/dev}"
-        case "${CHART_REGISTRY}" in
-          docker.io|index.docker.io|registry-1.docker.io) DEV_CHART_REPO="${PROD_CHART_REPO}" ;;
-        esac
-        local USERNAME="${CHART_REGISTRY_USERNAME:-}" PASSWORD="${CHART_REGISTRY_PASSWORD:-}"
-        if [[ "${CHART_REGISTRY}" == "${CI_REGISTRY:-}" && -z "${USERNAME}${PASSWORD}" ]]; then
-          USERNAME="${CI_REGISTRY_USER:-gitlab-ci-token}"
-          PASSWORD="${CI_REGISTRY_PASSWORD:-${CI_JOB_TOKEN:-}}"
-        fi
-        chart_login "${CHART_REGISTRY}" "${USERNAME}" "${PASSWORD}" || return 1
-      else
-        : "${CI_API_V4_URL:?GitLab package publishing requires CI_API_V4_URL}"
-        : "${CI_PROJECT_ID:?GitLab package publishing requires CI_PROJECT_ID}"
-        : "${CI_JOB_TOKEN:?GitLab package publishing requires CI_JOB_TOKEN}"
-        PROD_CHART_REPO=stable
-        DEV_CHART_REPO=dev
-      fi
+      registry_auth || return 1
+      registry_select chart "" || return 1
+      PROD_CHART_REPO="${SELECTED_HOST}/${SELECTED_STABLE}"
+      DEV_CHART_REPO="${SELECTED_HOST}/${SELECTED_DEV}"
     }
 
     chart_dependency_login() {
-      if [[ -n "${CHART_DEPENDENCY_REGISTRY:-}" ]]; then
-        chart_login "${CHART_DEPENDENCY_REGISTRY}" "${CHART_DEPENDENCY_REGISTRY_USERNAME:-}" "${CHART_DEPENDENCY_REGISTRY_PASSWORD:-}"
-      elif [[ -n "${CHART_REGISTRY:-}" ]]; then
-        chart_registry_setup
-      fi
+      registry_auth
     }
 
     # Return 0 for present, 1 for confirmed absence, 2 for an operational error.
     chart_exists() {
-      local VERSION="$1" REPOSITORY="$2" OUTPUT PAGE=1 COUNT
-      if [[ -n "${CHART_REGISTRY:-}" ]]; then
-        if OUTPUT=$(helm show chart "oci://${CHART_REGISTRY}/${REPOSITORY}/${RESOLVED_CHART_NAME}" --version "${VERSION}" 2>&1); then
-          return 0
-        fi
-        case "${OUTPUT}" in
-          *401*|*403*|*Unauthorized*|*unauthorized*|*denied*|*timeout*|*connection*|*"no such host"*|*x509*|*executable*|*"command not found"*) ;;
-          *"not found"*|*"404 Not Found"*|*MANIFEST_UNKNOWN*|*NAME_UNKNOWN*) return 1 ;;
-        esac
-        echo "ERROR: OCI chart lookup failed; availability cannot be confirmed." >&2
-        return 2
+      local VERSION="$1" REPOSITORY="$2" OUTPUT
+      if OUTPUT=$(helm show chart "oci://${REPOSITORY}/${RESOLVED_CHART_NAME}" --version "${VERSION}" 2>&1); then
+        return 0
       fi
-      while :; do
-        if ! OUTPUT=$(curl --fail --silent --show-error --get --header "JOB-TOKEN: ${CI_JOB_TOKEN}" \
-          --data-urlencode "package_type=helm" --data-urlencode "package_name=${RESOLVED_CHART_NAME}" \
-          --data-urlencode "package_version=${VERSION}" --data-urlencode "per_page=100" --data-urlencode "page=${PAGE}" \
-          "${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/packages" 2>/dev/null); then
-          echo "ERROR: GitLab package lookup failed; check job-token access and service availability." >&2
-          return 2
-        fi
-        if ! COUNT=$(printf '%s' "${OUTPUT}" | jq -er 'if type == "array" and all(.[]; type == "object" and (.name | type) == "string" and (.version | type) == "string") then length else error("invalid packages") end' 2>/dev/null); then
-          echo "ERROR: Invalid GitLab package response." >&2
-          return 2
-        fi
-        if printf '%s' "${OUTPUT}" | jq -e --arg NAME "${RESOLVED_CHART_NAME}" --arg VERSION "${VERSION}" \
-          'any(.[]; .name == $NAME and .version == $VERSION)' >/dev/null; then
-          return 0
-        fi
-        [[ "${COUNT}" -eq 100 ]] || return 1
-        PAGE=$((PAGE + 1))
-      done
+      case "${OUTPUT}" in
+        *401*|*403*|*Unauthorized*|*unauthorized*|*denied*|*timeout*|*connection*|*"no such host"*|*x509*|*executable*|*"command not found"*) ;;
+        *"not found"*|*"404 Not Found"*|*MANIFEST_UNKNOWN*|*NAME_UNKNOWN*) return 1 ;;
+      esac
+      echo "ERROR: OCI chart lookup in ${REPOSITORY} failed; availability cannot be confirmed." >&2
+      return 2
     }
 
     chart_pull() {
-      local VERSION="$1" REPOSITORY="$2" DESTINATION="$3" REF
-      if [[ -n "${CHART_REGISTRY:-}" ]]; then
-        REF="oci://${CHART_REGISTRY}/${REPOSITORY}/${RESOLVED_CHART_NAME}"
-      else
-        if ! helm repo add ci-chart "${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/packages/helm/${REPOSITORY}" \
-          --force-update --username gitlab-ci-token --password "${CI_JOB_TOKEN}" >/dev/null 2>&1; then
-          echo "ERROR: Cannot load GitLab Helm channel ${REPOSITORY}." >&2
-          return 1
-        fi
-        REF="ci-chart/${RESOLVED_CHART_NAME}"
-      fi
-      if ! helm pull "${REF}" --version "${VERSION}" --untar --untardir "${DESTINATION}" >/dev/null 2>&1; then
+      local VERSION="$1" REPOSITORY="$2" DESTINATION="$3"
+      if ! helm pull "oci://${REPOSITORY}/${RESOLVED_CHART_NAME}" --version "${VERSION}" --untar --untardir "${DESTINATION}" >/dev/null 2>&1; then
         echo "ERROR: Cannot pull chart ${RESOLVED_CHART_NAME}:${VERSION} from ${REPOSITORY}." >&2
         return 1
       fi
@@ -113,21 +50,15 @@
 
     chart_publish() {
       local PACKAGE="$1" REPOSITORY="$2"
-      if [[ -n "${CHART_REGISTRY:-}" ]]; then
-        if ! helm push "${PACKAGE}" "oci://${CHART_REGISTRY}/${REPOSITORY}" >/dev/null 2>&1; then
-          echo "ERROR: OCI chart push failed; no GitLab package fallback was attempted." >&2
-          return 1
-        fi
-      elif ! curl --fail --silent --show-error --output /dev/null --request POST \
-        --user "gitlab-ci-token:${CI_JOB_TOKEN}" --form "chart=@${PACKAGE}" \
-        "${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/packages/helm/api/${REPOSITORY}/charts" 2>/dev/null; then
-        echo "ERROR: GitLab Helm package upload failed." >&2
+      if ! helm push "${PACKAGE}" "oci://${REPOSITORY}" >/dev/null 2>&1; then
+        echo "ERROR: Chart push to oci://${REPOSITORY} failed." >&2
         return 1
       fi
     }
 
 .chart-login:
   script: &chart-login
+    - !reference [.registry-functions, script]
     - *chart-registry
     - chart_dependency_login
 
@@ -159,6 +90,7 @@ Chart:Check Existence:
     - .check-job-common
     - .chart-check-rules
   script:
+    - !reference [.registry-functions, script]
     - *chart-registry
     - |
       RESOLVED_CHART_NAME="${CHART_NAME:-}"
@@ -171,24 +103,34 @@ Chart:Check Existence:
       fi
       : "${RESOLVED_CHART_NAME:?Chart name is required}"
       chart_registry_setup
-      CHECK_VERSION="${CHART_RELEASE_VERSION:-}"
-      CHECK_REPO="${PROD_CHART_REPO}"
+    - |
+      # chart-scan reads one chart, from the selected destination; every other workflow
+      # checks that the release version is free in every destination.
       if [[ "${WORKFLOW:-}" == "chart-scan" ]]; then
         CHECK_VERSION="${TARGET_VERSION:?TARGET_VERSION is required for a remote scan}"
-        [[ "${CHECK_VERSION}" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || CHECK_REPO="${DEV_CHART_REPO}"
-      fi
-      : "${CHECK_VERSION:?Chart version is required}"
-      if chart_exists "${CHECK_VERSION}" "${CHECK_REPO}"; then
-        if [[ "${WORKFLOW:-}" != "chart-scan" ]]; then
-          echo "ERROR: Chart ${RESOLVED_CHART_NAME}:${CHECK_VERSION} already exists. Bump the version."
+        registry_select chart "${DEPLOY_CHART_REPOSITORY:-}"
+        CHECK_REPO=$(registry_version_repository "${CHECK_VERSION}")
+        if chart_exists "${CHECK_VERSION}" "${CHECK_REPO}"; then
+          echo "Remote chart ${CHECK_REPO}/${RESOLVED_CHART_NAME}:${CHECK_VERSION} exists."
+        else
+          RESULT=$?
+          [[ "${RESULT}" -eq 1 ]] || exit "${RESULT}"
+          echo "ERROR: Remote chart ${CHECK_REPO}/${RESOLVED_CHART_NAME}:${CHECK_VERSION} does not exist."
           exit 1
         fi
-        echo "Remote chart version exists."
       else
-        RESULT=$?
-        [[ "${RESULT}" -eq 1 ]] || exit "${RESULT}"
-        if [[ "${WORKFLOW:-}" == "chart-scan" ]]; then
-          echo "ERROR: Remote chart version does not exist."
+        CHECK_VERSION="${CHART_RELEASE_VERSION:?Chart version is required}"
+        FOUND=()
+        while IFS=$'\t' read -r HOST STABLE DEV; do
+          if chart_exists "${CHECK_VERSION}" "${HOST}/${STABLE}"; then
+            FOUND+=("${HOST}/${STABLE}")
+          else
+            RESULT=$?
+            [[ "${RESULT}" -eq 1 ]] || exit "${RESULT}"
+          fi
+        done <<<"$(registry_targets chart)"
+        if [[ "${#FOUND[@]}" -gt 0 ]]; then
+          echo "ERROR: Chart ${RESOLVED_CHART_NAME}:${CHECK_VERSION} already exists in: ${FOUND[*]}. Bump the version."
           exit 1
         fi
         echo "Chart version is available."
@@ -324,18 +266,22 @@ Chart:Push:
     - .chart-common
     - .chart-build-workflow-rules
   script:
+    - !reference [.registry-functions, script]
     - *chart-registry
     - chart_registry_setup
     - |
+      # A release (no RC suffix) goes to the stable repository and is mirrored to dev;
+      # a candidate goes to dev only. Every other destination then gets the same.
       CHART_PACKAGE_FILE="${CHART_NAME}-${CHART_PUSH_VERSION}.tgz"
       [[ -f "${CHART_PACKAGE_FILE}" ]] || { echo "ERROR: Chart package ${CHART_PACKAGE_FILE} not found."; exit 1; }
+      PUSH_WHICH=stable
       PUSH_REPO="${PROD_CHART_REPO}"
-      [[ -z "${RC_VERSION_SUFFIX:-}" ]] || PUSH_REPO="${DEV_CHART_REPO}"
-      if [[ -z "${CHART_REGISTRY:-}" ]]; then
-        PUSH_REPO="${HELM_CHANNEL:-${PUSH_REPO}}"
+      if [[ -n "${RC_VERSION_SUFFIX:-}" ]]; then
+        PUSH_WHICH=dev
+        PUSH_REPO="${DEV_CHART_REPO}"
       fi
       chart_publish "${CHART_PACKAGE_FILE}" "${PUSH_REPO}"
-      if [[ -z "${RC_VERSION_SUFFIX:-}" && "${PUSH_REPO}" != "${DEV_CHART_REPO}" ]]; then
+      if [[ "${PUSH_WHICH}" == "stable" && "${PUSH_REPO}" != "${DEV_CHART_REPO}" ]]; then
         if ! chart_publish "${CHART_PACKAGE_FILE}" "${DEV_CHART_REPO}"; then
           echo "WARNING: Optional dev mirror failed; the primary chart publish succeeded."
         fi
@@ -344,10 +290,14 @@ Chart:Push:
         echo "### Helm Chart Package Info"
         echo "- Name: ${CHART_NAME}"
         echo "- Version: ${CHART_PUSH_VERSION}"
-        echo "- Registry: ${CHART_REGISTRY:-GitLab Helm Package Registry}"
-        echo "- Repository/channel: ${PUSH_REPO}"
+        echo "- Repository: oci://${PUSH_REPO}"
       } > "${CHART_INFO_FILE_NAME}"
       cat "${CHART_INFO_FILE_NAME}"
+    - registry_mirror chart "${PUSH_WHICH}" "${CHART_PUSH_VERSION}"
+    - |
+      if [[ "${PUSH_WHICH}" == "stable" && "${PROD_CHART_REPO}" != "${DEV_CHART_REPO}" ]]; then
+        registry_mirror chart dev "${CHART_PUSH_VERSION}"
+      fi
   artifacts:
     name: Chart Info
     expose_as: Chart Info
@@ -370,6 +320,7 @@ Chart:Scan:
     - .chart-scan-workflow-rules
   before_script:
     - cd "${PROJECT_PATH}"
+    - !reference [.registry-functions, script]
     - *chart-registry
     - |
       RESOLVED_CHART_NAME="${CHART_NAME:-}"
@@ -380,8 +331,8 @@ Chart:Scan:
       if [[ -n "${TARGET_VERSION:-}" ]]; then
         : "${RESOLVED_CHART_NAME:?Chart name is required}"
         chart_registry_setup
-        SCAN_REPO="${PROD_CHART_REPO}"
-        [[ "${TARGET_VERSION}" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || SCAN_REPO="${DEV_CHART_REPO}"
+        registry_select chart "${DEPLOY_CHART_REPOSITORY:-}"
+        SCAN_REPO=$(registry_version_repository "${TARGET_VERSION}")
         SCAN_TEMP=$(mktemp -d)
         trap 'rm -rf "${SCAN_TEMP}"' EXIT
         chart_pull "${TARGET_VERSION}" "${SCAN_REPO}" "${SCAN_TEMP}"
@@ -439,6 +390,7 @@ Chart:Promote:
   script:
     - cd ${CI_PROJECT_DIR}
     - cd ${PROJECT_PATH}
+    - !reference [.registry-functions, script]
     - *chart-registry
     - chart_registry_setup
     - |
@@ -450,7 +402,7 @@ Chart:Promote:
       PULLED=0
       CANDIDATES=("${DEV_CANDIDATE_CHART_VERSION:-}" "${DEV_CANDIDATE_VERSION:-}")
       [[ -z "${UPSTREAM_PIPELINE_ID:-}" ]] || CANDIDATES+=("${TAG}-rc.${UPSTREAM_PIPELINE_ID}")
-      [[ -z "${CHART_REGISTRY:-}" ]] || CANDIDATES+=("${TAG}")
+      CANDIDATES+=("${TAG}")
       for CANDIDATE in "${CANDIDATES[@]}"; do
         [[ -n "${CANDIDATE}" ]] || continue
         if chart_exists "${CANDIDATE}" "${DEV_CHART_REPO}"; then
@@ -474,4 +426,5 @@ Chart:Promote:
         exit 1
       fi
       chart_publish "${CHART_NAME}-${TAG}.tgz" "${PROD_CHART_REPO}"
-      echo "Chart ${CHART_NAME}:${TAG} promoted to ${PROD_CHART_REPO}."
+      echo "Chart ${CHART_NAME}:${TAG} promoted to oci://${PROD_CHART_REPO}."
+    - registry_mirror chart stable "${TAG}"

@@ -131,13 +131,8 @@ Deploy:Komodo:Validate:Image:$[[ inputs.environment ]]:
       artifacts: false
       optional: true
   script:
-    - |
-      if [[ "${TARGET_VERSION}" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-        IMAGE_TARGET_REPO="${IMAGE_REPOSITORY}"
-      else
-        IMAGE_TARGET_REPO="${IMAGE_REPOSITORY}${IMAGE_DEV_REPOSITORY_SUFFIX}"
-      fi
-    - TARGET_IMG="${IMAGE_REGISTRY}/${IMAGE_TARGET_REPO}:${TARGET_VERSION}"
+    - registry_select image "${DEPLOY_IMAGE_REPOSITORY:-}"
+    - TARGET_IMG="$(registry_version_repository "${TARGET_VERSION}"):${TARGET_VERSION}"
     - |
       if docker manifest inspect "${TARGET_IMG}" > /dev/null 2>&1; then
         echo "✅ Container image '${TARGET_IMG}' verified in registry."
@@ -238,7 +233,9 @@ Deploy:Komodo:$[[ inputs.environment ]]:
         echo "❌ ERROR: Path '${GITOPS_SERVICE_IMAGE_YQ_PATH}' not found in ${COMPOSE_PATH}"
         exit 1
       fi
-    - NEW_IMAGE="${IMAGE_REGISTRY}/${IMAGE_PUSH_REPOSITORY:-${IMAGE_REPOSITORY}}:${TARGET_VERSION}"
+    - !reference [.registry-functions, script]
+    - registry_select image "${DEPLOY_IMAGE_REPOSITORY:-}"
+    - NEW_IMAGE="$(registry_version_repository "${TARGET_VERSION}"):${TARGET_VERSION}"
     - >
       echo "Updating ${GITOPS_COMPOSE_FILE}: ${CURRENT_IMAGE} -> ${NEW_IMAGE}"
     - gitops_yaml_set "${COMPOSE_PATH}" "${GITOPS_SERVICE_IMAGE_YQ_PATH}" "${NEW_IMAGE}"

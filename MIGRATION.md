@@ -7,6 +7,56 @@ To upgrade, apply every section after your pinned version up to the target, olde
 Newer sections are split into **Required** (the upgrade breaks or misbehaves without it),
 **Recommended** (aligns an existing project with the current standards) and **Verify**.
 
+## 2.0.0
+
+### Required
+
+Move every include of the library to `2.0.0` together: the image, chart and deploy templates
+load `.registry-functions` from `common/.gitlab-ci.yml`.
+
+- **Charts move from the GitLab Helm package registry to OCI.** A project that left
+  `CHART_REGISTRY` empty now publishes to `oci://${CI_REGISTRY_IMAGE}/helm`, with candidates
+  in `oci://${CI_REGISTRY_IMAGE}/helm/dev`. Update every consumer of those charts:
+  - Argo CD Applications and ApplicationSets: `repoURL: <registry>/<group>/<project>/helm`
+    for an OCI source, in place of the package-registry channel URL;
+  - `helm repo add …/packages/helm/stable` becomes
+    `helm pull oci://<registry>/<group>/<project>/helm/<chart> --version <version>`.
+
+  Versions already in the package registry stay there; nothing is moved or deleted.
+- **`HELM_CHANNEL` is removed.** Drop it.
+- **`init.env` no longer carries the registry keys** (`IMAGE_REGISTRY`, `IMAGE_REPOSITORY`,
+  `IMAGE_REPOSITORY_SUFFIX`, `IMAGE_CHECK_REPOSITORY`, `IMAGE_PUSH_REPOSITORY`,
+  `CHART_REGISTRY`, `CHART_REPOSITORY`, `CHART_DEV_REPOSITORY`, `CHART_PUSH_REPOSITORY`). A
+  custom job that read them resolves the primary instead:
+
+  ```yaml
+  script:
+    - !reference [.registry-functions, script]
+    - registry_select image ""
+    - echo "${SELECTED_HOST}/${SELECTED_STABLE} ${SELECTED_HOST}/${SELECTED_DEV}"
+  ```
+
+A project on one registry keeps its variables unchanged: `IMAGE_REGISTRY`,
+`IMAGE_REPOSITORY`, the `*_DEV_REPOSITORY_SUFFIX` values and the username/password pairs
+publish to exactly the same refs as before.
+
+### Recommended
+
+- **Several registries.** List the full refs in `IMAGE_REPOSITORY` / `CHART_REPOSITORY` and
+  add the `REGISTRY_CONFIG` File variable, as in
+  [Registries](docs/configuration.md#registries).
+- **A grouped `REGISTRY_CONFIG` from the earlier GitLab templates**
+  (`{"<name>": {"endpoint", "username", "password"}}`) becomes a map keyed by host:
+  `<endpoint>: {username, password}`.
+- **Dotenv limit.** A self-managed instance whose `dotenv_variables` limit was raised only for
+  this library can keep it; `init.env` now has at most 15 keys.
+
+### Verify
+
+- `Common:Init` lists the image and chart destinations you expect.
+- `Chart:Push` publishes to `oci://…`, and an Argo CD deploy writes that OCI `repoURL`.
+- With several registries, the copies hold the primary's digest (`crane digest`).
+
 ## 1.12.0
 
 ### Required

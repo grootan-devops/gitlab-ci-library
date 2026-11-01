@@ -22,17 +22,10 @@ Image:Build:
     # https://www.mankier.com/package/buildah
     - set -e
     - chmod +x ${BUILDAH_SCRIPT_FILE_NAME}
-    - BUILDAH_CREDS=""
-    - REG_USER="${IMAGE_REGISTRY_USERNAME:-${CI_REGISTRY_USER:-gitlab-ci-token}}"
-    - REG_PASS="${IMAGE_REGISTRY_PASSWORD:-${CI_REGISTRY_PASSWORD:-${CI_JOB_TOKEN}}}"
-    - |
-      if [[ -z "${REG_USER}" || -z "${REG_PASS}" ]]; then
-        echo "❌ ERROR: No registry credentials available to pull the base image."
-        echo "   Set IMAGE_REGISTRY_USERNAME/IMAGE_REGISTRY_PASSWORD (e.g. a deploy token with read_registry scope on the project hosting ${BASE_IMAGE_REPO}) as CI/CD variables."
-        exit 1
-      fi
-    - BUILDAH_CREDS="--creds=${REG_USER}:${REG_PASS}"
-    - BASE_CONTAINER=$(buildah from ${BUILDAH_CREDS} ${BASE_IMAGE_REPO}:${BASE_IMAGE_TAG})
+    # The base image may live in any configured registry: the shared auth file holds them all.
+    - !reference [.registry-functions, script]
+    - registry_auth
+    - BASE_CONTAINER=$(buildah from --authfile "${REGISTRY_AUTH_FILE}" ${BASE_IMAGE_REPO}:${BASE_IMAGE_TAG})
     - |
       run_in_container_mount() {
         buildah run ${BASE_CONTAINER} bash -c "${1}"
