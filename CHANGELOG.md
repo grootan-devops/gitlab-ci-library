@@ -5,6 +5,26 @@ All notable changes to this project will be documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.0.0] - 2026-11-01
+
+### Added
+
+- Publishing to several registries. `IMAGE_REPOSITORY` and `CHART_REPOSITORY` take full refs (`host/path`, primary first), and the `REGISTRY_CONFIG` File variable holds each registry's `username`, `password` and optional `dev` suffix. Candidates and releases go to the primary as before and are copied from it by digest with Crane, alias tags included. The collision checks look in every destination.
+- `DEPLOY_IMAGE_REPOSITORY` / `DEPLOY_CHART_REPOSITORY`: the destination that deploys, deploy validation and remote scans read, defaulting to the primary. Set them per environment to make a cluster pull from its own registry.
+- `.registry-functions` (`common/.gitlab-ci.yml`): `registry_targets`, `registry_auth`, `registry_select`, `registry_copy`, `registry_mirror` and `registry_exists`, used by the image, chart, scan and deploy jobs.
+- `docs/configuration.md` "Registries" and `docs/examples/multi-registry.md`.
+
+### Changed
+
+- **Breaking:** charts are always published as OCI artifacts, by default to `oci://${CI_REGISTRY_IMAGE}/helm` (candidates `/helm/dev`) with the CI job token. The GitLab Helm package registry, its `dev`/`stable` channels and `HELM_CHANNEL` are no longer used.
+- Every registry job writes one Docker `config.json` from the job token, the dependency proxy, the `*_REGISTRY_USERNAME` / `_PASSWORD` pairs and `REGISTRY_CONFIG`, and docker, buildx, crane, Trivy and helm read it. It replaces the separate `docker login` and `helm registry login` steps. Buildah builds publish to a single registry and keep their own login.
+- `Common:Init` prints the resolved destinations and no longer writes `IMAGE_REGISTRY`, `IMAGE_REPOSITORY`, `IMAGE_REPOSITORY_SUFFIX`, `IMAGE_CHECK_REPOSITORY`, `IMAGE_PUSH_REPOSITORY`, `CHART_REGISTRY`, `CHART_REPOSITORY`, `CHART_DEV_REPOSITORY` or `CHART_PUSH_REPOSITORY` to `init.env`: at most 15 keys, within GitLab's default dotenv limit of 20.
+- The GitLab registry default and the Docker Hub candidate rule live in one place instead of five.
+
+### Fixed
+
+- A `deploy` workflow for a candidate version wrote the release repository into the GitOps repository, because `Common:Init` does not run there. ArgoCD and Komodo now take the release or candidate repository from `TARGET_VERSION`.
+
 ## [1.12.0] - 2026-11-01
 
 ### Changed

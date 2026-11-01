@@ -1,8 +1,8 @@
 # chart
 
-Helm chart validation, packaging and publishing. A configured `CHART_REGISTRY` selects OCI;
-otherwise publishing uses the current project's GitLab Helm Package Registry.
-See [registry configuration](../configuration.md#helm-chart-publishing--authentication).
+Helm chart validation, packaging and publishing as OCI artifacts: by default to
+`oci://${CI_REGISTRY_IMAGE}/helm`, or to every destination in `CHART_REPOSITORY`.
+See [Registries](../configuration.md#registries).
 
 ```mermaid
 flowchart LR
