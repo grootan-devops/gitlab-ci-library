@@ -362,8 +362,15 @@ Release:Prepare:
             echo "🔍 Promoting Helm chart ${CHART_NAME}:${TAG} from RC ${RC_CHART_VER}..."
 
             TEMP_CHART=$(mktemp)
-            if ! curl --silent --fail --location -u "gitlab-ci-token:${CI_JOB_TOKEN}" --header "JOB-TOKEN: ${CI_JOB_TOKEN}" -o "${TEMP_CHART}" "${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/packages/helm/stable/charts/${CHART_NAME}-${RC_CHART_VER}.tgz"; then
-              echo "❌ ERROR: Candidate Helm package '${CHART_NAME}-${RC_CHART_VER}.tgz' not found in registry."
+            DOWNLOADED=false
+            for CHANNEL in "dev" "stable"; do
+              if curl --silent --fail --location -u "gitlab-ci-token:${CI_JOB_TOKEN}" --header "JOB-TOKEN: ${CI_JOB_TOKEN}" -o "${TEMP_CHART}" "${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/packages/helm/${CHANNEL}/charts/${CHART_NAME}-${RC_CHART_VER}.tgz"; then
+                DOWNLOADED=true
+                break
+              fi
+            done
+            if [[ "${DOWNLOADED}" != "true" ]]; then
+              echo "❌ ERROR: Candidate Helm package '${CHART_NAME}-${RC_CHART_VER}.tgz' not found in registry (checked dev and stable channels)."
               exit 1
             fi
 
