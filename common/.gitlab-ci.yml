@@ -1736,7 +1736,6 @@ Trivy:Cache:Warm:
 .YAML:Lint:
   stage: lint
   script:
-    - cd ${PROJECT_PATH}
     - |
       if [[ ! -f .yamllint.yml && ! -f .yamllint.yaml && ! -f .yamllint ]]; then
         yamllint -s -d "{extends: default, rules: {line-length: disable, document-start: disable, comments: disable, comments-indentation: disable}}" ${LINT_YAML_FILES}
