@@ -435,6 +435,10 @@ Chart:Promote:
   extends:
     - .release-rules
     - .chart-common
+  rules:
+    - if: '$RELEASE_PIPELINE_ORCHESTRATED == "true"'
+      when: never
+    - !reference [.release-rules, rules]
   needs:
     - job: Common:Init
       artifacts: true

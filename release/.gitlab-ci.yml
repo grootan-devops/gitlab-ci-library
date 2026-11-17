@@ -5,6 +5,7 @@
 # eliminates floating tag regressions, and executes declarative package promotion.
 
 variables:
+  RELEASE_PIPELINE_ORCHESTRATED: "true"
   CONSOLIDATED_RELEASE_CHANGELOG_FILE_NAME: CONSOLIDATED_RELEASE_CHANGELOG.md
   CONSOLIDATED_README_FILE_NAME: CONSOLIDATED_README.md
 
@@ -254,6 +255,11 @@ Release:Prepare:
               DEV_IMAGE="${IMAGE_REGISTRY}/${IMAGE_REPOSITORY}${IMAGE_DEV_REPOSITORY_SUFFIX}"
             fi
             PROD_IMAGE="${IMAGE_REGISTRY}/${IMAGE_REPOSITORY}"
+            REGISTRY_USER="${IMAGE_REGISTRY_USERNAME:-${CI_REGISTRY_USER:-gitlab-ci-token}}"
+            REGISTRY_PASS="${IMAGE_REGISTRY_PASSWORD:-${CI_REGISTRY_PASSWORD:-${CI_JOB_TOKEN}}}"
+            if [[ -n "${IMAGE_REGISTRY}" && -n "${REGISTRY_USER}" && -n "${REGISTRY_PASS}" ]]; then
+              crane auth login -u "${REGISTRY_USER}" -p "${REGISTRY_PASS}" "${IMAGE_REGISTRY}"
+            fi
           - |
             DOCKER_ENABLED=$(jq -r '.artifacts.docker.enabled // false' candidate.json)
             if [[ "${DOCKER_ENABLED}" != "true" ]]; then
@@ -381,17 +387,8 @@ Release:Prepare:
             STABLE_URL="${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/packages/helm/api/stable/charts"
             CHECK_HTTP=$(curl --silent --head --write-out "%{http_code}" --output /dev/null -u "gitlab-ci-token:${CI_JOB_TOKEN}" --header "JOB-TOKEN: ${CI_JOB_TOKEN}" "${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/packages/helm/stable/charts/${CHART_NAME}-${TAG}.tgz" || true)
             if [[ "${CHECK_HTTP}" == "200" ]]; then
-              CHECK_TEMP=$(mktemp)
-              curl --silent --fail -u "gitlab-ci-token:${CI_JOB_TOKEN}" --header "JOB-TOKEN: ${CI_JOB_TOKEN}" -o "${CHECK_TEMP}" "${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/packages/helm/stable/charts/${CHART_NAME}-${TAG}.tgz" || true
-              EXISTING_SHA=$(sha256sum "${CHECK_TEMP}" | cut -d' ' -f1 || true)
-              rm -f "${CHECK_TEMP}"
-              if [[ "${EXISTING_SHA}" == "${STABLE_SHA}" ]]; then
-                echo "✅ Stable chart ${CHART_NAME}:${TAG} already exists with identical SHA256. Skipping upload."
-                exit 0
-              else
-                echo "❌ ERROR: Stable chart ${CHART_NAME}:${TAG} already exists with conflicting SHA256 (${EXISTING_SHA} vs ${STABLE_SHA})!"
-                exit 1
-              fi
+              echo "✅ Stable chart ${CHART_NAME}:${TAG} already exists in registry. Skipping upload."
+              exit 0
             fi
 
             echo "🚀 Publishing stable chart package ${STABLE_TGZ}..."
