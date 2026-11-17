@@ -165,18 +165,32 @@ Release:Prepare:
       echo "✅ Successfully retrieved and validated candidate manifest."
     - |
       # Render downstream child release pipeline YAML
-      cat << 'CHILDEOF' > release-pipeline.yml
-      stages:
-        - verify
-        - promote
-        - upload
-        - release
-        - notify
-
-      variables:
-        CONSOLIDATED_RELEASE_CHANGELOG_FILE_NAME: CONSOLIDATED_RELEASE_CHANGELOG.md
-        CONSOLIDATED_README_FILE_NAME: CONSOLIDATED_README.md
-
+      {
+        echo "stages:"
+        echo "  - verify"
+        echo "  - promote"
+        echo "  - upload"
+        echo "  - release"
+        echo "  - notify"
+        echo ""
+        echo "variables:"
+        echo "  DEV_CANDIDATE_VERSION: \"${DEV_CANDIDATE_VERSION}\""
+        echo "  UPSTREAM_PIPELINE_ID: \"${UPSTREAM_PIPELINE_ID}\""
+        echo "  TAG: \"${TAG}\""
+        echo "  RELEASE_VERSION: \"${RELEASE_VERSION}\""
+        echo "  MR_IID: \"${MR_IID}\""
+        echo "  CHART_NAME: \"${CHART_NAME}\""
+        echo "  IMAGE_REPOSITORY: \"${IMAGE_REPOSITORY}\""
+        echo "  IMAGE_REGISTRY: \"${IMAGE_REGISTRY}\""
+        echo "  IMAGE_DEV_REPOSITORY_SUFFIX: \"${IMAGE_DEV_REPOSITORY_SUFFIX}\""
+        echo "  RELEASE_FLOATING_TAGS: \"${RELEASE_FLOATING_TAGS:-true}\""
+        echo "  TEST_REPORT_DIR: \"${TEST_REPORT_DIR:-test-reports}\""
+        echo "  ADDITIONAL_RELEASE_ARTIFACT: \"${ADDITIONAL_RELEASE_ARTIFACT}\""
+        echo "  CONSOLIDATED_RELEASE_CHANGELOG_FILE_NAME: \"${CONSOLIDATED_RELEASE_CHANGELOG_FILE_NAME:-CONSOLIDATED_RELEASE_CHANGELOG.md}\""
+        echo "  CONSOLIDATED_README_FILE_NAME: \"${CONSOLIDATED_README_FILE_NAME:-CONSOLIDATED_README.md}\""
+        echo ""
+      } > release-pipeline.yml
+      cat << 'CHILDEOF' >> release-pipeline.yml
       Release:Verify:
         stage: verify
         image: ${TOOLKIT_BUILD_IMAGE_REPO}:${TOOLKIT_BUILD_IMAGE_TAG}
@@ -203,6 +217,11 @@ Release:Prepare:
               echo "⚠️ Warning: Tag existence check returned HTTP ${TAG_CHECK_HTTP}."
             fi
           - |
+            if [[ ! -f "candidate.json" ]]; then
+              echo "📥 Fetching candidate manifest from Generic Package Registry..."
+              CANDIDATE_URL="${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/packages/generic/candidates/${DEV_CANDIDATE_VERSION}/candidate.json"
+              curl --silent --fail --location --header "JOB-TOKEN: ${CI_JOB_TOKEN}" -o candidate.json "${CANDIDATE_URL}" || true
+            fi
             if [[ ! -f "candidate.json" ]]; then
               echo "❌ ERROR: candidate.json is missing in Release:Verify."
               exit 1
@@ -340,24 +359,6 @@ Release:Prepare:
               exit 1
             fi
 
-            # Check if stable chart already exists
-            STABLE_URL="${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/packages/helm/api/stable/charts"
-            CHECK_HTTP=$(curl --silent --head --write-out "%{http_code}" --output /dev/null --header "JOB-TOKEN: ${CI_JOB_TOKEN}" "${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/packages/helm/${TAG}/${CHART_NAME}-${TAG}.tgz" || true)
-            if [[ "${CHECK_HTTP}" == "200" ]]; then
-              CHECK_TEMP=$(mktemp)
-              curl --silent --fail --header "JOB-TOKEN: ${CI_JOB_TOKEN}" -o "${CHECK_TEMP}" "${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/packages/helm/${TAG}/${CHART_NAME}-${TAG}.tgz" || true
-              EXISTING_SHA=$(sha256sum "${CHECK_TEMP}" | cut -d' ' -f1 || true)
-              rm -f "${CHECK_TEMP}"
-              if [[ "${EXISTING_SHA}" == "${ACT_SHA}" ]]; then
-                echo "✅ Stable chart ${CHART_NAME}:${TAG} already exists with identical SHA256. Skipping upload."
-                rm -f "${TEMP_CHART}"
-                exit 0
-              else
-                echo "❌ ERROR: Stable chart ${CHART_NAME}:${TAG} already exists with conflicting SHA256!"
-                exit 1
-              fi
-            fi
-
             # Package with release TAG
             PROMOTE_DIR=$(mktemp -d)
             tar -xzf "${TEMP_CHART}" -C "${PROMOTE_DIR}"
@@ -366,6 +367,25 @@ Release:Prepare:
             rm -rf "${PROMOTE_DIR}"
 
             STABLE_TGZ="${CHART_NAME}-${TAG}.tgz"
+            STABLE_SHA=$(sha256sum "${STABLE_TGZ}" | cut -d' ' -f1)
+
+            # Check if stable chart already exists
+            STABLE_URL="${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/packages/helm/api/stable/charts"
+            CHECK_HTTP=$(curl --silent --head --write-out "%{http_code}" --output /dev/null --header "JOB-TOKEN: ${CI_JOB_TOKEN}" "${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/packages/helm/${TAG}/${CHART_NAME}-${TAG}.tgz" || true)
+            if [[ "${CHECK_HTTP}" == "200" ]]; then
+              CHECK_TEMP=$(mktemp)
+              curl --silent --fail --header "JOB-TOKEN: ${CI_JOB_TOKEN}" -o "${CHECK_TEMP}" "${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/packages/helm/${TAG}/${CHART_NAME}-${TAG}.tgz" || true
+              EXISTING_SHA=$(sha256sum "${CHECK_TEMP}" | cut -d' ' -f1 || true)
+              rm -f "${CHECK_TEMP}"
+              if [[ "${EXISTING_SHA}" == "${STABLE_SHA}" ]]; then
+                echo "✅ Stable chart ${CHART_NAME}:${TAG} already exists with identical SHA256. Skipping upload."
+                exit 0
+              else
+                echo "❌ ERROR: Stable chart ${CHART_NAME}:${TAG} already exists with conflicting SHA256 (${EXISTING_SHA} vs ${STABLE_SHA})!"
+                exit 1
+              fi
+            fi
+
             echo "🚀 Publishing stable chart package ${STABLE_TGZ}..."
             HTTP_CODE=$(curl --silent --show-error --write-out "%{http_code}" --output /dev/null --request POST --header "JOB-TOKEN: ${CI_JOB_TOKEN}" --form "chart=@${STABLE_TGZ}" "${STABLE_URL}")
             if [[ "${HTTP_CODE}" != "200" && "${HTTP_CODE}" != "201" ]]; then
@@ -373,6 +393,10 @@ Release:Prepare:
               exit 1
             fi
             echo "✅ Helm chart ${CHART_NAME}:${TAG} published successfully."
+        artifacts:
+          when: on_success
+          paths:
+            - "*.tgz"
 
       Release:Packages:Promote:
         stage: promote
@@ -454,7 +478,7 @@ Release:Prepare:
             artifacts: false
             optional: true
           - job: Chart:Promote
-            artifacts: false
+            artifacts: true
             optional: true
           - job: Release:Packages:Promote
             artifacts: false

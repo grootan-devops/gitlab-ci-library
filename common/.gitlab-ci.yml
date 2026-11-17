@@ -2083,6 +2083,9 @@ Candidate:Register:
   needs:
     - job: Common:Init
       artifacts: true
+    - job: Project:Build
+      artifacts: true
+      optional: true
     - job: Image:Push
       artifacts: true
       optional: true
@@ -2165,7 +2168,37 @@ Candidate:Register:
           --arg id "${TRIVY_JOB_ID}" \
           '. + [{ name: "image_trivy_report", job_id: ($id | tonumber), job_name: "Image:Scan", path: "image_trivy_report.json", required: true }]')
       fi
+
+      TEST_JOB_ID=$(echo "${PIPELINE_JOBS}" | jq -r '[.[] | select((.name=="Project:Unit:Test" or (.name | test("Unit:Test"))) and .status=="success")][0].id // empty')
+      if [[ -n "${TEST_JOB_ID}" ]]; then
+        REPORTS_JSON=$(echo "${REPORTS_JSON}" | jq \
+          --arg id "${TEST_JOB_ID}" \
+          '. + [{ name: "test-reports", job_id: ($id | tonumber), job_name: "Project:Unit:Test", path: "test-reports", required: false }]')
+      fi
+
+      IMG_BUILD_JOB_ID=$(echo "${PIPELINE_JOBS}" | jq -r '[.[] | select(.name=="Image:Build" and .status=="success")][0].id // empty')
+      if [[ -n "${IMG_BUILD_JOB_ID}" ]]; then
+        REPORTS_JSON=$(echo "${REPORTS_JSON}" | jq \
+          --arg id "${IMG_BUILD_JOB_ID}" \
+          '. + [{ name: "installed_packages.txt", job_id: ($id | tonumber), job_name: "Image:Build", path: "installed_packages.txt", required: false }]')
+      fi
+
+      CHART_SCAN_JOB_ID=$(echo "${PIPELINE_JOBS}" | jq -r '[.[] | select(.name=="Chart:Scan" and .status=="success")][0].id // empty')
+      if [[ -n "${CHART_SCAN_JOB_ID}" ]]; then
+        REPORTS_JSON=$(echo "${REPORTS_JSON}" | jq \
+          --arg id "${CHART_SCAN_JOB_ID}" \
+          '. + [{ name: "chart_trivy_report", job_id: ($id | tonumber), job_name: "Chart:Scan", path: "chart_trivy_report.json", required: false }]')
+      fi
     - |
+      mkdir -p .release
+      METADATA_FILES=( .release/package-metadata-*.json )
+      if [[ ! -f "${METADATA_FILES[0]}" && -n "${PIPELINE_JOBS:-}" ]]; then
+        for JID in $(echo "${PIPELINE_JOBS}" | jq -r '.[].id // empty'); do
+          curl --silent --fail --header "JOB-TOKEN: ${CI_JOB_TOKEN}" -o ".release/package-metadata-${JID}.json" \
+            "${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/jobs/${JID}/artifacts/.release/package-metadata-${JID}.json" 2>/dev/null || true
+        done
+      fi
+
       PACKAGES_JSON="[]"
       METADATA_FILES=( .release/package-metadata-*.json )
       if [[ -f "${METADATA_FILES[0]}" ]]; then
