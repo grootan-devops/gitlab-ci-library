@@ -1,18 +1,8 @@
-include:
-  - local: 'common/.gitlab-ci.yml'
+stages:
+  - trigger
 
-Common:Init:
-  rules:
-    - when: never
-
-Changelog:Lint:
-  rules:
-    - when: never
-
-Changelog:Check Existence:
-  rules:
-    - when: never
-
-Tag:Tag Existence:
-  rules:
-    - when: never
+workflow:
+  name: "📦 Monorepo Orchestrator [${CI_COMMIT_REF_NAME}]"
+  auto_cancel:
+    on_new_commit: conservative
+    on_job_failure: none

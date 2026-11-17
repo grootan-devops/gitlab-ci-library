@@ -41,6 +41,7 @@ frontend:
 
 ```yaml
 include:
+  - remote: 'https://raw.githubusercontent.com/grootan-devops/gitlab-ci-library/<version>/common/.gitlab-ci.yml'
   - remote: 'https://raw.githubusercontent.com/grootan-devops/gitlab-ci-library/<version>/common/.mono.gitlab-ci.yml'
   - remote: 'https://raw.githubusercontent.com/grootan-devops/gitlab-ci-library/<version>/nodejs/.gitlab-ci.yml'
   - remote: 'https://raw.githubusercontent.com/grootan-devops/gitlab-ci-library/<version>/image/.docker.gitlab-ci.yml'
