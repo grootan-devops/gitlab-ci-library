@@ -1922,16 +1922,12 @@ Common:Init:
         MR_COUNT=$(echo "${VALID_MRS}" | jq 'length' 2>/dev/null || echo "0")
 
         if [[ "${MR_COUNT}" -eq 0 ]]; then
-          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
           echo "❌ ERROR: No merged Merge Request found associated with commit ${CI_COMMIT_SHA}."
           echo "Fast-track release strictly requires a verified merged MR. Direct pushes to release branches are refused."
-          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
           exit 1
         elif [[ "${MR_COUNT}" -gt 1 ]]; then
-          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
           echo "❌ ERROR: Ambiguous MR provenance: Commit ${CI_COMMIT_SHA} is associated with multiple (${MR_COUNT}) merged MRs."
           echo "Fail-closed: Release cannot deterministically select candidate artifacts."
-          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
           exit 1
         fi
 
@@ -1957,48 +1953,28 @@ Common:Init:
           echo "ℹ️ Merge Strategy: Verified MR association for commit ${CI_COMMIT_SHA}."
         fi
 
-        # Fetch full MR details by IID to ensure .head_pipeline is populated
+        # Retrieve authoritative verification head_pipeline for this MR
         MR_DETAIL=$(curl --silent --fail --header "JOB-TOKEN: ${CI_JOB_TOKEN}" "${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/merge_requests/${UPSTREAM_MR_IID}" 2>/dev/null || true)
-        if [[ -n "${MR_DETAIL}" ]]; then
-          HEAD_PIPE_ID=$(echo "${MR_DETAIL}" | jq -r '.head_pipeline.id // empty')
-          HEAD_PIPE_STATUS=$(echo "${MR_DETAIL}" | jq -r '.head_pipeline.status // empty')
-          HEAD_PIPE_SHA=$(echo "${MR_DETAIL}" | jq -r '.head_pipeline.sha // empty')
-        else
-          HEAD_PIPE_ID=$(echo "${MR_OBJ}" | jq -r '.head_pipeline.id // empty')
-          HEAD_PIPE_STATUS=$(echo "${MR_OBJ}" | jq -r '.head_pipeline.status // empty')
-          HEAD_PIPE_SHA=$(echo "${MR_OBJ}" | jq -r '.head_pipeline.sha // empty')
-        fi
+        HEAD_PIPE_ID=$(echo "${MR_DETAIL:-${MR_OBJ}}" | jq -r '.head_pipeline.id // empty')
+        HEAD_PIPE_STATUS=$(echo "${MR_DETAIL:-${MR_OBJ}}" | jq -r '.head_pipeline.status // empty')
 
-        # Fallback to MR-specific pipelines endpoint, explicitly excluding current pipeline
-        if [[ -z "${HEAD_PIPE_ID}" ]]; then
+        # Fallback if head_pipeline omitted or matches current pipeline (e.g. in fast-forward merge)
+        if [[ -z "${HEAD_PIPE_ID}" || "${HEAD_PIPE_ID}" == "${CI_PIPELINE_ID}" ]]; then
           MR_PIPES_JSON=$(curl --silent --fail --header "JOB-TOKEN: ${CI_JOB_TOKEN}" "${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/merge_requests/${UPSTREAM_MR_IID}/pipelines" 2>/dev/null || true)
           HEAD_PIPE_ID=$(echo "${MR_PIPES_JSON}" | jq -r --arg cur "${CI_PIPELINE_ID}" '[.[] | select((.id | tostring) != $cur)][0].id // empty')
           HEAD_PIPE_STATUS=$(echo "${MR_PIPES_JSON}" | jq -r --arg cur "${CI_PIPELINE_ID}" '[.[] | select((.id | tostring) != $cur)][0].status // empty')
-          HEAD_PIPE_SHA=$(echo "${MR_PIPES_JSON}" | jq -r --arg cur "${CI_PIPELINE_ID}" '[.[] | select((.id | tostring) != $cur)][0].sha // empty')
-        fi
-
-        # Last resort fallback: commit pipelines query, strictly excluding current pipeline
-        if [[ -z "${HEAD_PIPE_ID}" ]]; then
-          PIPES_JSON=$(curl --silent --fail --header "JOB-TOKEN: ${CI_JOB_TOKEN}" "${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/pipelines?sha=${UPSTREAM_MR_SHA}&per_page=10" 2>/dev/null || true)
-          HEAD_PIPE_ID=$(echo "${PIPES_JSON}" | jq -r --arg cur "${CI_PIPELINE_ID}" '[.[] | select((.id | tostring) != $cur)][0].id // empty')
-          HEAD_PIPE_STATUS=$(echo "${PIPES_JSON}" | jq -r --arg cur "${CI_PIPELINE_ID}" '[.[] | select((.id | tostring) != $cur)][0].status // empty')
         fi
 
         if [[ -z "${HEAD_PIPE_ID}" ]]; then
-          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
           echo "❌ ERROR: No verification pipeline found for MR !${UPSTREAM_MR_IID}."
           echo "Fast-track release strictly requires a successful upstream verification pipeline."
-          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
           exit 1
         fi
 
         echo "📋 MR !${UPSTREAM_MR_IID} latest verification pipeline is #${HEAD_PIPE_ID} (Status: ${HEAD_PIPE_STATUS})"
         if [[ "${HEAD_PIPE_STATUS}" != "success" ]]; then
-          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
           echo "❌ ERROR: The latest verification pipeline (#${HEAD_PIPE_ID}) for MR !${UPSTREAM_MR_IID} has status '${HEAD_PIPE_STATUS}'."
           echo "Fast-track release strictly refuses promotion when the latest verification pipeline is not successful."
-          echo "Older successful pipelines will NOT be promoted."
-          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
           exit 1
         fi
         UPSTREAM_PIPELINE_ID="${HEAD_PIPE_ID}"

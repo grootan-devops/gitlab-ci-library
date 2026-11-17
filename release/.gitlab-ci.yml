@@ -13,122 +13,6 @@ variables:
   stage: release
   interruptible: false
 
-.teams-adaptivecard-notification-vars:
-  variables:
-    MESSAGE_TEMPLATE_ADAPTIVE_CARD: |
-      {
-        "$schema": "http://adaptivecards.io/schemas/adaptive-card.json",
-        "type": "AdaptiveCard",
-        "version": "1.4",
-        "fallbackText": "Release notification: $CI_PROJECT_TITLE version $TAG.",
-        "speak": "Release notification for $CI_PROJECT_TITLE, version $TAG. Published by $CI_COMMIT_AUTHOR on $CI_COMMIT_TIMESTAMP. Release notes are included in this card.",
-        "msteams": {
-          "width": "Full"
-        },
-        "body": [
-          {
-            "type": "TextBlock",
-            "text": "🚀 $CI_PROJECT_TITLE · $TAG",
-            "weight": "Bolder",
-            "size": "Large",
-            "wrap": true,
-            "maxLines": 2
-          },
-          {
-            "type": "ColumnSet",
-            "spacing": "Medium",
-            "columns": [
-              {
-                "type": "Column",
-                "width": "auto",
-                "items": [
-                  {
-                    "type": "Image",
-                    "url": "https://about.gitlab.com/images/press/gitlab-logo-500-rgb.png",
-                    "size": "Small",
-                    "altText": "GitLab"
-                  }
-                ]
-              },
-              {
-                "type": "Column",
-                "width": "stretch",
-                "items": [
-                  {
-                    "type": "TextBlock",
-                    "text": "$CI_COMMIT_AUTHOR",
-                    "weight": "Bolder",
-                    "size": "Default",
-                    "spacing": "None",
-                    "wrap": true
-                  },
-                  {
-                    "type": "TextBlock",
-                    "text": "$CI_COMMIT_TIMESTAMP",
-                    "isSubtle": true,
-                    "size": "Small",
-                    "spacing": "None",
-                    "wrap": true
-                  }
-                ]
-              }
-            ]
-          },
-          {
-            "type": "FactSet",
-            "spacing": "Small",
-            "facts": [
-              {
-                "title": "🔖 Commit",
-                "value": "$CI_COMMIT_SHA"
-              },
-              {
-                "title": "🌿 Branch",
-                "value": "$CI_COMMIT_REF_NAME"
-              }
-            ]
-          },
-          {
-            "type": "TextBlock",
-            "text": "📋 Release Notes",
-            "weight": "Bolder",
-            "size": "Medium",
-            "spacing": "Medium",
-            "separator": true
-          },
-          {
-            "type": "Container",
-            "id": "release-notes",
-            "spacing": "Small",
-            "items": []
-          }
-        ],
-        "actions": [
-          {
-            "type": "Action.OpenUrl",
-            "title": "🚀 Release Page",
-            "url": "$CI_PROJECT_URL/-/releases/$TAG",
-            "style": "positive"
-          },
-          {
-            "type": "Action.OpenUrl",
-            "title": "📂 Source Code",
-            "url": "$CI_PROJECT_URL/-/tree/$TAG"
-          },
-          {
-            "type": "Action.OpenUrl",
-            "title": "📦 Release Assets",
-            "url": "$CI_PROJECT_URL/-/packages?version=$TAG&orderBy=created_at&sort=desc"
-          },
-          {
-            "type": "Action.OpenUrl",
-            "title": "🔍 SonarQube",
-            "url": "$SONAR_EXTERNAL_URL/dashboard?id=$CI_PROJECT_PATH_SLUG"
-          }
-        ]
-      }
-    allow_failure: true
-
 # Top-level orchestrator: Release:Prepare
 Release:Prepare:
   stage: release
@@ -205,11 +89,8 @@ Release:Prepare:
               if [[ "${EXISTING_COMMIT}" == "${CI_COMMIT_SHA}" ]]; then
                 echo "ℹ️ Release '${TAG}' already exists at the same commit (${CI_COMMIT_SHA}). Treating as intentional re-run/retry."
               else
-                echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-                echo "❌ ERROR: Version Collision! Release '${TAG}' already exists at commit '${EXISTING_COMMIT}',"
-                echo "which differs from current commit '${CI_COMMIT_SHA}'."
+                echo "❌ ERROR: Version Collision! Release '${TAG}' already exists at commit '${EXISTING_COMMIT}', which differs from '${CI_COMMIT_SHA}'."
                 echo "Production release tags are immutable. Bump RELEASE_VERSION before merging."
-                echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
                 exit 1
               fi
             elif [[ "${TAG_CHECK_HTTP}" == "404" ]]; then
@@ -711,8 +592,7 @@ Release:Prepare:
             done
             echo "✅ Teams notification sent."
       CHILDEOF
-      echo "✅ Generated serialized child pipeline specification in release-pipeline.yml:"
-      cat release-pipeline.yml
+      echo "✅ Generated serialized child release pipeline specification."
   artifacts:
     name: Release Pipeline Specification
     when: on_success
