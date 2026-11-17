@@ -2287,11 +2287,12 @@ Candidate:Register:
       echo "📋 Canonical candidate manifest created:"
       cat candidate.json
 
-      CANDIDATE_UPLOAD_URL="${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/packages/generic/candidates/${APP_PUSH_VERSION}/candidate.json"
-      echo "🚀 Publishing candidate.json to Generic Package Registry at ${CANDIDATE_UPLOAD_URL}..."
+      CANDIDATE_FILE_NAME="candidate-${APP_PUSH_VERSION}.json"
+      CANDIDATE_UPLOAD_URL="${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/packages/generic/candidates/${RELEASE_VERSION}/${CANDIDATE_FILE_NAME}"
+      echo "🚀 Publishing ${CANDIDATE_FILE_NAME} to Generic Package Registry under release version ${RELEASE_VERSION} (${CANDIDATE_UPLOAD_URL})..."
       HTTP_STATUS=$(curl --silent --show-error --write-out "%{http_code}" --output /dev/null --header "JOB-TOKEN: ${CI_JOB_TOKEN}" --upload-file candidate.json "${CANDIDATE_UPLOAD_URL}")
       if [[ "${HTTP_STATUS}" != "200" && "${HTTP_STATUS}" != "201" ]]; then
-        echo "❌ ERROR: Failed to upload candidate.json to Generic Package Registry (HTTP ${HTTP_STATUS})."
+        echo "❌ ERROR: Failed to upload ${CANDIDATE_FILE_NAME} to Generic Package Registry (HTTP ${HTTP_STATUS})."
         exit 1
       fi
       echo "✅ Candidate manifest registered successfully."

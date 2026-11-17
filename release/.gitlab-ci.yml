@@ -148,14 +148,18 @@ Release:Prepare:
         echo "Fast-track release strictly requires candidate identity from upstream MR verification."
         exit 1
       fi
-    - CANDIDATE_URL="${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/packages/generic/candidates/${DEV_CANDIDATE_VERSION}/candidate.json"
-    - >
-      echo "📥 Downloading candidate manifest from ${CANDIDATE_URL}..."
     - |
+      CANDIDATE_FILE_NAME="candidate-${DEV_CANDIDATE_VERSION}.json"
+      CANDIDATE_URL="${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/packages/generic/candidates/${RELEASE_VERSION}/${CANDIDATE_FILE_NAME}"
+      echo "📥 Downloading candidate manifest from ${CANDIDATE_URL}..."
       if ! curl --silent --fail --location --header "JOB-TOKEN: ${CI_JOB_TOKEN}" -o candidate.json "${CANDIDATE_URL}"; then
-        echo "❌ ERROR: Candidate manifest 'candidate.json' not found for version '${DEV_CANDIDATE_VERSION}'."
-        echo "MR verification pipeline #${UPSTREAM_PIPELINE_ID} did not publish a valid candidate manifest."
-        exit 1
+        echo "ℹ️ Candidate not found under grouped path, checking legacy candidate path..."
+        LEGACY_URL="${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/packages/generic/candidates/${DEV_CANDIDATE_VERSION}/candidate.json"
+        if ! curl --silent --fail --location --header "JOB-TOKEN: ${CI_JOB_TOKEN}" -o candidate.json "${LEGACY_URL}"; then
+          echo "❌ ERROR: Candidate manifest '${CANDIDATE_FILE_NAME}' not found for version '${DEV_CANDIDATE_VERSION}'."
+          echo "MR verification pipeline #${UPSTREAM_PIPELINE_ID} did not publish a valid candidate manifest."
+          exit 1
+        fi
       fi
     - |
       if [[ ! -s candidate.json ]] || ! jq . candidate.json >/dev/null 2>&1; then
@@ -219,8 +223,12 @@ Release:Prepare:
           - |
             if [[ ! -f "candidate.json" ]]; then
               echo "📥 Fetching candidate manifest from Generic Package Registry..."
-              CANDIDATE_URL="${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/packages/generic/candidates/${DEV_CANDIDATE_VERSION}/candidate.json"
-              curl --silent --fail --location --header "JOB-TOKEN: ${CI_JOB_TOKEN}" -o candidate.json "${CANDIDATE_URL}" || true
+              CANDIDATE_FILE_NAME="candidate-${DEV_CANDIDATE_VERSION}.json"
+              CANDIDATE_URL="${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/packages/generic/candidates/${RELEASE_VERSION}/${CANDIDATE_FILE_NAME}"
+              if ! curl --silent --fail --location --header "JOB-TOKEN: ${CI_JOB_TOKEN}" -o candidate.json "${CANDIDATE_URL}"; then
+                LEGACY_URL="${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/packages/generic/candidates/${DEV_CANDIDATE_VERSION}/candidate.json"
+                curl --silent --fail --location --header "JOB-TOKEN: ${CI_JOB_TOKEN}" -o candidate.json "${LEGACY_URL}" || true
+              fi
             fi
             if [[ ! -f "candidate.json" ]]; then
               echo "❌ ERROR: candidate.json is missing in Release:Verify."
