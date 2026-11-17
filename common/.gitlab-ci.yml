@@ -47,6 +47,7 @@ variables:
   PROJECT_PATH: "."
   PROJECT_CACHE_KEY: ""
   MASTER_BRANCH_REGEX: /^.*\/master$/
+  RELEASE_PACKAGES_FILE: .gitlab/release-packages.yml
 
   SKIP_CVE_SCAN: "false"
 
@@ -289,7 +290,7 @@ variables:
   rules:
     - if: $CI_COMMIT_TAG
       when: never
-    - if: '$CI_PIPELINE_SOURCE =~ /^(web|api)$/'
+    - if: '$CI_PIPELINE_SOURCE =~ /^(web|api)$/ && $WORKFLOW != "release"'
       when: never
     - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
     - if: $CI_COMMIT_BRANCH =~ $MASTER_BRANCH_REGEX && $CI_COMMIT_REF_PROTECTED == "true"
@@ -1545,6 +1546,172 @@ Trivy:Cache:Warm:
 
       main "${@}"
 
+.release-packages-publish-rc:
+  script:
+    - RELEASE_PACKAGES_FILE="${RELEASE_PACKAGES_FILE:-.gitlab/release-packages.yml}"
+    - |
+      if [[ ! -f "${RELEASE_PACKAGES_FILE}" ]]; then
+        echo "ℹ️ No package release file found at ${RELEASE_PACKAGES_FILE}. Skipping declarative package publishing."
+        PKG_PUBLISH_SKIP=true
+      elif [[ $(yq eval '.packages | length // 0' "${RELEASE_PACKAGES_FILE}" 2>/dev/null) -eq 0 ]]; then
+        echo "ℹ️ No packages declared in ${RELEASE_PACKAGES_FILE}."
+        PKG_PUBLISH_SKIP=true
+      else
+        PKG_PUBLISH_SKIP=false
+      fi
+    - |
+      if [[ "${PKG_PUBLISH_SKIP:-false}" == "true" ]]; then
+        echo "Skipping package publishing phase."
+      else
+        echo "📦 Processing declarative package publication from ${RELEASE_PACKAGES_FILE}..."
+        if ! command -v yq >/dev/null 2>&1; then
+          echo "❌ ERROR: 'yq' is required for declarative package publishing."
+          exit 1
+        fi
+
+        SCHEMA_VER=$(yq eval '.schema // empty' "${RELEASE_PACKAGES_FILE}")
+        if [[ "${SCHEMA_VER}" != "1" ]]; then
+          echo "❌ ERROR: Unsupported schema version '${SCHEMA_VER}' in ${RELEASE_PACKAGES_FILE}. Expected schema: 1"
+          exit 1
+        fi
+
+        mkdir -p .release
+        METADATA_FILE=".release/package-metadata-${CI_JOB_ID}.json"
+        PKG_ENTRIES="[]"
+
+        RC_VER="${APP_PUSH_VERSION:-${RELEASE_VERSION}${RC_VERSION_SUFFIX}}"
+        if [[ -z "${RC_VER}" ]]; then
+          echo "❌ ERROR: Neither APP_PUSH_VERSION nor RELEASE_VERSION/RC_VERSION_SUFFIX is set."
+          exit 1
+        fi
+
+        PKG_COUNT=$(yq eval '.packages | length' "${RELEASE_PACKAGES_FILE}")
+        for ((i=0; i<PKG_COUNT; i++)); do
+          PKG_PATH=$(yq eval ".packages[$i].path" "${RELEASE_PACKAGES_FILE}")
+          PKG_NAME=$(yq eval ".packages[$i].package" "${RELEASE_PACKAGES_FILE}")
+          PKG_STABLE=$(yq eval ".packages[$i].stable // true" "${RELEASE_PACKAGES_FILE}")
+          PKG_REQUIRED=$(yq eval ".packages[$i].required // true" "${RELEASE_PACKAGES_FILE}")
+          PKG_RELEASE_ASSET=$(yq eval ".packages[$i].release_asset // false" "${RELEASE_PACKAGES_FILE}")
+
+          if [[ -z "${PKG_PATH}" || "${PKG_PATH}" == "null" ]]; then
+            echo "❌ ERROR: packages[$i].path is missing in ${RELEASE_PACKAGES_FILE}."
+            exit 1
+          fi
+          if [[ -z "${PKG_NAME}" || "${PKG_NAME}" == "null" ]]; then
+            PKG_NAME="$(basename "${PKG_PATH}")"
+          fi
+
+          if [[ ! -f "${PKG_PATH}" ]]; then
+            if [[ "${PKG_REQUIRED}" == "true" ]]; then
+              echo "❌ ERROR: Declared required package file '${PKG_PATH}' does not exist."
+              exit 1
+            else
+              echo "ℹ️ Skipping optional package '${PKG_PATH}' (file not found in this job output)."
+              continue
+            fi
+          fi
+
+          PKG_FILENAME="$(basename "${PKG_PATH}")"
+          PKG_SHA=$(sha256sum "${PKG_PATH}" | cut -d' ' -f1)
+          PKG_SIZE=$(stat -c%s "${PKG_PATH}" 2>/dev/null || stat -f%z "${PKG_PATH}" 2>/dev/null || wc -c < "${PKG_PATH}" | tr -d ' ')
+
+          UPLOAD_URL="${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/packages/generic/${PKG_NAME}/${RC_VER}/${PKG_FILENAME}"
+          echo "🚀 Publishing RC package '${PKG_NAME}' (${PKG_FILENAME}) version '${RC_VER}' to Generic Package Registry..."
+          echo "   Path: ${PKG_PATH} | SHA256: ${PKG_SHA} | Size: ${PKG_SIZE} bytes"
+
+          # Check if file already exists with identical SHA256 for idempotency
+          EXISTING_STATUS=$(curl --silent --head --write-out "%{http_code}" --output /dev/null --header "JOB-TOKEN: ${CI_JOB_TOKEN}" "${UPLOAD_URL}" || true)
+          if [[ "${EXISTING_STATUS}" == "200" ]]; then
+            TEMP_RC=$(mktemp)
+            curl --silent --fail --header "JOB-TOKEN: ${CI_JOB_TOKEN}" -o "${TEMP_RC}" "${UPLOAD_URL}" || true
+            EXISTING_SHA=$(sha256sum "${TEMP_RC}" | cut -d' ' -f1 || true)
+            rm -f "${TEMP_RC}"
+            if [[ "${EXISTING_SHA}" == "${PKG_SHA}" ]]; then
+              echo "   ✅ Package already exists in registry with identical SHA256. Skipping upload."
+            else
+              echo "   ⚠️ Package exists with different SHA256 (${EXISTING_SHA} vs ${PKG_SHA}). Overwriting RC upload..."
+              HTTP_CODE=$(curl --silent --show-error --write-out "%{http_code}" --output /dev/null --header "JOB-TOKEN: ${CI_JOB_TOKEN}" --upload-file "${PKG_PATH}" "${UPLOAD_URL}")
+              if [[ "${HTTP_CODE}" != "200" && "${HTTP_CODE}" != "201" ]]; then
+                echo "❌ ERROR: Failed to upload RC package '${PKG_FILENAME}' (HTTP ${HTTP_CODE})."
+                exit 1
+              fi
+            fi
+          else
+            HTTP_CODE=$(curl --silent --show-error --write-out "%{http_code}" --output /dev/null --header "JOB-TOKEN: ${CI_JOB_TOKEN}" --upload-file "${PKG_PATH}" "${UPLOAD_URL}")
+            if [[ "${HTTP_CODE}" != "200" && "${HTTP_CODE}" != "201" ]]; then
+              echo "❌ ERROR: Failed to upload RC package '${PKG_FILENAME}' (HTTP ${HTTP_CODE})."
+              exit 1
+            fi
+            echo "   ✅ Uploaded successfully."
+          fi
+
+          PKG_OS="${GOOS:-$(uname -s | tr '[:upper:]' '[:lower:]')}"
+          PKG_ARCH="${GOARCH:-$(uname -m)}"
+          case "${PKG_ARCH}" in
+            x86_64) PKG_ARCH="amd64" ;;
+            aarch64) PKG_ARCH="arm64" ;;
+          esac
+
+          ENTRY_JSON=$(jq -n \
+            --arg name "${PKG_NAME}" \
+            --arg filename "${PKG_FILENAME}" \
+            --arg path "${PKG_PATH}" \
+            --arg rc_version "${RC_VER}" \
+            --arg sha256 "${PKG_SHA}" \
+            --argjson size "${PKG_SIZE}" \
+            --arg os "${PKG_OS}" \
+            --arg arch "${PKG_ARCH}" \
+            --argjson stable "${PKG_STABLE}" \
+            --argjson required "${PKG_REQUIRED}" \
+            --argjson release_asset "${PKG_RELEASE_ASSET}" \
+            --arg url "${UPLOAD_URL}" \
+            '{
+              package: $name,
+              filename: $filename,
+              path: $path,
+              rc_version: $rc_version,
+              sha256: $sha256,
+              size: $size,
+              platform: { os: $os, arch: $arch },
+              stable: $stable,
+              required: $required,
+              release_asset: $release_asset,
+              source_url: $url
+            }')
+
+          PKG_ENTRIES=$(echo "${PKG_ENTRIES}" | jq --argjson entry "${ENTRY_JSON}" '. + [$entry]')
+        done
+
+        jq -n \
+          --arg project_id "${CI_PROJECT_ID}" \
+          --arg pipeline_id "${CI_PIPELINE_ID}" \
+          --arg job_id "${CI_JOB_ID}" \
+          --arg job_name "${CI_JOB_NAME}" \
+          --arg source_sha "${CI_COMMIT_SHA}" \
+          --arg mr_iid "${CI_MERGE_REQUEST_IID:-${MR_IID}}" \
+          --argjson packages "${PKG_ENTRIES}" \
+          '{
+            project_id: ($project_id | tonumber),
+            pipeline_id: ($pipeline_id | tonumber),
+            job_id: ($job_id | tonumber),
+            job_name: $job_name,
+            source_sha: $source_sha,
+            mr_iid: (if $mr_iid != "" then ($mr_iid | tonumber) else null end),
+            packages: $packages
+          }' > "${METADATA_FILE}"
+
+        echo "📋 Emitted package metadata to ${METADATA_FILE}"
+      fi
+
+.release-project-promotion-rules:
+  rules:
+    - if: $CI_COMMIT_TAG
+      when: never
+    - if: '$CI_PIPELINE_SOURCE =~ /^(web|api)$/ && $WORKFLOW != "release"'
+      when: never
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+    - if: $CI_COMMIT_BRANCH =~ $MASTER_BRANCH_REGEX && $CI_COMMIT_REF_PROTECTED == "true"
+
 .Gitlab:Package:Push:
   stage: push
   script:
@@ -1705,7 +1872,6 @@ Common:Init:
   extends:
     - .common-init-rules
   script:
-    - echo "BUILD_CUSTOMER=${BUILD_CUSTOMER}" 2>&1 | tee -a init.env
     - MASTER_BRANCH_PATTERN="${MASTER_BRANCH_REGEX#/}"
     - MASTER_BRANCH_PATTERN="${MASTER_BRANCH_PATTERN%/}"
     - MASTER_BRANCH_PATTERN="${MASTER_BRANCH_PATTERN//\\/}"
@@ -1717,102 +1883,144 @@ Common:Init:
       esac
     - |
       if [[ "${CI_PIPELINE_SOURCE}" =~ ^(web|api)$ && ("${CI_COMMIT_BRANCH}" == "${CI_DEFAULT_BRANCH}" || ("${CI_COMMIT_REF_NAME}" =~ ${MASTER_BRANCH_PATTERN} && "${CI_COMMIT_REF_PROTECTED}" == "true")) ]]; then
-        RC_VERSION_SUFFIX=-rc.${CI_PIPELINE_ID}
-        echo "⚠️  Manual trigger on protected master branch — forcing RC image suffix to prevent stable image overwrite."
-        echo "IMAGE_REPOSITORY_SUFFIX=${IMAGE_DEV_REPOSITORY_SUFFIX}" 2>&1 | tee -a init.env
-        export IMAGE_REPOSITORY_SUFFIX=${IMAGE_DEV_REPOSITORY_SUFFIX}
+        if [[ "${WORKFLOW}" == "release" && -n "${TARGET_VERSION}" ]]; then
+          echo "ℹ️ Explicit historical re-release workflow for target version ${TARGET_VERSION}."
+          RC_VERSION_SUFFIX=""
+          export IMAGE_REPOSITORY_SUFFIX=
+        else
+          RC_VERSION_SUFFIX=-rc.${CI_PIPELINE_ID}
+          echo "⚠️  Manual trigger on protected master branch — forcing RC image suffix to prevent stable image overwrite."
+          export IMAGE_REPOSITORY_SUFFIX=${IMAGE_DEV_REPOSITORY_SUFFIX}
+        fi
       elif [[ (${CI_COMMIT_BRANCH} == ${CI_DEFAULT_BRANCH}) || (${CI_COMMIT_REF_NAME} =~ ${MASTER_BRANCH_PATTERN} && ${CI_COMMIT_REF_PROTECTED} == "true") ]]; then
         RC_VERSION_SUFFIX=""
-        echo "IMAGE_REPOSITORY_SUFFIX=" 2>&1 | tee -a init.env
         export IMAGE_REPOSITORY_SUFFIX=
         UPSTREAM_MR_IID=""
         UPSTREAM_PIPELINE_ID=""
-        COMMIT_MSG=$(git log -1 --pretty=%B || true)
-        UPSTREAM_MR_IID=$(echo "${COMMIT_MSG}" | grep -oE "MR [0-9]+" | head -n1 | tr -d 'MR ' || true)
-        if [[ -z "${UPSTREAM_MR_IID}" ]]; then
-          UPSTREAM_MR_IID=$(echo "${COMMIT_MSG}" | grep -oE "![0-9]+" | head -n1 | tr -d '!' || true)
-        fi
-        if [[ -z "${UPSTREAM_MR_IID}" ]]; then
-          UPSTREAM_MR_IID=$(echo "${COMMIT_MSG}" | grep -oE "merge_requests/[0-9]+" | head -n1 | tr -d 'merge_requests/' || true)
-        fi
-        if [[ -z "${UPSTREAM_MR_IID}" ]]; then
-          UPSTREAM_MR_JSON=$(curl --silent --fail --header "JOB-TOKEN: ${CI_JOB_TOKEN}" "${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/repository/commits/${CI_COMMIT_SHA}/merge_requests" 2>/dev/null || true)
-          UPSTREAM_MR_IID=$(echo "${UPSTREAM_MR_JSON}" | jq -r '.[0].iid // empty' 2>/dev/null || true)
-          UPSTREAM_MR_SHA=$(echo "${UPSTREAM_MR_JSON}" | jq -r '.[0].sha // empty' 2>/dev/null || true)
-        fi
-        if [[ -n "${UPSTREAM_MR_IID}" ]]; then
-          MR_REF_PIPES=$(curl --silent --fail --header "JOB-TOKEN: ${CI_JOB_TOKEN}" "${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/pipelines?ref=refs/merge-requests/${UPSTREAM_MR_IID}/head&status=success" 2>/dev/null || true)
-          UPSTREAM_PIPELINE_ID=$(echo "${MR_REF_PIPES}" | jq -r '.[0].id // empty' 2>/dev/null || true)
-        fi
-        if [[ -z "${UPSTREAM_PIPELINE_ID}" && -n "${UPSTREAM_MR_SHA}" ]]; then
-          SRC_PIPES_JSON=$(curl --silent --fail --header "JOB-TOKEN: ${CI_JOB_TOKEN}" "${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/pipelines?sha=${UPSTREAM_MR_SHA}&status=success" 2>/dev/null || true)
-          UPSTREAM_PIPELINE_ID=$(echo "${SRC_PIPES_JSON}" | jq -r '.[0].id // empty' 2>/dev/null || true)
-        fi
-        if [[ -z "${UPSTREAM_PIPELINE_ID}" ]]; then
-          RECENT_PIPES=$(curl --silent --fail --header "JOB-TOKEN: ${CI_JOB_TOKEN}" "${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/pipelines?status=success&per_page=10" 2>/dev/null || true)
-          UPSTREAM_PIPELINE_ID=$(echo "${RECENT_PIPES}" | jq -r '[.[] | select(.source=="merge_request_event")][0].id // empty' 2>/dev/null || true)
-          if [[ -z "${UPSTREAM_MR_IID}" && -n "${UPSTREAM_PIPELINE_ID}" ]]; then
-            UPSTREAM_MR_IID=$(echo "${RECENT_PIPES}" | jq -r '[.[] | select(.id=='${UPSTREAM_PIPELINE_ID}')][0].ref // ""' | grep -oE "[0-9]+" || true)
+        UPSTREAM_MR_SHA=""
+
+        echo "🔍 Resolving authoritative MR provenance for commit ${CI_COMMIT_SHA}..."
+        COMMIT_MRS_JSON=$(curl --silent --fail --header "JOB-TOKEN: ${CI_JOB_TOKEN}" "${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/repository/commits/${CI_COMMIT_SHA}/merge_requests" 2>/dev/null || true)
+
+        if [[ -z "${COMMIT_MRS_JSON}" || "${COMMIT_MRS_JSON}" == "[]" ]]; then
+          PARENT2=$(git rev-parse HEAD^2 2>/dev/null || true)
+          if [[ -n "${PARENT2}" ]]; then
+            echo "ℹ️ Checking merge commit parent HEAD^2 (${PARENT2}) for associated MR..."
+            COMMIT_MRS_JSON=$(curl --silent --fail --header "JOB-TOKEN: ${CI_JOB_TOKEN}" "${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/repository/commits/${PARENT2}/merge_requests" 2>/dev/null || true)
           fi
         fi
-        if [[ -n "${UPSTREAM_PIPELINE_ID}" ]]; then
-          if [[ -n "${UPSTREAM_MR_IID}" ]]; then
-            DEV_CANDIDATE_RC_SUFFIX="-rc.${UPSTREAM_PIPELINE_ID}-${UPSTREAM_MR_IID}"
-          else
-            DEV_CANDIDATE_RC_SUFFIX="-rc.${UPSTREAM_PIPELINE_ID}"
-          fi
-          echo "DEV_CANDIDATE_RC_SUFFIX=${DEV_CANDIDATE_RC_SUFFIX}" 2>&1 | tee -a init.env
-          echo "UPSTREAM_PIPELINE_ID=${UPSTREAM_PIPELINE_ID}" 2>&1 | tee -a init.env
-          echo "MR_IID=${UPSTREAM_MR_IID}" 2>&1 | tee -a init.env
+
+        VALID_MRS=$(echo "${COMMIT_MRS_JSON}" | jq -c --arg target "${CI_COMMIT_REF_NAME}" '[.[] | select(.state == "merged" and (.target_branch == $target or .target_branch == "'${CI_DEFAULT_BRANCH}'"))]' 2>/dev/null || echo "[]")
+        MR_COUNT=$(echo "${VALID_MRS}" | jq 'length' 2>/dev/null || echo "0")
+
+        if [[ "${MR_COUNT}" -eq 0 ]]; then
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+          echo "❌ ERROR: No merged Merge Request found associated with commit ${CI_COMMIT_SHA}."
+          echo "Fast-track release strictly requires a verified merged MR. Direct pushes to release branches are refused."
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+          exit 1
+        elif [[ "${MR_COUNT}" -gt 1 ]]; then
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+          echo "❌ ERROR: Ambiguous MR provenance: Commit ${CI_COMMIT_SHA} is associated with multiple (${MR_COUNT}) merged MRs."
+          echo "Fail-closed: Release cannot deterministically select candidate artifacts."
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+          exit 1
         fi
+
+        MR_OBJ=$(echo "${VALID_MRS}" | jq '.[0]')
+        UPSTREAM_MR_IID=$(echo "${MR_OBJ}" | jq -r '.iid')
+        UPSTREAM_MR_SHA=$(echo "${MR_OBJ}" | jq -r '.diff_refs.head_sha // .sha')
+        MERGE_COMMIT_SHA=$(echo "${MR_OBJ}" | jq -r '.merge_commit_sha // empty')
+        SQUASH_COMMIT_SHA=$(echo "${MR_OBJ}" | jq -r '.squash_commit_sha // empty')
+
+        echo "✅ Authoritatively identified MR !${UPSTREAM_MR_IID} (Source HEAD SHA: ${UPSTREAM_MR_SHA})"
+
+        PARENT2=$(git rev-parse HEAD^2 2>/dev/null || true)
+        if [[ "${CI_COMMIT_SHA}" == "${UPSTREAM_MR_SHA}" ]]; then
+          echo "ℹ️ Merge Strategy: Fast-Forward (Commit SHA matches MR source HEAD SHA directly)."
+        elif [[ -n "${PARENT2}" ]]; then
+          echo "ℹ️ Merge Strategy: Merge Commit (Parent 2: ${PARENT2})."
+          if [[ "${PARENT2}" != "${UPSTREAM_MR_SHA}" ]] && ! git merge-base --is-ancestor "${UPSTREAM_MR_SHA}" "${PARENT2}" 2>/dev/null; then
+            echo "⚠️ Warning: Commit ancestry check between MR head ${UPSTREAM_MR_SHA} and ${PARENT2} could not confirm ancestry."
+          fi
+        elif [[ "${CI_COMMIT_SHA}" == "${SQUASH_COMMIT_SHA}" || -n "${SQUASH_COMMIT_SHA}" ]]; then
+          echo "ℹ️ Merge Strategy: Squash and Merge (Squash SHA: ${SQUASH_COMMIT_SHA})."
+        else
+          echo "ℹ️ Merge Strategy: Verified MR association for commit ${CI_COMMIT_SHA}."
+        fi
+
+        HEAD_PIPE_ID=$(echo "${MR_OBJ}" | jq -r '.head_pipeline.id // empty')
+        HEAD_PIPE_STATUS=$(echo "${MR_OBJ}" | jq -r '.head_pipeline.status // empty')
+        HEAD_PIPE_SHA=$(echo "${MR_OBJ}" | jq -r '.head_pipeline.sha // empty')
+
+        if [[ -n "${HEAD_PIPE_ID}" ]]; then
+          echo "📋 MR !${UPSTREAM_MR_IID} latest verification pipeline is #${HEAD_PIPE_ID} (SHA: ${HEAD_PIPE_SHA}, Status: ${HEAD_PIPE_STATUS})"
+          if [[ "${HEAD_PIPE_STATUS}" != "success" ]]; then
+            echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+            echo "❌ ERROR: The latest verification pipeline (#${HEAD_PIPE_ID}) for MR !${UPSTREAM_MR_IID} has status '${HEAD_PIPE_STATUS}'."
+            echo "Fast-track release strictly refuses promotion when the latest verification pipeline is not successful."
+            echo "Older successful pipelines will NOT be promoted."
+            echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+            exit 1
+          fi
+          UPSTREAM_PIPELINE_ID="${HEAD_PIPE_ID}"
+        else
+          PIPES_JSON=$(curl --silent --fail --header "JOB-TOKEN: ${CI_JOB_TOKEN}" "${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/pipelines?sha=${UPSTREAM_MR_SHA}&per_page=5" 2>/dev/null || true)
+          LATEST_STATUS=$(echo "${PIPES_JSON}" | jq -r '.[0].status // empty')
+          LATEST_PIPE_ID=$(echo "${PIPES_JSON}" | jq -r '.[0].id // empty')
+          if [[ "${LATEST_STATUS}" != "success" ]]; then
+            echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+            echo "❌ ERROR: Latest pipeline (#${LATEST_PIPE_ID}) for MR head commit ${UPSTREAM_MR_SHA} has status '${LATEST_STATUS}'."
+            echo "Production release requires successful verification of the exact merged source commit."
+            echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+            exit 1
+          fi
+          UPSTREAM_PIPELINE_ID="${LATEST_PIPE_ID}"
+        fi
+
+        DEV_CANDIDATE_RC_SUFFIX="-rc.${UPSTREAM_PIPELINE_ID}-${UPSTREAM_MR_IID}"
+        DEV_CANDIDATE_VERSION="${RELEASE_VERSION}${DEV_CANDIDATE_RC_SUFFIX}"
+        echo "DEV_CANDIDATE_VERSION=${DEV_CANDIDATE_VERSION}" >> init.env
+        echo "UPSTREAM_PIPELINE_ID=${UPSTREAM_PIPELINE_ID}" >> init.env
+        echo "MR_IID=${UPSTREAM_MR_IID}" >> init.env
       elif [[ "${CI_PIPELINE_SOURCE}" == "merge_request_event" ]]; then
         RC_VERSION_SUFFIX="-rc.${CI_PIPELINE_ID}-${CI_MERGE_REQUEST_IID}"
-        echo "IMAGE_REPOSITORY_SUFFIX=${IMAGE_DEV_REPOSITORY_SUFFIX}" 2>&1 | tee -a init.env
         export IMAGE_REPOSITORY_SUFFIX=${IMAGE_DEV_REPOSITORY_SUFFIX}
       else
         RC_VERSION_SUFFIX=-rc.${CI_PIPELINE_ID}
-        echo "IMAGE_REPOSITORY_SUFFIX=${IMAGE_DEV_REPOSITORY_SUFFIX}" 2>&1 | tee -a init.env
         export IMAGE_REPOSITORY_SUFFIX=${IMAGE_DEV_REPOSITORY_SUFFIX}
       fi
     - |
       if [[ -z "${IMAGE_REGISTRY}" ]]; then
         if [[ -n "${CI_REGISTRY}" || "${GITLAB_CI}" == "true" ]]; then
           IMAGE_REGISTRY="${CI_REGISTRY}"
-          echo "ℹ️  IMAGE_REGISTRY not set. Defaulting to GitLab Container Registry: ${IMAGE_REGISTRY}"
           if [[ -z "${IMAGE_REPOSITORY}" || "${IMAGE_REPOSITORY}" != "${CI_PROJECT_PATH}"* ]]; then
             IMAGE_REPOSITORY="${CI_PROJECT_PATH}"
-            echo "ℹ️  Defaulting IMAGE_REPOSITORY to GitLab project path: ${IMAGE_REPOSITORY}"
           fi
           export IMAGE_REGISTRY IMAGE_REPOSITORY
         fi
       fi
-    - echo "IMAGE_REGISTRY=${IMAGE_REGISTRY}" 2>&1 | tee -a init.env
-    - echo "IMAGE_REPOSITORY=${IMAGE_REPOSITORY}" 2>&1 | tee -a init.env
-    - echo "RC_VERSION_SUFFIX=${RC_VERSION_SUFFIX}" 2>&1 | tee -a init.env
-    - echo "IMAGE_CHECK_REPOSITORY=${IMAGE_REPOSITORY}" 2>&1 | tee -a init.env
-    - echo "IMAGE_PUSH_REPOSITORY=${IMAGE_REPOSITORY}${IMAGE_REPOSITORY_SUFFIX}" 2>&1 | tee -a init.env
+    - echo "IMAGE_REGISTRY=${IMAGE_REGISTRY}" >> init.env
+    - echo "IMAGE_REPOSITORY=${IMAGE_REPOSITORY}" >> init.env
+    - echo "IMAGE_PUSH_REPOSITORY=${IMAGE_REPOSITORY}${IMAGE_REPOSITORY_SUFFIX}" >> init.env
     - |
       if [[ -n "${RELEASE_VERSION}" && -f ${CHART_DIR}/${CHART_FILE} ]]; then
         CHART_RELEASE_VERSION=${RELEASE_VERSION}
-        echo "CHART_RELEASE_VERSION=${RELEASE_VERSION}" 2>&1 | tee -a init.env
         CHART_PUSH_VERSION=${CHART_RELEASE_VERSION}${RC_VERSION_SUFFIX}
-        echo "CHART_PUSH_VERSION=${CHART_RELEASE_VERSION}${RC_VERSION_SUFFIX}" 2>&1 | tee -a init.env
-        echo "CHART_NAME=$(yq eval .name "${CHART_DIR}/${CHART_FILE}")" 2>&1 | tee -a init.env
+        CHART_NAME=$(yq eval .name "${CHART_DIR}/${CHART_FILE}")
+        echo "CHART_NAME=${CHART_NAME}" >> init.env
+        echo "CHART_PUSH_VERSION=${CHART_PUSH_VERSION}" >> init.env
       elif [[ -f ${CHART_DIR}/${CHART_FILE} ]]; then
-        echo "CHART_NAME=$(yq eval .name "${CHART_DIR}/${CHART_FILE}")" 2>&1 | tee -a init.env
+        CHART_NAME=$(yq eval .name "${CHART_DIR}/${CHART_FILE}")
         CHART_RELEASE_VERSION=$(yq eval .version "${CHART_DIR}/${CHART_FILE}")
-        echo "CHART_RELEASE_VERSION=${CHART_RELEASE_VERSION}" 2>&1 | tee -a init.env
         CHART_PUSH_VERSION=${CHART_RELEASE_VERSION}${RC_VERSION_SUFFIX}
-        echo "CHART_PUSH_VERSION=${CHART_RELEASE_VERSION}${RC_VERSION_SUFFIX}" 2>&1 | tee -a init.env
-        if [[ ${CI_PIPELINE_SOURCE} == "parent_pipeline" && ! -z ${PARENT_CI_PIPELINE_ID} ]]; then
-          echo "PARENT_CI_PIPELINE_ID is set and CI_PIPELINE_SOURCE is parent pipeline. skipping RELEASE_VERSION."
-        else
+        echo "CHART_NAME=${CHART_NAME}" >> init.env
+        echo "CHART_PUSH_VERSION=${CHART_PUSH_VERSION}" >> init.env
+        if [[ ${CI_PIPELINE_SOURCE} != "parent_pipeline" || -z ${PARENT_CI_PIPELINE_ID} ]]; then
           if [[ -f ./Dockerfile ]]; then
             RELEASE_VERSION=$(yq eval .appVersion "${CHART_DIR}/${CHART_FILE}")
-            echo "RELEASE_VERSION=${RELEASE_VERSION}" 2>&1 | tee -a init.env
           else
             RELEASE_VERSION=$(yq eval .version "${CHART_DIR}/${CHART_FILE}")
-            echo "RELEASE_VERSION=${RELEASE_VERSION}" 2>&1 | tee -a init.env
           fi
         fi
       else
@@ -1826,52 +2034,37 @@ Common:Init:
           CHART_DEV_REPOSITORY="${CHART_REPOSITORY}"
           ;;
       esac
-      if [[ -z "${CHART_REGISTRY}" ]]; then
-        echo "CHART_REGISTRY is empty: charts use this project's GitLab Helm Package Registry."
-      fi
       if [[ -z ${RC_VERSION_SUFFIX} ]]; then
         CHART_PUSH_REPOSITORY=${CHART_REPOSITORY}
       else
         CHART_PUSH_REPOSITORY=${CHART_DEV_REPOSITORY}
       fi
-      echo "CHART_REGISTRY=${CHART_REGISTRY}" 2>&1 | tee -a init.env
-      echo "CHART_REPOSITORY=${CHART_REPOSITORY}" 2>&1 | tee -a init.env
-      echo "CHART_DEV_REPOSITORY=${CHART_DEV_REPOSITORY}" 2>&1 | tee -a init.env
-      echo "CHART_PUSH_REPOSITORY=${CHART_PUSH_REPOSITORY}" 2>&1 | tee -a init.env
+      if [[ -n "${CHART_NAME:-}" ]]; then
+        echo "CHART_PUSH_REPOSITORY=${CHART_PUSH_REPOSITORY}" >> init.env
+      fi
     - |
       if [[ -z "${RELEASE_VERSION}" ]]; then
         echo "${CHART_DIR}/${CHART_FILE} not found and RELEASE_VERSION not set. Either add helm chart in correct directory or provide RELEASE_VERSION as variable."
         exit 1
-      else
-        echo "RELEASE_VERSION=${RELEASE_VERSION}" 2>&1 | tee -a init.env
       fi
-    # Disabling this due to chart rc versioning issues during parent child pipelines
-    # - |
-    #   if [[ ${CI_PIPELINE_SOURCE} != "parent_pipeline" ]]; then
-    #     echo "CHART_PUSH_VERSION=${CHART_RELEASE_VERSION}${RC_VERSION_SUFFIX}" 2>&1 | tee -a init.env
-    #   elif [[ ${CI_PIPELINE_SOURCE} == "parent_pipeline" && ! -z ${PARENT_CI_PIPELINE_ID} && ! -z ${RC_VERSION_SUFFIX} ]]; then
-    #     echo "CHART_PUSH_VERSION=${CHART_RELEASE_VERSION}-rc.${PARENT_CI_PIPELINE_ID}" 2>&1 | tee -a init.env
-    #   else
-    #     echo "CHART_PUSH_VERSION=${CHART_RELEASE_VERSION}" 2>&1 | tee -a init.env
-    #   fi
+      echo "RELEASE_VERSION=${RELEASE_VERSION}" >> init.env
     - export APP_PUSH_VERSION=${RELEASE_VERSION}${RC_VERSION_SUFFIX}
-    - echo "APP_PUSH_VERSION=${APP_PUSH_VERSION}" 2>&1 | tee -a init.env
-    - |
-      if [[ -n "${DEV_CANDIDATE_RC_SUFFIX}" ]]; then
-        DEV_CANDIDATE_VERSION="${RELEASE_VERSION}${DEV_CANDIDATE_RC_SUFFIX}"
-        DEV_CANDIDATE_CHART_VERSION="${CHART_RELEASE_VERSION}${DEV_CANDIDATE_RC_SUFFIX}"
-        echo "DEV_CANDIDATE_VERSION=${DEV_CANDIDATE_VERSION}" 2>&1 | tee -a init.env
-        echo "DEV_CANDIDATE_CHART_VERSION=${DEV_CANDIDATE_CHART_VERSION}" 2>&1 | tee -a init.env
-      fi
+    - echo "APP_PUSH_VERSION=${APP_PUSH_VERSION}" >> init.env
     - |
       if [[ -z "${RELEASE_VERSION_SUFFIX}" ]]; then
         TAG=${RELEASE_VERSION}
       else
         TAG=${RELEASE_VERSION}-${RELEASE_VERSION_SUFFIX}
       fi
-    - echo "TAG=${TAG}" 2>&1 | tee -a init.env
-    - echo "MAJOR_VERSION=$(echo ${APP_PUSH_VERSION} | grep -Eo '^([0-9]+)')" 2>&1 | tee -a init.env
-    - echo "MINOR_VERSION=$(echo ${APP_PUSH_VERSION} | grep -Eo '^([0-9]+)\.([0-9]+)')" 2>&1 | tee -a init.env
+    - echo "TAG=${TAG}" >> init.env
+    - MAJOR_VERSION=$(echo ${APP_PUSH_VERSION} | grep -Eo '^([0-9]+)')
+    - MINOR_VERSION=$(echo ${APP_PUSH_VERSION} | grep -Eo '^([0-9]+)\.([0-9]+)')
+    - echo "MAJOR_VERSION=${MAJOR_VERSION}" >> init.env
+    - echo "MINOR_VERSION=${MINOR_VERSION}" >> init.env
+    - |
+      if [[ -n "${BUILD_CUSTOMER:-}" ]]; then
+        echo "BUILD_CUSTOMER=${BUILD_CUSTOMER}" >> init.env
+      fi
   artifacts:
     name: Env File
     expose_as: Env File
@@ -1881,6 +2074,197 @@ Common:Init:
       - ${PROJECT_PATH}/init.env
     reports:
       dotenv: ${PROJECT_PATH}/init.env
+
+Candidate:Register:
+  stage: report
+  extends:
+    - .verify-rules
+  image: ${TOOLKIT_BUILD_IMAGE_REPO}:${TOOLKIT_BUILD_IMAGE_TAG}
+  needs:
+    - job: Common:Init
+      artifacts: true
+    - job: Image:Push
+      artifacts: true
+      optional: true
+    - job: Chart:Push
+      artifacts: true
+      optional: true
+    - job: SBOM:Generate
+      artifacts: true
+      optional: true
+    - job: Image:Scan
+      artifacts: true
+      optional: true
+  script:
+    - echo "📋 Assembling canonical candidate manifest for MR !${CI_MERGE_REQUEST_IID}..."
+    - |
+      DOCKER_ENABLED=false
+      DEV_IMAGE_DIGEST=""
+      DEV_IMAGE_TAG="${APP_PUSH_VERSION}"
+      DEV_IMAGE_REPO="${IMAGE_REGISTRY}/${IMAGE_PUSH_REPOSITORY}"
+      if [[ -f Dockerfile || -f "${DOCKERFILE:-}" ]]; then
+        DOCKER_ENABLED=true
+        if command -v crane >/dev/null 2>&1; then
+          FULL_DEV_IMAGE="${DEV_IMAGE_REPO}:${DEV_IMAGE_TAG}"
+          echo "🔍 Checking candidate dev image ${FULL_DEV_IMAGE}..."
+          DEV_IMAGE_DIGEST=$(crane digest "${FULL_DEV_IMAGE}" 2>/dev/null || true)
+        fi
+        if [[ -z "${DEV_IMAGE_DIGEST}" && -f "${IMAGE_INFO_FILE_NAME}" ]]; then
+          DEV_IMAGE_DIGEST=$(grep -oE "sha256:[a-f0-9]{64}" "${IMAGE_INFO_FILE_NAME}" | head -n1 || true)
+        fi
+        if [[ -n "${DEV_IMAGE_DIGEST}" ]]; then
+          echo "   ✅ Found dev image digest: ${DEV_IMAGE_DIGEST}"
+        else
+          echo "⚠️ Notice: Dockerfile present but candidate image digest could not be resolved."
+        fi
+      fi
+    - |
+      HELM_ENABLED=false
+      CHART_SHA256=""
+      CHART_PKG_VERSION="${CHART_PUSH_VERSION}"
+      if [[ -f "${CHART_DIR}/${CHART_FILE}" ]]; then
+        HELM_ENABLED=true
+        CHART_PKG_FILE="${CHART_NAME}-${CHART_PKG_VERSION}.tgz"
+        echo "🔍 Checking candidate Helm chart ${CHART_PKG_FILE}..."
+        if [[ -f "${CHART_PKG_FILE}" ]]; then
+          CHART_SHA256=$(sha256sum "${CHART_PKG_FILE}" | cut -d' ' -f1)
+        elif [[ -f "${PROJECT_PATH}/${CHART_PKG_FILE}" ]]; then
+          CHART_SHA256=$(sha256sum "${PROJECT_PATH}/${CHART_PKG_FILE}" | cut -d' ' -f1)
+        else
+          TEMP_CHART=$(mktemp)
+          if curl --silent --fail --header "JOB-TOKEN: ${CI_JOB_TOKEN}" -o "${TEMP_CHART}" "${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/packages/helm/${CHART_PKG_VERSION}/${CHART_PKG_FILE}" 2>/dev/null; then
+            CHART_SHA256=$(sha256sum "${TEMP_CHART}" | cut -d' ' -f1)
+          fi
+          rm -f "${TEMP_CHART}"
+        fi
+        if [[ -n "${CHART_SHA256}" ]]; then
+          echo "   ✅ Found Helm chart SHA256: ${CHART_SHA256}"
+        else
+          echo "⚠️ Notice: Chart present but package SHA256 could not be resolved."
+        fi
+      fi
+    - |
+      REPORTS_JSON="[]"
+      PIPELINE_JOBS=$(curl --silent --fail --header "JOB-TOKEN: ${CI_JOB_TOKEN}" "${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/pipelines/${CI_PIPELINE_ID}/jobs?per_page=100" 2>/dev/null || echo "[]")
+
+      SBOM_JOB_ID=$(echo "${PIPELINE_JOBS}" | jq -r '[.[] | select(.name=="SBOM:Generate")][0].id // empty')
+      if [[ -n "${SBOM_JOB_ID}" ]]; then
+        SBOM_SHA=""
+        if [[ -f "sbom.cdx.json" ]]; then
+          SBOM_SHA=$(sha256sum "sbom.cdx.json" | cut -d' ' -f1)
+        fi
+        REPORTS_JSON=$(echo "${REPORTS_JSON}" | jq \
+          --arg id "${SBOM_JOB_ID}" \
+          --arg sha "${SBOM_SHA}" \
+          '. + [{ name: "sbom.cdx.json", job_id: ($id | tonumber), job_name: "SBOM:Generate", path: "sbom.cdx.json", sha256: $sha, required: true }]')
+      fi
+
+      TRIVY_JOB_ID=$(echo "${PIPELINE_JOBS}" | jq -r '[.[] | select(.name=="Image:Scan")][0].id // empty')
+      if [[ -n "${TRIVY_JOB_ID}" ]]; then
+        REPORTS_JSON=$(echo "${REPORTS_JSON}" | jq \
+          --arg id "${TRIVY_JOB_ID}" \
+          '. + [{ name: "image_trivy_report", job_id: ($id | tonumber), job_name: "Image:Scan", path: "image_trivy_report.json", required: true }]')
+      fi
+    - |
+      PACKAGES_JSON="[]"
+      METADATA_FILES=( .release/package-metadata-*.json )
+      if [[ -f "${METADATA_FILES[0]}" ]]; then
+        for MF in "${METADATA_FILES[@]}"; do
+          [[ -f "${MF}" ]] || continue
+          echo "🔍 Reading package metadata from ${MF}..."
+          JOB_PKGS=$(jq -c '.packages // []' "${MF}")
+          PACKAGES_JSON=$(echo "${PACKAGES_JSON}" | jq --argjson pkgs "${JOB_PKGS}" '. + $pkgs')
+        done
+      fi
+
+      RELEASE_PACKAGES_FILE="${RELEASE_PACKAGES_FILE:-.gitlab/release-packages.yml}"
+      if [[ -f "${RELEASE_PACKAGES_FILE}" ]]; then
+        DECL_COUNT=$(yq eval '.packages | length' "${RELEASE_PACKAGES_FILE}" 2>/dev/null || echo "0")
+        for ((i=0; i<DECL_COUNT; i++)); do
+          REQ_PKG=$(yq eval ".packages[$i].package" "${RELEASE_PACKAGES_FILE}")
+          REQ_FLAG=$(yq eval ".packages[$i].required // true" "${RELEASE_PACKAGES_FILE}")
+          if [[ "${REQ_FLAG}" == "true" ]]; then
+            EXISTS_IN_META=$(echo "${PACKAGES_JSON}" | jq --arg pkg "${REQ_PKG}" '[.[] | select(.package == $pkg)] | length')
+            if [[ "${EXISTS_IN_META}" -eq 0 ]]; then
+              echo "❌ ERROR: Declared required package '${REQ_PKG}' was not emitted by any build job."
+              exit 1
+            fi
+          fi
+        done
+      fi
+    - |
+      CANDIDATE_ID="${CI_PROJECT_ID}-${CI_PIPELINE_ID}-${CI_COMMIT_SHORT_SHA}"
+      CREATED_AT=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+
+      jq -n \
+        --arg candidate_id "${CANDIDATE_ID}" \
+        --arg project_id "${CI_PROJECT_ID}" \
+        --arg project_path "${CI_PROJECT_PATH}" \
+        --arg mr_iid "${CI_MERGE_REQUEST_IID}" \
+        --arg pipeline_id "${CI_PIPELINE_ID}" \
+        --arg source_sha "${CI_COMMIT_SHA}" \
+        --arg target_branch "${CI_MERGE_REQUEST_TARGET_BRANCH_NAME:-${CI_DEFAULT_BRANCH}}" \
+        --arg release_version "${RELEASE_VERSION}" \
+        --arg app_push_version "${APP_PUSH_VERSION}" \
+        --arg created_at "${CREATED_AT}" \
+        --argjson docker_enabled "${DOCKER_ENABLED}" \
+        --arg docker_repo "${DEV_IMAGE_REPO}" \
+        --arg docker_tag "${DEV_IMAGE_TAG}" \
+        --arg docker_digest "${DEV_IMAGE_DIGEST}" \
+        --argjson helm_enabled "${HELM_ENABLED}" \
+        --arg chart_name "${CHART_NAME:-}" \
+        --arg chart_version "${CHART_PKG_VERSION:-}" \
+        --arg chart_sha "${CHART_SHA256}" \
+        --argjson reports "${REPORTS_JSON}" \
+        --argjson packages "${PACKAGES_JSON}" \
+        '{
+          schema_version: 1,
+          candidate_id: $candidate_id,
+          project_id: ($project_id | tonumber),
+          project_path: $project_path,
+          mr_iid: (if $mr_iid != "" then ($mr_iid | tonumber) else null end),
+          pipeline_id: ($pipeline_id | tonumber),
+          source_sha: $source_sha,
+          target_branch: $target_branch,
+          release_version: $release_version,
+          app_push_version: $app_push_version,
+          created_at: $created_at,
+          artifacts: {
+            docker: {
+              enabled: $docker_enabled,
+              dev_repository: $docker_repo,
+              rc_tag: $docker_tag,
+              digest: $docker_digest,
+              source_sha: $source_sha
+            },
+            helm: {
+              enabled: $helm_enabled,
+              chart_name: $chart_name,
+              rc_version: $chart_version,
+              sha256: $chart_sha
+            },
+            reports: $reports,
+            packages: $packages
+          }
+        }' > candidate.json
+
+      echo "📋 Canonical candidate manifest created:"
+      cat candidate.json
+
+      CANDIDATE_UPLOAD_URL="${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/packages/generic/candidates/${APP_PUSH_VERSION}/candidate.json"
+      echo "🚀 Publishing candidate.json to Generic Package Registry at ${CANDIDATE_UPLOAD_URL}..."
+      HTTP_STATUS=$(curl --silent --show-error --write-out "%{http_code}" --output /dev/null --header "JOB-TOKEN: ${CI_JOB_TOKEN}" --upload-file candidate.json "${CANDIDATE_UPLOAD_URL}")
+      if [[ "${HTTP_STATUS}" != "200" && "${HTTP_STATUS}" != "201" ]]; then
+        echo "❌ ERROR: Failed to upload candidate.json to Generic Package Registry (HTTP ${HTTP_STATUS})."
+        exit 1
+      fi
+      echo "✅ Candidate manifest registered successfully."
+  artifacts:
+    name: Candidate Manifest
+    when: always
+    expire_in: 1 week
+    paths:
+      - candidate.json
 
 Changelog:Lint:
   variables:

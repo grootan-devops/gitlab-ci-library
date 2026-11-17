@@ -15,7 +15,9 @@
 | `PROJECT_PATH` | No | `.` | Root directory of the application inside the git repository. |
 | `DOCKERFILE` | No | `Dockerfile` | Path to Dockerfile for image linting and building. |
 | `CHART_DIR` | No | `./chart` | Path to the Helm chart folder. |
-| `RELEASE_VERSION` | No | — | Semantic version (e.g. `1.2.3`). If omitted, read from `version.env` or `Chart.yaml`. |
+| `RELEASE_VERSION` | No | — | Semantic version (e.g. `1.2.3`). Set under `variables:` in `.gitlab-ci.yml`. If omitted, read from `version.env` (e.g. `package.json`, `pyproject.toml`, `pom.xml`) or `Chart.yaml`. Root `VERSION` files are not read by GitLab CI. |
+| `RELEASE_PACKAGES_FILE` | No | `.gitlab/release-packages.yml` | Path to declarative package configuration file opting build artifacts into Generic Package Registry lifecycle. |
+| `RELEASE_FLOATING_TAGS` | No | `"true"` | Controls whether `Image:Promote` applies SemVer-aware floating alias tags (`latest`, `MAJOR`, `MINOR`). Set to `"false"` to disable. |
 | `RELEASE_VERSION_SUFFIX` | No | — | Suffix appended to version (e.g. `backend` &rarr; `1.2.3-backend`). |
 | `TARGET_VERSION` | No | — | Unified target version/tag (e.g. `1.2.3`, `latest`). Used as: deployment version override in `deploy`, image tag in `image-scan`, remote chart version in `chart-scan`, or release version override. |
 | `DEPLOY_TARGET` | Manual deploy | `komodo-staging` | Target platform and environment when running manual `deploy` workflow. |

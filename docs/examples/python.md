@@ -3,6 +3,7 @@
 ```yaml
 # .gitlab-ci.yml
 variables:
+  RELEASE_VERSION: 1.0.0
   PROJECT_CACHE_KEY: python
   IMAGE_REPOSITORY: myorg/api-service
   CHART_REPOSITORY: myorg/helm

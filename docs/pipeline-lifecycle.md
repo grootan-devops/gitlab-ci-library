@@ -220,32 +220,40 @@ flowchart TD
 
 > **Trigger:** Merge Request merged into `default_branch` (`master`) or protected `*/master`.  
 > **Philosophy:** Pure lightweight release stamping (~15 seconds) with zero redundant compilation, unit testing, or re-scanning.  
-> **Candidate Resolution & Direct Promotion:**
+> **Candidate Resolution & Serialized Promotion (1.13.0+):**
 >
-> 1. `Common:Init` on `master` queries GitLab API (`/projects/:id/repository/commits/:sha/merge_requests`) to discover the upstream MR and its latest successful verification pipeline `#<UPSTREAM_PIPELINE_ID>`.
-> 2. It exports the exact pre-built dev candidate version: `DEV_CANDIDATE_VERSION="${RELEASE_VERSION}-rc.${UPSTREAM_PIPELINE_ID}-${MR_IID}"`.
-> 3. `Image:Promote` uses **Crane** for layerless OCI promotion: pulls the candidate manifest directly from `registry.contoso.com/acme/<project>/dev:<DEV_CANDIDATE_VERSION>`, mutates the version label to `${TAG}`, and pushes to `registry.contoso.com/acme/<project>:${TAG}` along with `latest`, `${MAJOR_VERSION}`, and `${MINOR_VERSION}` tags.
-> 4. `Chart:Promote` pulls the candidate from the configured OCI dev repository, or the GitLab package `dev` channel when `CHART_REGISTRY` is empty, and repackages with production `${TAG}`. It publishes to the production OCI repository or package `stable` channel. Docker Hub uses the same repository for both versions.
-> 5. `Release:Upload` restores verification artifacts from the upstream MR pipeline once using `$CI_JOB_TOKEN` and publishes release assets to the Generic Package Registry.
-> 6. `Release` creates the official GitLab Release page and Git tag `${TAG}`.
-> 7. `Release:Notification:Teams` sends an Adaptive Card release summary to Microsoft Teams.
+> 1. `Common:Init` on `master` authoritatively queries the GitLab API (`/projects/:id/repository/commits/:sha/merge_requests`) and commit ancestry to verify the merged MR and its latest head pipeline `#<UPSTREAM_PIPELINE_ID>`. Direct pushes to release branches without a merged MR are rejected immediately.
+> 2. `Release:Prepare` downloads the immutable `candidate.json` manifest published by `Candidate:Register` during MR verification and renders the downstream `release-pipeline.yml` specification.
+> 3. `Release:Transaction` holds `resource_group: production-release` with `strategy: depend`, atomically executing all release operations in an isolated child pipeline.
+> 4. `Release:Verify` validates the candidate manifest, confirms all source artifacts and digests exist, and guards against version collisions.
+> 5. `Image:Promote` uses **Crane** for layerless OCI copy: copies candidate directly from dev to production preserving source digest without label mutation, and applies SemVer-aware alias tags (`latest`, `MAJOR`, `MINOR`).
+> 6. `Chart:Promote` pulls the candidate from the dev repository, verifies its SHA256 against `candidate.json`, and publishes to the production repository without fallback repackaging.
+> 7. `Release:Packages:Promote` promotes all declared packages in `.gitlab/release-packages.yml` to stable Generic Packages with SHA256 verification and idempotency.
+> 8. `Release:Upload` restores verification reports from exact producing job IDs recorded in `candidate.json` and publishes release assets idempotently.
+> 9. `Release` creates the official GitLab Release page and Git tag `${TAG}`.
+> 10. `Release:Notification:Teams` sends an Adaptive Card release summary to Microsoft Teams.
 
 ```mermaid
 flowchart LR
     subgraph Pre_And_Init ["Stage: .pre & init"]
-        PVI["Project:Version:Init"] --> CI["Common:Init<br/><i>(Resolves dev candidate version)</i>"]
+        PVI["Project:Version:Init"] --> CI["Common:Init<br/><i>(Authoritatively resolves MR & candidate)</i>"]
     end
 
-    subgraph Release_Stage ["Stage: release"]
-        CI --> RU["Release:Upload<br/><i>(Restores MR artifacts & uploads packages)</i>"]
-        CI --> PI["Image:Promote<br/><i>(Crane Layerless OCI Mutation dev -> prod)</i>"]
-        CI --> PC["Chart:Promote<br/><i>(Helm OCI Promotion dev -> prod)</i>"]
-        RU -->|"passes scoped .md summaries"| REL["Release<br/><i>(Creates Git Tag & GitLab Release)</i>"]
+    subgraph Master_Orchestrator ["Stage: release"]
+        CI --> RP["Release:Prepare<br/><i>(Validates candidate.json & generates child pipeline)</i>"]
+        RP --> RT["Release:Transaction<br/><i>(Holds resource_group: production-release)</i>"]
     end
 
-    subgraph Notify_Stage ["Stage: notify"]
-        REL & PI & PC --> TEAMS["Release:Notification:Teams<br/><i>(Microsoft Teams Alert)</i>"]
+    subgraph Child_Release ["Downstream Child Pipeline (Locked)"]
+        RV["Release:Verify"] --> IP["Image:Promote<br/><i>(crane copy, SemVer aliases)</i>"]
+        RV --> CP["Chart:Promote<br/><i>(Verified SHA256)</i>"]
+        RV --> PK["Release:Packages:Promote<br/><i>(Declarative Packages)</i>"]
+        IP & CP & PK --> RU["Release:Upload<br/><i>(Restores reports & uploads assets)</i>"]
+        RU --> REL["Release<br/><i>(GitLab Release & Tag)</i>"]
+        REL --> TEAMS["Release:Notification:Teams"]
     end
+
+    RT -->|trigger depend| Child_Release
 ```
 
 ---

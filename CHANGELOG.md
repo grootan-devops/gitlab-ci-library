@@ -5,6 +5,27 @@ All notable changes to this project will be documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.13.0] - 2026-11-16
+
+### Added
+
+- Declarative Package Publishing (`.gitlab/release-packages.yml` & `.release-packages-publish-rc` in `common/.gitlab-ci.yml`): projects declare build outputs that should become versioned Generic Packages without needing per-package CI upload or promotion jobs.
+- Job-scoped package metadata output (`.release/package-metadata-${CI_JOB_ID}.json`) supporting single build jobs and parallel multi-architecture build matrices.
+- `Candidate:Register` job in `report` stage of MR verification: validates expected deliverables inventory and publishes canonical immutable `candidate.json` to Generic Package Registry under `generic/candidates/${APP_PUSH_VERSION}/candidate.json`.
+- Downstream release pipeline serialization: `Release:Prepare` validates MR provenance and generates `release-pipeline.yml`, which `Release:Transaction` executes atomically under `resource_group: production-release` with `strategy: depend`.
+
+### Fixed
+
+- Stale Commit Promotion: `Common:Init` resolves the exact merged MR via the GitLab API, verifies the head pipeline status on the exact merged source commit SHA, and fails immediately if the latest commit failed checks.
+- Same-Version Competing MRs: removed all `crane ls ... | tail -n1` fallbacks; candidate selection is strictly bound to the verified pipeline ID and MR identity.
+- Direct Master Push Artifact Theft: direct pushes to release branches without an associated merged MR fail immediately; removed recent-pipeline guessing fallback.
+- Fail-Closed Missing Candidate Integrity: missing Docker dev image, Helm chart, SBOM, scan report, or declared package fails before production writes; removed unscanned working-tree repackaging fallback in `Chart:Promote`.
+- Failed Upload Masking: removed `allow_failure: true` from `Release:Upload`; release creation strictly requires successful promotions and uploads.
+- Floating Tag Regressions: `Image:Promote` verifies SemVer ordering before updating `latest`, `MAJOR`, and `MINOR` aliases, ensuring older retries do not roll aliases backwards.
+- Image Digest Mutation: `Image:Promote` promotes container images via `crane copy` without label mutation, preserving source digest and configuration.
+- Generic Package Duplication: `Release:Upload` checks SHA256 before uploading to Generic Package Registry, skipping duplicate uploads idempotently.
+- Dotenv Limit Optimization: streamlined `Common:Init` dotenv exports to $\le 16$ core variables.
+
 ## [1.12.0] - 2026-11-01
 
 ### Changed

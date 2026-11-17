@@ -5,6 +5,7 @@ Fast verification pipeline for rapid developer testing without container image b
 ```yaml
 # .gitlab-ci.yml
 variables:
+  RELEASE_VERSION: 1.0.0
   PROJECT_CACHE_KEY: node
 
 include:

@@ -7,6 +7,25 @@ To upgrade, apply every section after your pinned version up to the target, olde
 Newer sections are split into **Required** (the upgrade breaks or misbehaves without it),
 **Recommended** (aligns an existing project with the current standards) and **Verify**.
 
+## 1.13.0
+
+### Required
+
+- **Declarative Package Publishing:** Custom jobs for uploading RC binaries (`Go:Package:Upload:RC`) and promoting stable packages (`Go:Package:Promote`) should be retired. Add `.gitlab/release-packages.yml` and append `!reference [.release-packages-publish-rc, script]` to your existing build job script.
+- **Fail-Closed Release Verification:** Fast-track release now strictly requires an authoritatively verified merged Merge Request. Direct pushes to protected release branches are rejected immediately.
+- **Strict Candidate Integrity:** Missing Docker images, Helm charts, SBOMs, or declared packages will cause the release pipeline to fail before any production writes. The previous fallback of repackaging un-scanned working trees has been removed.
+
+### Recommended
+
+- Remove custom `Common:Init` `after_script` dotenv filtering workarounds. `Common:Init` exports $\le 16$ variables.
+- Remove application binaries from `ADDITIONAL_RELEASE_ARTIFACT` if they are declared in `.gitlab/release-packages.yml` to avoid duplicating packages as release assets.
+
+### Verify
+
+- MR pipelines run `Candidate:Register` in the report stage and publish `candidate.json`.
+- Master release pipelines run `Release:Prepare` and `Release:Transaction` under `resource_group: production-release`.
+- Declarative packages are promoted to stable Generic Packages with matching SHA256 without compiling on master.
+
 ## 1.12.0
 
 ### Required

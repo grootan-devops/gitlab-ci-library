@@ -3,11 +3,11 @@
 ```yaml
 # .gitlab-ci.yml
 variables:
+  RELEASE_VERSION: 1.0.0
   BINARY_NAME: auth-service
   PROJECT_CACHE_KEY: go
   IMAGE_REPOSITORY: myorg/auth
   CHART_REPOSITORY: myorg/helm
-  ADDITIONAL_RELEASE_ARTIFACT: ${BINARY_NAME}
 
 include:
   - remote: 'https://raw.githubusercontent.com/grootan-devops/gitlab-ci-library/<version>/common/.gitlab-ci.yml'
@@ -28,10 +28,12 @@ Project:Build:
     GOPROXY: "off"
   script:
     - go build -trimpath -ldflags "-s -w -X 'main.Version=${TAG}'" -o ${BINARY_NAME} ./cmd/server
+    - !reference [.release-packages-publish-rc, script]
   artifacts:
     name: Binary
     paths:
       - ${PROJECT_PATH}/${BINARY_NAME}
+      - .release/package-metadata-${CI_JOB_ID}.json
 
 Project:Unit:Test:
   extends: .Go:Test:Unit
