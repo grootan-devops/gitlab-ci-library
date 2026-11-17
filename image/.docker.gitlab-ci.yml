@@ -36,6 +36,7 @@ Image:Build:
     - .image-registry-login
     - .image-build-workflow-rules
   script:
+    - export DOCKER_HOST="${DOCKER_HOST%/}"
     - cd ${CI_PROJECT_DIR}
     - cd ${PROJECT_PATH}
     - |
