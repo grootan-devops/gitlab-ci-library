@@ -335,22 +335,42 @@ variables:
     - if: '$CI_PIPELINE_SOURCE =~ /^(web|api)$/ && $WORKFLOW =~ /^(full-pipeline|lint)$/'
     - when: never
 
+.scan-verify-rules:
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event" && ($CI_MERGE_REQUEST_TARGET_BRANCH_NAME == $CI_DEFAULT_BRANCH || ($CI_MERGE_REQUEST_TARGET_BRANCH_NAME =~ $MASTER_BRANCH_REGEX && $CI_MERGE_REQUEST_TARGET_BRANCH_PROTECTED == "true"))'
+      allow_failure:
+        exit_codes:
+          - 2
+    - if: '$CI_PIPELINE_SOURCE == "parent_pipeline"'
+      allow_failure:
+        exit_codes:
+          - 2
+
 .secret-scan-workflow-rules:
   rules:
-    - !reference [.verify-rules, rules]
+    - !reference [.scan-verify-rules, rules]
     - if: '$CI_PIPELINE_SOURCE =~ /^(web|api)$/ && $WORKFLOW =~ /^(full-pipeline|secret-scanning)$/'
+      allow_failure:
+        exit_codes:
+          - 2
     - when: never
 
 .license-scan-workflow-rules:
   rules:
-    - !reference [.verify-rules, rules]
+    - !reference [.scan-verify-rules, rules]
     - if: '$CI_PIPELINE_SOURCE =~ /^(web|api)$/ && $WORKFLOW =~ /^(full-pipeline|license-scanning)$/'
+      allow_failure:
+        exit_codes:
+          - 2
     - when: never
 
 .sbom-scan-workflow-rules:
   rules:
-    - !reference [.verify-rules, rules]
+    - !reference [.scan-verify-rules, rules]
     - if: '$CI_PIPELINE_SOURCE =~ /^(web|api)$/ && $WORKFLOW =~ /^(full-pipeline|sbom-scanning)$/'
+      allow_failure:
+        exit_codes:
+          - 2
     - when: never
 
 .chart-build-workflow-rules:
@@ -361,8 +381,11 @@ variables:
 
 .chart-scan-workflow-rules:
   rules:
-    - !reference [.verify-rules, rules]
+    - !reference [.scan-verify-rules, rules]
     - if: '$CI_PIPELINE_SOURCE =~ /^(web|api)$/ && $WORKFLOW =~ /^(full-pipeline|chart-build-and-push|chart-scan)$/'
+      allow_failure:
+        exit_codes:
+          - 2
     - when: never
 
 .image-build-workflow-rules:
@@ -373,8 +396,11 @@ variables:
 
 .image-scan-workflow-rules:
   rules:
-    - !reference [.verify-rules, rules]
+    - !reference [.scan-verify-rules, rules]
     - if: '$CI_PIPELINE_SOURCE =~ /^(web|api)$/ && $WORKFLOW =~ /^(full-pipeline|image-build-and-push|image-scan)$/'
+      allow_failure:
+        exit_codes:
+          - 2
     - when: never
 
 .build-test-rules:
