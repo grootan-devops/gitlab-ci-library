@@ -1957,34 +1957,51 @@ Common:Init:
           echo "ℹ️ Merge Strategy: Verified MR association for commit ${CI_COMMIT_SHA}."
         fi
 
-        HEAD_PIPE_ID=$(echo "${MR_OBJ}" | jq -r '.head_pipeline.id // empty')
-        HEAD_PIPE_STATUS=$(echo "${MR_OBJ}" | jq -r '.head_pipeline.status // empty')
-        HEAD_PIPE_SHA=$(echo "${MR_OBJ}" | jq -r '.head_pipeline.sha // empty')
-
-        if [[ -n "${HEAD_PIPE_ID}" ]]; then
-          echo "📋 MR !${UPSTREAM_MR_IID} latest verification pipeline is #${HEAD_PIPE_ID} (SHA: ${HEAD_PIPE_SHA}, Status: ${HEAD_PIPE_STATUS})"
-          if [[ "${HEAD_PIPE_STATUS}" != "success" ]]; then
-            echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-            echo "❌ ERROR: The latest verification pipeline (#${HEAD_PIPE_ID}) for MR !${UPSTREAM_MR_IID} has status '${HEAD_PIPE_STATUS}'."
-            echo "Fast-track release strictly refuses promotion when the latest verification pipeline is not successful."
-            echo "Older successful pipelines will NOT be promoted."
-            echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-            exit 1
-          fi
-          UPSTREAM_PIPELINE_ID="${HEAD_PIPE_ID}"
+        # Fetch full MR details by IID to ensure .head_pipeline is populated
+        MR_DETAIL=$(curl --silent --fail --header "JOB-TOKEN: ${CI_JOB_TOKEN}" "${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/merge_requests/${UPSTREAM_MR_IID}" 2>/dev/null || true)
+        if [[ -n "${MR_DETAIL}" ]]; then
+          HEAD_PIPE_ID=$(echo "${MR_DETAIL}" | jq -r '.head_pipeline.id // empty')
+          HEAD_PIPE_STATUS=$(echo "${MR_DETAIL}" | jq -r '.head_pipeline.status // empty')
+          HEAD_PIPE_SHA=$(echo "${MR_DETAIL}" | jq -r '.head_pipeline.sha // empty')
         else
-          PIPES_JSON=$(curl --silent --fail --header "JOB-TOKEN: ${CI_JOB_TOKEN}" "${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/pipelines?sha=${UPSTREAM_MR_SHA}&per_page=5" 2>/dev/null || true)
-          LATEST_STATUS=$(echo "${PIPES_JSON}" | jq -r '.[0].status // empty')
-          LATEST_PIPE_ID=$(echo "${PIPES_JSON}" | jq -r '.[0].id // empty')
-          if [[ "${LATEST_STATUS}" != "success" ]]; then
-            echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-            echo "❌ ERROR: Latest pipeline (#${LATEST_PIPE_ID}) for MR head commit ${UPSTREAM_MR_SHA} has status '${LATEST_STATUS}'."
-            echo "Production release requires successful verification of the exact merged source commit."
-            echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-            exit 1
-          fi
-          UPSTREAM_PIPELINE_ID="${LATEST_PIPE_ID}"
+          HEAD_PIPE_ID=$(echo "${MR_OBJ}" | jq -r '.head_pipeline.id // empty')
+          HEAD_PIPE_STATUS=$(echo "${MR_OBJ}" | jq -r '.head_pipeline.status // empty')
+          HEAD_PIPE_SHA=$(echo "${MR_OBJ}" | jq -r '.head_pipeline.sha // empty')
         fi
+
+        # Fallback to MR-specific pipelines endpoint, explicitly excluding current pipeline
+        if [[ -z "${HEAD_PIPE_ID}" ]]; then
+          MR_PIPES_JSON=$(curl --silent --fail --header "JOB-TOKEN: ${CI_JOB_TOKEN}" "${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/merge_requests/${UPSTREAM_MR_IID}/pipelines" 2>/dev/null || true)
+          HEAD_PIPE_ID=$(echo "${MR_PIPES_JSON}" | jq -r --arg cur "${CI_PIPELINE_ID}" '[.[] | select((.id | tostring) != $cur)][0].id // empty')
+          HEAD_PIPE_STATUS=$(echo "${MR_PIPES_JSON}" | jq -r --arg cur "${CI_PIPELINE_ID}" '[.[] | select((.id | tostring) != $cur)][0].status // empty')
+          HEAD_PIPE_SHA=$(echo "${MR_PIPES_JSON}" | jq -r --arg cur "${CI_PIPELINE_ID}" '[.[] | select((.id | tostring) != $cur)][0].sha // empty')
+        fi
+
+        # Last resort fallback: commit pipelines query, strictly excluding current pipeline
+        if [[ -z "${HEAD_PIPE_ID}" ]]; then
+          PIPES_JSON=$(curl --silent --fail --header "JOB-TOKEN: ${CI_JOB_TOKEN}" "${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/pipelines?sha=${UPSTREAM_MR_SHA}&per_page=10" 2>/dev/null || true)
+          HEAD_PIPE_ID=$(echo "${PIPES_JSON}" | jq -r --arg cur "${CI_PIPELINE_ID}" '[.[] | select((.id | tostring) != $cur)][0].id // empty')
+          HEAD_PIPE_STATUS=$(echo "${PIPES_JSON}" | jq -r --arg cur "${CI_PIPELINE_ID}" '[.[] | select((.id | tostring) != $cur)][0].status // empty')
+        fi
+
+        if [[ -z "${HEAD_PIPE_ID}" ]]; then
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+          echo "❌ ERROR: No verification pipeline found for MR !${UPSTREAM_MR_IID}."
+          echo "Fast-track release strictly requires a successful upstream verification pipeline."
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+          exit 1
+        fi
+
+        echo "📋 MR !${UPSTREAM_MR_IID} latest verification pipeline is #${HEAD_PIPE_ID} (Status: ${HEAD_PIPE_STATUS})"
+        if [[ "${HEAD_PIPE_STATUS}" != "success" ]]; then
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+          echo "❌ ERROR: The latest verification pipeline (#${HEAD_PIPE_ID}) for MR !${UPSTREAM_MR_IID} has status '${HEAD_PIPE_STATUS}'."
+          echo "Fast-track release strictly refuses promotion when the latest verification pipeline is not successful."
+          echo "Older successful pipelines will NOT be promoted."
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+          exit 1
+        fi
+        UPSTREAM_PIPELINE_ID="${HEAD_PIPE_ID}"
 
         DEV_CANDIDATE_RC_SUFFIX="-rc.${UPSTREAM_PIPELINE_ID}-${UPSTREAM_MR_IID}"
         DEV_CANDIDATE_VERSION="${RELEASE_VERSION}${DEV_CANDIDATE_RC_SUFFIX}"

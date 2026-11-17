@@ -233,6 +233,77 @@ Release:Prepare:
               exit 1
             fi
             echo "✅ Candidate manifest verified for version ${TAG}."
+          - |
+            echo "🔍 Preflight: Verifying candidate deliverables before executing promotion..."
+
+            # 1. Preflight Container Image
+            DOCKER_ENABLED=$(jq -r '.artifacts.docker.enabled // false' candidate.json)
+            if [[ "${DOCKER_ENABLED}" == "true" ]]; then
+              DEV_IMAGE=$(jq -r '.artifacts.docker.dev_repository // empty' candidate.json 2>/dev/null)
+              if [[ -z "${DEV_IMAGE}" ]]; then
+                DEV_IMAGE="${IMAGE_REGISTRY}/${IMAGE_REPOSITORY}${IMAGE_DEV_REPOSITORY_SUFFIX}"
+              fi
+              RC_TAG=$(jq -r '.artifacts.docker.rc_tag' candidate.json)
+              EXP_DIGEST=$(jq -r '.artifacts.docker.digest' candidate.json)
+              DEV_IMAGE_SRC="${DEV_IMAGE}:${RC_TAG}"
+
+              REGISTRY_USER="${IMAGE_REGISTRY_USERNAME:-${CI_REGISTRY_USER:-gitlab-ci-token}}"
+              REGISTRY_PASS="${IMAGE_REGISTRY_PASSWORD:-${CI_REGISTRY_PASSWORD:-${CI_JOB_TOKEN}}}"
+              if [[ -n "${IMAGE_REGISTRY}" && -n "${REGISTRY_USER}" && -n "${REGISTRY_PASS}" ]]; then
+                crane auth login -u "${REGISTRY_USER}" -p "${REGISTRY_PASS}" "${IMAGE_REGISTRY}" >/dev/null 2>&1 || true
+              fi
+
+              if ! crane manifest "${DEV_IMAGE_SRC}" > /dev/null 2>&1; then
+                echo "❌ PREFLIGHT ERROR: Candidate image '${DEV_IMAGE_SRC}' does not exist in registry!"
+                exit 1
+              fi
+              ACT_DIGEST=$(crane digest "${DEV_IMAGE_SRC}" 2>/dev/null || true)
+              if [[ -n "${EXP_DIGEST}" && "${ACT_DIGEST}" != "${EXP_DIGEST}" ]]; then
+                echo "❌ PREFLIGHT ERROR: Candidate image digest mismatch (${ACT_DIGEST} vs expected ${EXP_DIGEST})!"
+                exit 1
+              fi
+              echo "   ✅ Preflight: Candidate image verified (${ACT_DIGEST})."
+            fi
+
+            # 2. Preflight Helm Chart
+            HELM_ENABLED=$(jq -r '.artifacts.helm.enabled // false' candidate.json)
+            if [[ "${HELM_ENABLED}" == "true" ]]; then
+              CHART_NAME=$(jq -r '.artifacts.helm.chart_name' candidate.json)
+              RC_CHART_VER=$(jq -r '.artifacts.helm.rc_version' candidate.json)
+              CHART_FOUND=false
+              for CHANNEL in "dev" "stable"; do
+                CHART_CHECK=$(curl --silent --head --write-out "%{http_code}" --output /dev/null -u "gitlab-ci-token:${CI_JOB_TOKEN}" --header "JOB-TOKEN: ${CI_JOB_TOKEN}" "${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/packages/helm/${CHANNEL}/charts/${CHART_NAME}-${RC_CHART_VER}.tgz" || true)
+                if [[ "${CHART_CHECK}" == "200" ]]; then
+                  CHART_FOUND=true
+                  break
+                fi
+              done
+              if [[ "${CHART_FOUND}" != "true" ]]; then
+                echo "❌ PREFLIGHT ERROR: Candidate Helm chart '${CHART_NAME}-${RC_CHART_VER}.tgz' not found in registry (dev or stable)!"
+                exit 1
+              fi
+              echo "   ✅ Preflight: Candidate Helm chart '${CHART_NAME}-${RC_CHART_VER}.tgz' verified."
+            fi
+
+            # 3. Preflight Generic Packages
+            PKG_COUNT=$(jq '.artifacts.packages | length' candidate.json 2>/dev/null || echo "0")
+            for ((i=0; i<PKG_COUNT; i++)); do
+              P_NAME=$(jq -r ".artifacts.packages[$i].package" candidate.json)
+              P_FILE=$(jq -r ".artifacts.packages[$i].filename" candidate.json)
+              P_REQ=$(jq -r ".artifacts.packages[$i].required // true" candidate.json)
+              P_URL=$(jq -r ".artifacts.packages[$i].source_url" candidate.json)
+              if [[ -n "${P_URL}" ]]; then
+                PKG_CHECK=$(curl --silent --head --write-out "%{http_code}" --output /dev/null --header "JOB-TOKEN: ${CI_JOB_TOKEN}" "${P_URL}" || true)
+                if [[ "${PKG_CHECK}" != "200" ]]; then
+                  echo "❌ PREFLIGHT ERROR: Candidate package '${P_FILE}' not found at ${P_URL} (HTTP ${PKG_CHECK})!"
+                  if [[ "${P_REQ}" == "true" ]]; then
+                    exit 1
+                  fi
+                fi
+              fi
+            done
+            echo "   ✅ Preflight: All candidate generic packages verified."
+            echo "🎉 All candidate deliverables preflighted successfully. Proceeding to promotion stage."
         artifacts:
           when: on_success
           paths:
@@ -240,6 +311,7 @@ Release:Prepare:
 
       Image:Promote:
         stage: promote
+        resource_group: production-release
         image: ${TOOLKIT_BUILD_IMAGE_REPO}:${TOOLKIT_BUILD_IMAGE_TAG}
         needs:
           - job: Release:Verify
@@ -344,6 +416,7 @@ Release:Prepare:
 
       Chart:Promote:
         stage: promote
+        resource_group: production-release
         image: ${TOOLKIT_BUILD_IMAGE_REPO}:${TOOLKIT_BUILD_IMAGE_TAG}
         needs:
           - job: Release:Verify
@@ -412,6 +485,7 @@ Release:Prepare:
 
       Release:Packages:Promote:
         stage: promote
+        resource_group: production-release
         image: ${TOOLKIT_BUILD_IMAGE_REPO}:${TOOLKIT_BUILD_IMAGE_TAG}
         needs:
           - job: Release:Verify
