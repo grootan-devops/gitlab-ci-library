@@ -50,7 +50,7 @@
     DOCKER_BUILDKIT: 1
   services:
     - name: ${DOCKER_DIND_IMAGE_REPO}:${DOCKER_DIND_IMAGE_TAG}
-      entrypoint: ["dockerd-entrypoint.sh", "--tls=false"]
+      entrypoint: ["dockerd-entrypoint.sh", "--tls=false", "--bip=172.28.0.1/16"]
       alias: docker
 
 .Image:Test:
