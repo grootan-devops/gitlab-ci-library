@@ -399,7 +399,7 @@ Release:Prepare:
             fi
 
             echo "🚀 Publishing stable chart package ${STABLE_TGZ}..."
-            HTTP_CODE=$(curl --silent --show-error --write-out "%{http_code}" --output /dev/null --request POST --header "JOB-TOKEN: ${CI_JOB_TOKEN}" --form "chart=@${STABLE_TGZ}" "${STABLE_URL}")
+            HTTP_CODE=$(curl --silent --show-error --write-out "%{http_code}" --output /dev/null --request POST -u "gitlab-ci-token:${CI_JOB_TOKEN}" --header "JOB-TOKEN: ${CI_JOB_TOKEN}" --form "chart=@${STABLE_TGZ}" "${STABLE_URL}")
             if [[ "${HTTP_CODE}" != "200" && "${HTTP_CODE}" != "201" ]]; then
               echo "❌ ERROR: Failed to publish stable chart ${STABLE_TGZ} (HTTP ${HTTP_CODE})."
               exit 1
