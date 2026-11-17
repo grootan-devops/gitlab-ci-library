@@ -153,7 +153,27 @@ Release:Prepare:
       CANDIDATE_URL="${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/packages/generic/candidates/${RELEASE_VERSION}/${CANDIDATE_FILE_NAME}"
       echo "📥 Downloading candidate manifest from ${CANDIDATE_URL}..."
       if ! curl --silent --fail --location --header "JOB-TOKEN: ${CI_JOB_TOKEN}" -o candidate.json "${CANDIDATE_URL}"; then
-        echo "ℹ️ Candidate not found under grouped path, checking legacy candidate path..."
+        echo "ℹ️ Candidate not found at ${CANDIDATE_URL}, querying package registry files for release ${RELEASE_VERSION}..."
+        PKG_ID=$(curl --silent --fail --header "JOB-TOKEN: ${CI_JOB_TOKEN}" \
+          "${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/packages?package_name=candidates&package_version=${RELEASE_VERSION}" | jq -r '.[0].id // empty')
+        if [[ -n "${PKG_ID}" ]]; then
+          PKG_FILES=$(curl --silent --fail --header "JOB-TOKEN: ${CI_JOB_TOKEN}" \
+            "${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/packages/${PKG_ID}/package_files")
+          MATCHED_FILE=$(echo "${PKG_FILES}" | jq -r --arg pipe "${UPSTREAM_PIPELINE_ID}" --arg mr "${MR_IID}" '
+            [.[] | select(.file_name | test("^candidate-.*\\.json$"))] |
+            (map(select(.file_name | contains($pipe)))[0].file_name) //
+            (map(select(.file_name | contains($mr)))[0].file_name) //
+            (sort_by(.created_at) | reverse | .[0].file_name) // empty
+          ')
+          if [[ -n "${MATCHED_FILE}" ]]; then
+            echo "   Found matching candidate file in package: ${MATCHED_FILE}"
+            RESOLVED_URL="${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/packages/generic/candidates/${RELEASE_VERSION}/${MATCHED_FILE}"
+            curl --silent --fail --location --header "JOB-TOKEN: ${CI_JOB_TOKEN}" -o candidate.json "${RESOLVED_URL}" || true
+          fi
+        fi
+      fi
+      if [[ ! -s candidate.json ]]; then
+        echo "ℹ️ Checking legacy candidate path..."
         LEGACY_URL="${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/packages/generic/candidates/${DEV_CANDIDATE_VERSION}/candidate.json"
         if ! curl --silent --fail --location --header "JOB-TOKEN: ${CI_JOB_TOKEN}" -o candidate.json "${LEGACY_URL}"; then
           echo "❌ ERROR: Candidate manifest '${CANDIDATE_FILE_NAME}' not found for version '${DEV_CANDIDATE_VERSION}'."
