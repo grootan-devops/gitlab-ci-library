@@ -311,7 +311,6 @@ Release:Prepare:
 
       Image:Promote:
         stage: promote
-        resource_group: production-release
         image: ${TOOLKIT_BUILD_IMAGE_REPO}:${TOOLKIT_BUILD_IMAGE_TAG}
         needs:
           - job: Release:Verify
@@ -416,7 +415,6 @@ Release:Prepare:
 
       Chart:Promote:
         stage: promote
-        resource_group: production-release
         image: ${TOOLKIT_BUILD_IMAGE_REPO}:${TOOLKIT_BUILD_IMAGE_TAG}
         needs:
           - job: Release:Verify
@@ -485,7 +483,6 @@ Release:Prepare:
 
       Release:Packages:Promote:
         stage: promote
-        resource_group: production-release
         image: ${TOOLKIT_BUILD_IMAGE_REPO}:${TOOLKIT_BUILD_IMAGE_TAG}
         needs:
           - job: Release:Verify
