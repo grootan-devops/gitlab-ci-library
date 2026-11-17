@@ -752,12 +752,17 @@ Trivy:Cache:Warm:
         local CONFIG_PATH
         CONFIG_PATH=$(get_ignore_config_path)
 
-        if [[ ! -f "${TRIVY_IGNORE_CONFIG_FILE}" ]]; then
+        local IGNORE_FILE="${TRIVY_IGNORE_CONFIG_FILE}"
+        if [[ ! -f "${IGNORE_FILE}" && -f "${CI_PROJECT_DIR}/${TRIVY_IGNORE_CONFIG_FILE}" ]]; then
+          IGNORE_FILE="${CI_PROJECT_DIR}/${TRIVY_IGNORE_CONFIG_FILE}"
+        fi
+
+        if [[ ! -f "${IGNORE_FILE}" ]]; then
           log_warn "Ignore file not found: ${TRIVY_IGNORE_CONFIG_FILE}"
           touch "${IGNORED_ITEMS_FILE}"
           return
         fi
-        log_info "Loading ignored items from: ${CONFIG_PATH}"
+        log_info "Loading ignored items from: ${CONFIG_PATH} in ${IGNORE_FILE}"
         while IFS= read -r LINE; do
           local ITEM_NAME ITEM_PKG ITEM_REASON KEY
           ITEM_NAME=$(jq -r 'fromjson | .id' <<< "${LINE}")
@@ -779,7 +784,7 @@ Trivy:Cache:Warm:
               fi
             fi
           fi
-        done < <(yq -o=json ".${CONFIG_PATH}[] | @json" "${TRIVY_IGNORE_CONFIG_FILE}")
+        done < <(yq -o=json ".${CONFIG_PATH}[] | @json" "${IGNORE_FILE}")
         sort -u "${IGNORED_ITEMS_FILE}" -o "${IGNORED_ITEMS_FILE}"
         log_info "Loaded $(wc -l < "${IGNORED_ITEMS_FILE}") ignored items"
       }
@@ -1416,6 +1421,9 @@ Trivy:Cache:Warm:
       auto_generate_detected_findings() {
         local SCAN_JSON="./${TRIVY_SCAN_REPORT_NAME}.json"
         local IGNORE_FILE="./${TRIVY_IGNORE_CONFIG_FILE}"
+        if [[ ! -f "${IGNORE_FILE}" && -f "${CI_PROJECT_DIR}/${TRIVY_IGNORE_CONFIG_FILE}" ]]; then
+          IGNORE_FILE="${CI_PROJECT_DIR}/${TRIVY_IGNORE_CONFIG_FILE}"
+        fi
         local OUTPUT="/tmp/generated-${TRIVY_IGNORE_CONFIG_FILE}"
         local EXISTING_IGNORED=""
         local NEW_FIXABLE=""
@@ -1699,6 +1707,10 @@ Trivy:Cache:Warm:
           }' > "${METADATA_FILE}"
 
         echo "📋 Emitted package metadata to ${METADATA_FILE}"
+        if [[ -n "${PROJECT_PATH}" && -d ".release" ]]; then
+          mkdir -p "${CI_PROJECT_DIR}/.release"
+          cp -r .release/* "${CI_PROJECT_DIR}/.release/" 2>/dev/null || true
+        fi
       fi
 
 .release-project-promotion-rules:
@@ -2193,11 +2205,16 @@ Candidate:Register:
       fi
     - |
       mkdir -p .release
+      if [[ -n "${PROJECT_PATH}" && -d "${PROJECT_PATH}/.release" ]]; then
+        cp -r "${PROJECT_PATH}"/.release/* .release/ 2>/dev/null || true
+      fi
       METADATA_FILES=( .release/package-metadata-*.json )
       if [[ ! -f "${METADATA_FILES[0]}" && -n "${PIPELINE_JOBS:-}" ]]; then
         for JID in $(echo "${PIPELINE_JOBS}" | jq -r '.[].id // empty'); do
           curl --silent --fail --header "JOB-TOKEN: ${CI_JOB_TOKEN}" -o ".release/package-metadata-${JID}.json" \
-            "${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/jobs/${JID}/artifacts/.release/package-metadata-${JID}.json" 2>/dev/null || true
+            "${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/jobs/${JID}/artifacts/.release/package-metadata-${JID}.json" 2>/dev/null || \
+          curl --silent --fail --header "JOB-TOKEN: ${CI_JOB_TOKEN}" -o ".release/package-metadata-${JID}.json" \
+            "${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/jobs/${JID}/artifacts/${PROJECT_PATH}/.release/package-metadata-${JID}.json" 2>/dev/null || true
         done
       fi
 
