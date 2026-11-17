@@ -171,7 +171,10 @@ Chart:Check Existence:
       fi
       : "${RESOLVED_CHART_NAME:?Chart name is required}"
       chart_registry_setup
-      CHECK_VERSION="${CHART_RELEASE_VERSION:-}"
+      CHECK_VERSION="${CHART_RELEASE_VERSION:-${RELEASE_VERSION:-}}"
+      if [[ -z "${CHECK_VERSION}" && -f "${CHART_DIR}/${CHART_FILE}" ]]; then
+        CHECK_VERSION=$(yq eval '.version // ""' "${CHART_DIR}/${CHART_FILE}")
+      fi
       CHECK_REPO="${PROD_CHART_REPO}"
       if [[ "${WORKFLOW:-}" == "chart-scan" ]]; then
         CHECK_VERSION="${TARGET_VERSION:?TARGET_VERSION is required for a remote scan}"

@@ -1569,7 +1569,7 @@ Trivy:Cache:Warm:
           exit 1
         fi
 
-        SCHEMA_VER=$(yq eval '.schema // empty' "${RELEASE_PACKAGES_FILE}")
+        SCHEMA_VER=$(yq eval '.schema' "${RELEASE_PACKAGES_FILE}")
         if [[ "${SCHEMA_VER}" != "1" ]]; then
           echo "❌ ERROR: Unsupported schema version '${SCHEMA_VER}' in ${RELEASE_PACKAGES_FILE}. Expected schema: 1"
           exit 1
@@ -2009,12 +2009,14 @@ Common:Init:
         CHART_PUSH_VERSION=${CHART_RELEASE_VERSION}${RC_VERSION_SUFFIX}
         CHART_NAME=$(yq eval .name "${CHART_DIR}/${CHART_FILE}")
         echo "CHART_NAME=${CHART_NAME}" >> init.env
+        echo "CHART_RELEASE_VERSION=${CHART_RELEASE_VERSION}" >> init.env
         echo "CHART_PUSH_VERSION=${CHART_PUSH_VERSION}" >> init.env
       elif [[ -f ${CHART_DIR}/${CHART_FILE} ]]; then
         CHART_NAME=$(yq eval .name "${CHART_DIR}/${CHART_FILE}")
         CHART_RELEASE_VERSION=$(yq eval .version "${CHART_DIR}/${CHART_FILE}")
         CHART_PUSH_VERSION=${CHART_RELEASE_VERSION}${RC_VERSION_SUFFIX}
         echo "CHART_NAME=${CHART_NAME}" >> init.env
+        echo "CHART_RELEASE_VERSION=${CHART_RELEASE_VERSION}" >> init.env
         echo "CHART_PUSH_VERSION=${CHART_PUSH_VERSION}" >> init.env
         if [[ ${CI_PIPELINE_SOURCE} != "parent_pipeline" || -z ${PARENT_CI_PIPELINE_ID} ]]; then
           if [[ -f ./Dockerfile ]]; then
