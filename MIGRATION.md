@@ -12,8 +12,8 @@ Newer sections are split into **Required** (the upgrade breaks or misbehaves wit
 ### Required
 
 - **Declarative Package Publishing:** Custom jobs for uploading RC binaries (`Go:Package:Upload:RC`) and promoting stable packages (`Go:Package:Promote`) should be retired. Add `.gitlab/release-packages.yml` and append `!reference [.release-packages-publish-rc, script]` to your existing build job script.
-- **Fail-Closed Release Verification:** Fast-track release now strictly requires an authoritatively verified merged Merge Request. Direct pushes to protected release branches are rejected immediately.
-- **Strict Candidate Integrity:** Missing Docker images, Helm charts, SBOMs, or declared packages will cause the release pipeline to fail before any production writes. The previous fallback of repackaging un-scanned working trees has been removed.
+- **Fail-Closed Release Verification:** Fast-track release now strictly requires an authoritatively verified merged Merge Request. Direct pushes to protected release branches are rejected immediately. Supports Merge Commit, Squash Merge, and Fast-Forward Merge strategies.
+- **Strict Candidate Integrity & Preflight Probes:** Missing Docker images, Helm charts, SBOMs, or declared packages will cause the release pipeline to fail during preflight before any production writes. The previous fallback of repackaging un-scanned working trees has been removed.
 
 ### Recommended
 
