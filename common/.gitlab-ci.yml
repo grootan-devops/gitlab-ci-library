@@ -1997,13 +1997,32 @@ Common:Init:
           exit 1
         fi
         UPSTREAM_PIPELINE_ID="${HEAD_PIPE_ID}"
-        BRIDGES_JSON=$(curl --silent --fail --header "JOB-TOKEN: ${CI_JOB_TOKEN}" "${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/pipelines/${HEAD_PIPE_ID}/bridges" 2>/dev/null || true)
-        CHILD_PIPE_ID=$(echo "${BRIDGES_JSON}" | jq -r --arg name "${CI_JOB_NAME:-backend}" '[.[] | select(.downstream_pipeline != null and (.name == $name or .name == "backend"))][0].downstream_pipeline.id // empty')
+        CURRENT_BRIDGE_NAME=""
+        if [[ -n "${CI_PARENT_PIPELINE_ID:-}" ]]; then
+          CURRENT_BRIDGE_NAME=$(curl --silent --fail --header "JOB-TOKEN: ${CI_JOB_TOKEN}" \
+            "${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/pipelines/${CI_PARENT_PIPELINE_ID}/bridges" 2>/dev/null | jq -r --arg child_id "${CI_PIPELINE_ID}" '
+            [.[] | select(.downstream_pipeline != null and .downstream_pipeline.id == ($child_id | tonumber))] | .[0].name // empty
+          ' 2>/dev/null || true)
+        fi
+        if [[ -z "${CURRENT_BRIDGE_NAME}" ]]; then
+          CURRENT_BRIDGE_NAME="${SERVICE_NAME:-${PROJECT_NAME:-$(basename "${PROJECT_PATH:-}")}}"
+        fi
+
+        CHILD_PIPE_ID=""
+        if [[ -n "${CURRENT_BRIDGE_NAME}" ]]; then
+          CHILD_PIPE_ID=$(curl --silent --fail --header "JOB-TOKEN: ${CI_JOB_TOKEN}" \
+            "${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/pipelines/${HEAD_PIPE_ID}/bridges" 2>/dev/null | jq -r --arg name "${CURRENT_BRIDGE_NAME}" '
+            [.[] | select(.downstream_pipeline != null and .name == $name)] | .[0].downstream_pipeline.id // empty
+          ' 2>/dev/null || true)
+        fi
         if [[ -z "${CHILD_PIPE_ID}" ]]; then
-          CHILD_PIPE_ID=$(echo "${BRIDGES_JSON}" | jq -r '[.[] | select(.downstream_pipeline != null)][0].downstream_pipeline.id // empty')
+          CHILD_PIPE_ID=$(curl --silent --fail --header "JOB-TOKEN: ${CI_JOB_TOKEN}" \
+            "${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/pipelines/${HEAD_PIPE_ID}/bridges" 2>/dev/null | jq -r '
+            [.[] | select(.downstream_pipeline != null)][0].downstream_pipeline.id // empty
+          ' 2>/dev/null || true)
         fi
         if [[ -n "${CHILD_PIPE_ID}" ]]; then
-          echo "ℹ️ Identified downstream child verification pipeline #${CHILD_PIPE_ID} from parent bridge #${HEAD_PIPE_ID}."
+          echo "ℹ️ Identified downstream child verification pipeline #${CHILD_PIPE_ID} for service '${CURRENT_BRIDGE_NAME}' from parent bridge #${HEAD_PIPE_ID}."
           UPSTREAM_PIPELINE_ID="${CHILD_PIPE_ID}"
         fi
 
