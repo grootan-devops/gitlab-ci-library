@@ -180,7 +180,7 @@ Release:Prepare:
         echo "  RELEASE_VERSION: \"${RELEASE_VERSION}\""
         echo "  MR_IID: \"${MR_IID}\""
         echo "  CHART_NAME: \"${CHART_NAME}\""
-        echo "  IMAGE_REPOSITORY: \"${IMAGE_REPOSITORY}\""
+        echo "  IMAGE_REPOSITORY: \"${IMAGE_REPOSITORY:-${CI_PROJECT_PATH}}\""
         echo "  IMAGE_REGISTRY: \"${IMAGE_REGISTRY}\""
         echo "  IMAGE_DEV_REPOSITORY_SUFFIX: \"${IMAGE_DEV_REPOSITORY_SUFFIX}\""
         echo "  RELEASE_FLOATING_TAGS: \"${RELEASE_FLOATING_TAGS:-true}\""
@@ -244,8 +244,16 @@ Release:Prepare:
           - job: Release:Verify
             artifacts: true
         script:
-          - DEV_IMAGE="${IMAGE_REGISTRY}/${IMAGE_REPOSITORY}${IMAGE_DEV_REPOSITORY_SUFFIX}"
-          - PROD_IMAGE="${IMAGE_REGISTRY}/${IMAGE_REPOSITORY}"
+          - |
+            IMAGE_REPOSITORY="${IMAGE_REPOSITORY:-$(jq -r '.project_path // empty' candidate.json 2>/dev/null || echo "${CI_PROJECT_PATH}")}"
+            if [[ -z "${IMAGE_REGISTRY}" ]]; then
+              IMAGE_REGISTRY="${CI_REGISTRY}"
+            fi
+            DEV_IMAGE=$(jq -r '.artifacts.docker.dev_repository // empty' candidate.json 2>/dev/null)
+            if [[ -z "${DEV_IMAGE}" ]]; then
+              DEV_IMAGE="${IMAGE_REGISTRY}/${IMAGE_REPOSITORY}${IMAGE_DEV_REPOSITORY_SUFFIX}"
+            fi
+            PROD_IMAGE="${IMAGE_REGISTRY}/${IMAGE_REPOSITORY}"
           - |
             DOCKER_ENABLED=$(jq -r '.artifacts.docker.enabled // false' candidate.json)
             if [[ "${DOCKER_ENABLED}" != "true" ]]; then
@@ -348,7 +356,7 @@ Release:Prepare:
             echo "🔍 Promoting Helm chart ${CHART_NAME}:${TAG} from RC ${RC_CHART_VER}..."
 
             TEMP_CHART=$(mktemp)
-            if ! curl --silent --fail --location --header "JOB-TOKEN: ${CI_JOB_TOKEN}" -o "${TEMP_CHART}" "${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/packages/helm/${RC_CHART_VER}/${CHART_NAME}-${RC_CHART_VER}.tgz"; then
+            if ! curl --silent --fail --location -u "gitlab-ci-token:${CI_JOB_TOKEN}" --header "JOB-TOKEN: ${CI_JOB_TOKEN}" -o "${TEMP_CHART}" "${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/packages/helm/stable/charts/${CHART_NAME}-${RC_CHART_VER}.tgz"; then
               echo "❌ ERROR: Candidate Helm package '${CHART_NAME}-${RC_CHART_VER}.tgz' not found in registry."
               exit 1
             fi
@@ -371,10 +379,10 @@ Release:Prepare:
 
             # Check if stable chart already exists
             STABLE_URL="${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/packages/helm/api/stable/charts"
-            CHECK_HTTP=$(curl --silent --head --write-out "%{http_code}" --output /dev/null --header "JOB-TOKEN: ${CI_JOB_TOKEN}" "${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/packages/helm/${TAG}/${CHART_NAME}-${TAG}.tgz" || true)
+            CHECK_HTTP=$(curl --silent --head --write-out "%{http_code}" --output /dev/null -u "gitlab-ci-token:${CI_JOB_TOKEN}" --header "JOB-TOKEN: ${CI_JOB_TOKEN}" "${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/packages/helm/stable/charts/${CHART_NAME}-${TAG}.tgz" || true)
             if [[ "${CHECK_HTTP}" == "200" ]]; then
               CHECK_TEMP=$(mktemp)
-              curl --silent --fail --header "JOB-TOKEN: ${CI_JOB_TOKEN}" -o "${CHECK_TEMP}" "${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/packages/helm/${TAG}/${CHART_NAME}-${TAG}.tgz" || true
+              curl --silent --fail -u "gitlab-ci-token:${CI_JOB_TOKEN}" --header "JOB-TOKEN: ${CI_JOB_TOKEN}" -o "${CHECK_TEMP}" "${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/packages/helm/stable/charts/${CHART_NAME}-${TAG}.tgz" || true
               EXISTING_SHA=$(sha256sum "${CHECK_TEMP}" | cut -d' ' -f1 || true)
               rm -f "${CHECK_TEMP}"
               if [[ "${EXISTING_SHA}" == "${STABLE_SHA}" ]]; then
