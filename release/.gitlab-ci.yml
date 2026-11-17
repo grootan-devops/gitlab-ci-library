@@ -926,6 +926,8 @@ Release:Prepare:
             - message.json
       CHILDEOF
       echo "✅ Generated serialized child release pipeline specification."
+      cp candidate.json "${CI_PROJECT_DIR}/candidate.json" 2>/dev/null || true
+      cp release-pipeline.yml "${CI_PROJECT_DIR}/release-pipeline.yml" 2>/dev/null || true
   artifacts:
     name: Release Pipeline Specification
     when: on_success
@@ -933,8 +935,12 @@ Release:Prepare:
     paths:
       - candidate.json
       - release-pipeline.yml
+      - ${PROJECT_PATH}/candidate.json
+      - ${PROJECT_PATH}/release-pipeline.yml
       - ${RELEASE_CHANGELOG_FILE_NAME:-RELEASE_CHANGELOG.md}
       - ${RELEASE_CHANGELOG_CARD_FILE_NAME:-RELEASE_CHANGELOG_CARD.json}
+      - ${PROJECT_PATH}/${RELEASE_CHANGELOG_FILE_NAME:-RELEASE_CHANGELOG.md}
+      - ${PROJECT_PATH}/${RELEASE_CHANGELOG_CARD_FILE_NAME:-RELEASE_CHANGELOG_CARD.json}
 
 # Downstream trigger holding the release transaction lock
 Release:Transaction:

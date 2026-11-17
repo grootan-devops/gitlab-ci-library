@@ -2296,12 +2296,14 @@ Candidate:Register:
         exit 1
       fi
       echo "✅ Candidate manifest registered successfully."
+      cp candidate.json "${CI_PROJECT_DIR}/candidate.json" 2>/dev/null || true
   artifacts:
     name: Candidate Manifest
     when: always
     expire_in: 1 week
     paths:
       - candidate.json
+      - ${PROJECT_PATH}/candidate.json
 
 Changelog:Lint:
   variables:
