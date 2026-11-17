@@ -407,8 +407,6 @@ Common:Check:Library:Pin:
   extends:
     - .check-job-common
     - .skip-on-master-rules
-  variables:
-    ALLOW_UNSTABLE_LIBRARY_REFS: "${ALLOW_UNSTABLE_LIBRARY_REFS:-false}"
   script:
     - CI_FILE=".gitlab-ci.yml"
     - |
