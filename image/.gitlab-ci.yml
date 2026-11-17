@@ -236,7 +236,7 @@ Image:Promote:
     - >
       echo "📦 Found verified candidate dev image: ${DEV_IMAGE_SRC}"
     - DEV_DIGEST=$(crane digest "${DEV_IMAGE_SRC}")
-    - echo "   Candidate Digest: ${DEV_DIGEST}"
+    - 'echo "   Candidate Digest: ${DEV_DIGEST}"'
     - |
       # Check if production tag already exists with matching or conflicting digest
       PROD_EXISTS=false
