@@ -189,6 +189,7 @@ Release:Prepare:
         echo "  ADDITIONAL_RELEASE_ARTIFACT: \"${ADDITIONAL_RELEASE_ARTIFACT}\""
         echo "  CONSOLIDATED_RELEASE_CHANGELOG_FILE_NAME: \"${CONSOLIDATED_RELEASE_CHANGELOG_FILE_NAME:-CONSOLIDATED_RELEASE_CHANGELOG.md}\""
         echo "  CONSOLIDATED_README_FILE_NAME: \"${CONSOLIDATED_README_FILE_NAME:-CONSOLIDATED_README.md}\""
+        echo "  INJECT_CHART_PROMOTE_FAILURE: \"${INJECT_CHART_PROMOTE_FAILURE:-false}\""
         echo ""
       } > release-pipeline.yml
       cat << 'CHILDEOF' >> release-pipeline.yml
@@ -425,6 +426,11 @@ Release:Prepare:
             if [[ "${HELM_ENABLED}" != "true" ]]; then
               echo "ℹ️ Helm promotion not enabled in candidate manifest. Skipping."
               exit 0
+            fi
+
+            if [[ "${INJECT_CHART_PROMOTE_FAILURE}" == "true" ]]; then
+              echo "💥 INJECTED FAILURE: Chart:Promote simulated crash for release recovery test."
+              exit 1
             fi
 
             CHART_NAME=$(jq -r '.artifacts.helm.chart_name' candidate.json)
