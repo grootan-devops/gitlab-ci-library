@@ -663,4 +663,4 @@ Release:Transaction:
     strategy: depend
     forward:
       yaml_variables: true
-      pipeline_variables: true
+      pipeline_variables: false

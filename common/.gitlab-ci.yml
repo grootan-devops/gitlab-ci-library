@@ -1790,6 +1790,13 @@ workflow:
         on_new_commit: none
         on_job_failure: none
 
+    - if: '$CI_PIPELINE_SOURCE =~ /^(web|api)$/ && $WORKFLOW == "release"'
+      variables:
+        PIPELINE_NAME: "🚀 Production Release"
+      auto_cancel:
+        on_new_commit: none
+        on_job_failure: none
+
     - if: '$CI_PIPELINE_SOURCE =~ /^(web|api)$/ && $WORKFLOW == "deploy" && $TARGET_VERSION'
       variables:
         PIPELINE_NAME: "▶️ Deploy v${TARGET_VERSION} to ${DEPLOY_TARGET}"
@@ -1880,17 +1887,20 @@ Common:Init:
         docker.io|index.docker.io|registry-1.docker.io) IMAGE_DEV_REPOSITORY_SUFFIX="${IMAGE_DEV_REPOSITORY_SUFFIX//\//-}" ;;
       esac
     - |
-      if [[ "${CI_PIPELINE_SOURCE}" =~ ^(web|api)$ && ("${CI_COMMIT_BRANCH}" == "${CI_DEFAULT_BRANCH}" || ("${CI_COMMIT_REF_NAME}" =~ ${MASTER_BRANCH_PATTERN} && "${CI_COMMIT_REF_PROTECTED}" == "true")) ]]; then
-        if [[ "${WORKFLOW}" == "release" && -n "${TARGET_VERSION}" ]]; then
-          echo "ℹ️ Explicit historical re-release workflow for target version ${TARGET_VERSION}."
-          RC_VERSION_SUFFIX=""
-          export IMAGE_REPOSITORY_SUFFIX=
-        else
-          RC_VERSION_SUFFIX=-rc.${CI_PIPELINE_ID}
-          echo "⚠️  Manual trigger on protected master branch — forcing RC image suffix to prevent stable image overwrite."
-          export IMAGE_REPOSITORY_SUFFIX=${IMAGE_DEV_REPOSITORY_SUFFIX}
-        fi
-      elif [[ (${CI_COMMIT_BRANCH} == ${CI_DEFAULT_BRANCH}) || (${CI_COMMIT_REF_NAME} =~ ${MASTER_BRANCH_PATTERN} && ${CI_COMMIT_REF_PROTECTED} == "true") ]]; then
+      IS_PROTECTED_MASTER=false
+      if [[ ("${CI_COMMIT_BRANCH}" == "${CI_DEFAULT_BRANCH}") || ("${CI_COMMIT_REF_NAME}" =~ ${MASTER_BRANCH_PATTERN} && "${CI_COMMIT_REF_PROTECTED}" == "true") ]]; then
+        IS_PROTECTED_MASTER=true
+      fi
+
+      if [[ "${IS_PROTECTED_MASTER}" == "true" && "${WORKFLOW}" == "release" && -n "${TARGET_VERSION}" ]]; then
+        echo "ℹ️ Explicit historical re-release workflow for target version ${TARGET_VERSION}."
+        RC_VERSION_SUFFIX=""
+        export IMAGE_REPOSITORY_SUFFIX=
+      elif [[ "${IS_PROTECTED_MASTER}" == "true" && "${CI_PIPELINE_SOURCE}" =~ ^(web|api)$ && "${WORKFLOW}" != "release" ]]; then
+        RC_VERSION_SUFFIX=-rc.${CI_PIPELINE_ID}
+        echo "⚠️  Manual trigger on protected master branch without WORKFLOW='release' — forcing RC image suffix to prevent stable image overwrite."
+        export IMAGE_REPOSITORY_SUFFIX=${IMAGE_DEV_REPOSITORY_SUFFIX}
+      elif [[ "${IS_PROTECTED_MASTER}" == "true" ]]; then
         RC_VERSION_SUFFIX=""
         export IMAGE_REPOSITORY_SUFFIX=
         UPSTREAM_MR_IID=""
