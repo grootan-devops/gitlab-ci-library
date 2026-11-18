@@ -644,7 +644,7 @@ Release:Prepare:
                 echo "   ✅ Uploaded ${ASSET_NAME} successfully to package registry (version ${TAG})"
               fi
             }
-
+          - |
             # 1. Restore reports from candidate job IDs
             REPORT_COUNT=$(jq '.artifacts.reports | length' candidate.json 2>/dev/null || echo "0")
             for ((i=0; i<REPORT_COUNT; i++)); do
@@ -663,7 +663,7 @@ Release:Prepare:
                 fi
               fi
             done
-
+          - |
             # Restore Terraform scan artifacts from upstream pipeline if not recorded in candidate.json
             TF_REPORTS_IN_CANDIDATE=$(jq '[.artifacts.reports[]? | select(.job_name | test("^Terraform:Scan"))] | length' candidate.json 2>/dev/null || echo "0")
             if [[ "${TF_REPORTS_IN_CANDIDATE}" -eq 0 && -n "${UPSTREAM_PIPELINE_ID}" ]]; then
@@ -677,7 +677,7 @@ Release:Prepare:
                 fi
               done
             fi
-
+          - |
             # Matrix roots restore TF_CVE.md under their PROJECT_PATH; merge them into the root file the release notes read.
             TF_ROOT_SUMMARIES=()
             while IFS= read -r SUMMARY; do
@@ -699,7 +699,7 @@ Release:Prepare:
               mv "${TF_CVE_INFO_FILE_NAME:-TF_CVE.md}.merged" "${TF_CVE_INFO_FILE_NAME:-TF_CVE.md}"
               echo "📄 Merged ${#TF_ROOT_SUMMARIES[@]} Terraform root scan summaries into ${TF_CVE_INFO_FILE_NAME:-TF_CVE.md}"
             fi
-
+          - |
             # 2. Upload Trivy scan report bundle: root reports keep flat names, matrix roots keep their PROJECT_PATH.
             TRIVY_REPORTS=()
             while IFS= read -r REPORT; do
@@ -709,7 +709,7 @@ Release:Prepare:
               tar -czf "${TRIVY_SCAN_REPORT_FILE_NAME:-trivy_scan_report.tar.gz}" "${TRIVY_REPORTS[@]}" 2>/dev/null || true
               file_upload "${TRIVY_SCAN_REPORT_FILE_NAME:-trivy_scan_report.tar.gz}"
             fi
-
+          - |
             # 3. Installed packages / SBOM
             if [[ -f "${INSTALLED_PCKG_FILE_NAME:-installed_packages.txt}" ]]; then
               file_upload "${INSTALLED_PCKG_FILE_NAME:-installed_packages.txt}"
@@ -717,19 +717,19 @@ Release:Prepare:
             if [[ -f "sbom.cdx.json" ]]; then
               file_upload "sbom.cdx.json"
             fi
-
+          - |
             # 4. Helm chart package
             CHART_TGZ_FILES=( ${CHART_NAME:-app}-*.tgz )
             if [[ -f "${CHART_TGZ_FILES[0]}" ]]; then
               file_upload "${CHART_TGZ_FILES[0]}"
             fi
-
+          - |
             # 5. Test reports directory
             if [[ -d "${TEST_REPORT_DIR:-test-reports}" ]]; then
               tar -czf "${TEST_REPORT_DIR:-test-reports}.tar.gz" "${TEST_REPORT_DIR:-test-reports}"
               file_upload "${TEST_REPORT_DIR:-test-reports}.tar.gz"
             fi
-
+          - |
             # 6. Additional release artifacts
             for ITEM in ${ADDITIONAL_RELEASE_ARTIFACT:-}; do
               if [[ "${ITEM}" == "RELEASE_MIGRATION.md" ]]; then
@@ -743,7 +743,7 @@ Release:Prepare:
                 file_upload "${TAR_FILE}"
               fi
             done
-
+          - |
             if [[ ${#FAILED_UPLOADS[@]} -gt 0 ]]; then
               echo "❌ The following files failed to upload:"
               for FILE in "${FAILED_UPLOADS[@]}"; do
@@ -773,29 +773,33 @@ Release:Prepare:
           - job: Release:Upload
             artifacts: true
         script:
+          - touch "${CONSOLIDATED_RELEASE_CHANGELOG_FILE_NAME:-CONSOLIDATED_RELEASE_CHANGELOG.md}"
+          - touch "${CONSOLIDATED_README_FILE_NAME:-CONSOLIDATED_README.md}"
           - |
-            touch "${CONSOLIDATED_RELEASE_CHANGELOG_FILE_NAME:-CONSOLIDATED_RELEASE_CHANGELOG.md}"
-            touch "${CONSOLIDATED_README_FILE_NAME:-CONSOLIDATED_README.md}"
             for FILE in "${IMAGE_INFO_FILE_NAME:-IMAGE_INFO.md}" "${IMAGE_CVE_INFO_FILE_NAME:-IMAGE_CVE.md}" "${IMAGE_CVE_REPORT_FILE_NAME:-image_trivy_scan_report.md}"; do
               if [[ -f "${FILE}" ]]; then
                 cat "${FILE}" >> "${IMAGE_README_MD_FILE_NAME:-IMAGE_README.md}"
               fi
             done
+          - |
             for FILE in "${CHART_INFO_FILE_NAME:-CHART_INFO.md}" "${CHART_CVE_INFO_FILE_NAME:-CHART_CVE.md}"; do
               if [[ -f "${FILE}" ]]; then
                 cat "${FILE}" >> "${CHART_README_MD_FILE_NAME:-CHART_README.md}"
               fi
             done
+          - |
             for FILE in "${TF_CVE_INFO_FILE_NAME:-TF_CVE.md}"; do
               if [[ -f "${FILE}" ]]; then
                 cat "${FILE}" >> "${TF_README_MD_FILE_NAME:-TF_README.md}"
               fi
             done
+          - |
             for FILE in "${IMAGE_README_MD_FILE_NAME:-IMAGE_README.md}" "${CHART_README_MD_FILE_NAME:-CHART_README.md}" "${TF_README_MD_FILE_NAME:-TF_README.md}" "${LICENSE_INFO_FILE_NAME:-LICENSE_CVE.md}" "${SBOM_CVE_INFO_FILE_NAME:-SBOM_CVE.md}"; do
               if [[ -f "${FILE}" ]]; then
                 cat "${FILE}" >> "${CONSOLIDATED_README_FILE_NAME:-CONSOLIDATED_README.md}"
               fi
             done
+          - |
             for FILE in "${RELEASE_CHANGELOG_FILE_NAME:-RELEASE_CHANGELOG.md}" "${RELEASE_MIGRATION_FILE_NAME:-RELEASE_MIGRATION.md}" "${CONSOLIDATED_README_FILE_NAME:-CONSOLIDATED_README.md}"; do
               if [[ -f "${FILE}" && -s "${FILE}" ]]; then
                 echo "" >> "${CONSOLIDATED_RELEASE_CHANGELOG_FILE_NAME:-CONSOLIDATED_RELEASE_CHANGELOG.md}"
