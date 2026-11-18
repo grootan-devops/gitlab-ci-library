@@ -17,6 +17,14 @@ this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Multi-Strategy Merge Support: `Common:Init` authoritatively resolves MR provenance and latest verification pipelines across standard merge commits, squash merges, and fast-forward merges.
 - Monorepo Multi-Service Resolution: `Common:Init` dynamically discovers downstream child verification pipelines across monorepo services by matching parent bridge names.
 
+### Changed
+
+- Updated default build, service, and scanner images in `common/.gitlab-ci.yml` to their latest releases:
+  - [`grootantech/toolkit`](https://github.com/grootan-devops/toolkit) from `2.0.1` to `2.1.0` (`TOOLKIT_IMAGE_TAG`), updating Node.js 26.13.0, npm 12.2.2, Terraform 1.17.1, OpenTofu 1.13.9, Trivy 0.76.2, uv 0.13.7, Biome 2.6.6, and yq 4.54.2.
+  - `docker` from `29.9.2-dind` to `29.10.0-dind` (`DOCKER_DIND_IMAGE_TAG`).
+  - [`moby/buildkit`](https://github.com/moby/buildkit) from `v0.34.1` to `v0.35.0` (`BUILDKIT_IMAGE_TAG`).
+  - `sonarsource/sonar-scanner-cli` from `12.3.0.4285_8.1.0` to `12.4.0.4321_8.4.0` (`SONAR_SCANNER_CLI_IMAGE_TAG`).
+
 ### Fixed
 
 - Stale Commit Promotion: `Common:Init` resolves the exact merged MR via the GitLab API, verifies the head pipeline status on the exact merged source commit SHA, and fails immediately if the latest commit failed checks.

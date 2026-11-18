@@ -19,6 +19,7 @@ Newer sections are split into **Required** (the upgrade breaks or misbehaves wit
 
 - Remove custom `Common:Init` `after_script` dotenv filtering workarounds. `Common:Init` exports $\le 16$ variables.
 - Remove application binaries from `ADDITIONAL_RELEASE_ARTIFACT` if they are declared in `.gitlab/release-packages.yml` to avoid duplicating packages as release assets.
+- A project that overrides an image variable (`TOOLKIT_IMAGE_TAG`, `*_BUILD_IMAGE_TAG`, `DOCKER_DIND_IMAGE_TAG`, `BUILDKIT_IMAGE_TAG` or `SONAR_SCANNER_CLI_IMAGE_TAG`) keeps its pinned value; drop the override to take the new defaults (`toolkit:2.1.0`, `docker:29.10.0-dind`, `buildkit:v0.35.0`, `sonar-scanner-cli:12.4.0.4321_8.4.0`).
 
 ### Verify
 

@@ -1068,8 +1068,7 @@ Release:Prepare:
           expire_in: 1 week
           paths:
             - message.json
-CHILDEOF
-      sed 's/^      //' release-pipeline.yml > release-pipeline.yml.tmp && mv release-pipeline.yml.tmp release-pipeline.yml
+      CHILDEOF
       echo "✅ Generated serialized child release pipeline specification."
       cp candidate.json "${CI_PROJECT_DIR}/candidate.json" 2>/dev/null || true
       cp release-pipeline.yml "${CI_PROJECT_DIR}/release-pipeline.yml" 2>/dev/null || true
