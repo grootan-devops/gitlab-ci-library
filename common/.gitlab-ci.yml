@@ -2150,11 +2150,11 @@ Candidate:Register:
       optional: true
   script:
     - echo "📋 Assembling canonical candidate manifest for MR !${CI_MERGE_REQUEST_IID}..."
+    - DOCKER_ENABLED=false
+    - DEV_IMAGE_DIGEST=""
+    - DEV_IMAGE_TAG="${APP_PUSH_VERSION}"
+    - DEV_IMAGE_REPO="${IMAGE_REGISTRY}/${IMAGE_PUSH_REPOSITORY}"
     - |
-      DOCKER_ENABLED=false
-      DEV_IMAGE_DIGEST=""
-      DEV_IMAGE_TAG="${APP_PUSH_VERSION}"
-      DEV_IMAGE_REPO="${IMAGE_REGISTRY}/${IMAGE_PUSH_REPOSITORY}"
       if [[ -f Dockerfile || -f "${DOCKERFILE:-}" ]]; then
         DOCKER_ENABLED=true
         if command -v crane >/dev/null 2>&1; then
@@ -2171,10 +2171,10 @@ Candidate:Register:
           echo "⚠️ Notice: Dockerfile present but candidate image digest could not be resolved."
         fi
       fi
+    - HELM_ENABLED=false
+    - CHART_SHA256=""
+    - CHART_PKG_VERSION="${CHART_PUSH_VERSION}"
     - |
-      HELM_ENABLED=false
-      CHART_SHA256=""
-      CHART_PKG_VERSION="${CHART_PUSH_VERSION}"
       if [[ -f "${CHART_DIR}/${CHART_FILE}" ]]; then
         HELM_ENABLED=true
         CHART_PKG_FILE="${CHART_NAME}-${CHART_PKG_VERSION}.tgz"
@@ -2196,10 +2196,9 @@ Candidate:Register:
           echo "⚠️ Notice: Chart present but package SHA256 could not be resolved."
         fi
       fi
+    - REPORTS_JSON="[]"
+    - PIPELINE_JOBS=$(curl --silent --fail --header "JOB-TOKEN: ${CI_JOB_TOKEN}" "${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/pipelines/${CI_PIPELINE_ID}/jobs?per_page=100" 2>/dev/null || echo "[]")
     - |
-      REPORTS_JSON="[]"
-      PIPELINE_JOBS=$(curl --silent --fail --header "JOB-TOKEN: ${CI_JOB_TOKEN}" "${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/pipelines/${CI_PIPELINE_ID}/jobs?per_page=100" 2>/dev/null || echo "[]")
-
       SBOM_JOB_ID=$(echo "${PIPELINE_JOBS}" | jq -r '[.[] | select(.name=="SBOM:Generate")][0].id // empty')
       if [[ -n "${SBOM_JOB_ID}" ]]; then
         SBOM_SHA=""
@@ -2211,35 +2210,35 @@ Candidate:Register:
           --arg sha "${SBOM_SHA}" \
           '. + [{ name: "sbom.cdx.json", job_id: ($id | tonumber), job_name: "SBOM:Generate", path: "sbom.cdx.json", sha256: $sha, required: true }]')
       fi
-
+    - |
       TRIVY_JOB_ID=$(echo "${PIPELINE_JOBS}" | jq -r '[.[] | select(.name=="Image:Scan")][0].id // empty')
       if [[ -n "${TRIVY_JOB_ID}" ]]; then
         REPORTS_JSON=$(echo "${REPORTS_JSON}" | jq \
           --arg id "${TRIVY_JOB_ID}" \
           '. + [{ name: "image_trivy_report", job_id: ($id | tonumber), job_name: "Image:Scan", path: "image_trivy_report.json", required: true }]')
       fi
-
+    - |
       TEST_JOB_ID=$(echo "${PIPELINE_JOBS}" | jq -r '[.[] | select((.name=="Project:Unit:Test" or (.name | test("Unit:Test"))) and .status=="success")][0].id // empty')
       if [[ -n "${TEST_JOB_ID}" ]]; then
         REPORTS_JSON=$(echo "${REPORTS_JSON}" | jq \
           --arg id "${TEST_JOB_ID}" \
           '. + [{ name: "test-reports", job_id: ($id | tonumber), job_name: "Project:Unit:Test", path: "test-reports", required: false }]')
       fi
-
+    - |
       IMG_BUILD_JOB_ID=$(echo "${PIPELINE_JOBS}" | jq -r '[.[] | select(.name=="Image:Build" and .status=="success")][0].id // empty')
       if [[ -n "${IMG_BUILD_JOB_ID}" ]]; then
         REPORTS_JSON=$(echo "${REPORTS_JSON}" | jq \
           --arg id "${IMG_BUILD_JOB_ID}" \
           '. + [{ name: "installed_packages.txt", job_id: ($id | tonumber), job_name: "Image:Build", path: "installed_packages.txt", required: false }]')
       fi
-
+    - |
       CHART_SCAN_JOB_ID=$(echo "${PIPELINE_JOBS}" | jq -r '[.[] | select(.name=="Chart:Scan" and .status=="success")][0].id // empty')
       if [[ -n "${CHART_SCAN_JOB_ID}" ]]; then
         REPORTS_JSON=$(echo "${REPORTS_JSON}" | jq \
           --arg id "${CHART_SCAN_JOB_ID}" \
           '. + [{ name: "chart_trivy_report", job_id: ($id | tonumber), job_name: "Chart:Scan", path: "chart_trivy_report.json", required: false }]')
       fi
-
+    - |
       for TF_JOB_ROW in $(echo "${PIPELINE_JOBS}" | jq -r '[.[] | select((.name | test("^Terraform:Scan")) and .status=="success")] | .[] | "\(.id):\(.name)"'); do
         TF_JID=$(echo "${TF_JOB_ROW}" | cut -d: -f1)
         TF_JNAME=$(echo "${TF_JOB_ROW}" | cut -d: -f2-)
@@ -2248,25 +2247,26 @@ Candidate:Register:
           --arg name "${TF_JNAME}" \
           '. + [{ name: $name, job_id: ($id | tonumber), job_name: $name, path: "terraform_scan", required: false }]')
       done
-
+    - |
       LICENSE_JOB_ID=$(echo "${PIPELINE_JOBS}" | jq -r '[.[] | select(.name=="License:Scan" and .status=="success")][0].id // empty')
       if [[ -n "${LICENSE_JOB_ID}" ]]; then
         REPORTS_JSON=$(echo "${REPORTS_JSON}" | jq \
           --arg id "${LICENSE_JOB_ID}" \
           '. + [{ name: "license_scan", job_id: ($id | tonumber), job_name: "License:Scan", path: "license_scan", required: false }]')
       fi
-
+    - |
       SBOM_SCAN_JOB_ID=$(echo "${PIPELINE_JOBS}" | jq -r '[.[] | select(.name=="SBOM:Scan" and .status=="success")][0].id // empty')
       if [[ -n "${SBOM_SCAN_JOB_ID}" ]]; then
         REPORTS_JSON=$(echo "${REPORTS_JSON}" | jq \
           --arg id "${SBOM_SCAN_JOB_ID}" \
           '. + [{ name: "sbom_scan", job_id: ($id | tonumber), job_name: "SBOM:Scan", path: "sbom_scan", required: false }]')
       fi
+    - mkdir -p .release
     - |
-      mkdir -p .release
       if [[ -n "${PROJECT_PATH}" && -d "${PROJECT_PATH}/.release" ]]; then
         cp -r "${PROJECT_PATH}"/.release/* .release/ 2>/dev/null || true
       fi
+    - |
       METADATA_FILES=( .release/package-metadata-*.json )
       if [[ ! -f "${METADATA_FILES[0]}" && -n "${PIPELINE_JOBS:-}" ]]; then
         for JID in $(echo "${PIPELINE_JOBS}" | jq -r '.[].id // empty'); do
@@ -2276,8 +2276,8 @@ Candidate:Register:
             "${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/jobs/${JID}/artifacts/${PROJECT_PATH}/.release/package-metadata-${JID}.json" 2>/dev/null || true
         done
       fi
-
-      PACKAGES_JSON="[]"
+    - PACKAGES_JSON="[]"
+    - |
       METADATA_FILES=( .release/package-metadata-*.json )
       if [[ -f "${METADATA_FILES[0]}" ]]; then
         for MF in "${METADATA_FILES[@]}"; do
@@ -2287,7 +2287,7 @@ Candidate:Register:
           PACKAGES_JSON=$(echo "${PACKAGES_JSON}" | jq --argjson pkgs "${JOB_PKGS}" '. + $pkgs')
         done
       fi
-
+    - |
       RELEASE_PACKAGES_FILE="${RELEASE_PACKAGES_FILE:-.gitlab/release-packages.yml}"
       if [[ -f "${RELEASE_PACKAGES_FILE}" ]]; then
         DECL_COUNT=$(yq eval '.packages | length' "${RELEASE_PACKAGES_FILE}" 2>/dev/null || echo "0")
@@ -2303,10 +2303,9 @@ Candidate:Register:
           fi
         done
       fi
+    - CANDIDATE_ID="${CI_PROJECT_ID}-${CI_PIPELINE_ID}-${CI_COMMIT_SHORT_SHA}"
+    - CREATED_AT=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
     - |
-      CANDIDATE_ID="${CI_PROJECT_ID}-${CI_PIPELINE_ID}-${CI_COMMIT_SHORT_SHA}"
-      CREATED_AT=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
-
       jq -n \
         --arg candidate_id "${CANDIDATE_ID}" \
         --arg project_id "${CI_PROJECT_ID}" \
@@ -2358,20 +2357,19 @@ Candidate:Register:
             packages: $packages
           }
         }' > candidate.json
-
-      echo "📋 Canonical candidate manifest created:"
-      cat candidate.json
-
-      CANDIDATE_FILE_NAME="candidate-${APP_PUSH_VERSION}.json"
-      CANDIDATE_UPLOAD_URL="${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/packages/generic/candidates/${RELEASE_VERSION}/${CANDIDATE_FILE_NAME}"
-      echo "🚀 Publishing ${CANDIDATE_FILE_NAME} to Generic Package Registry under release version ${RELEASE_VERSION} (${CANDIDATE_UPLOAD_URL})..."
+    - echo "📋 Canonical candidate manifest created:"
+    - cat candidate.json
+    - CANDIDATE_FILE_NAME="candidate-${APP_PUSH_VERSION}.json"
+    - CANDIDATE_UPLOAD_URL="${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/packages/generic/candidates/${RELEASE_VERSION}/${CANDIDATE_FILE_NAME}"
+    - echo "🚀 Publishing ${CANDIDATE_FILE_NAME} to Generic Package Registry under release version ${RELEASE_VERSION} (${CANDIDATE_UPLOAD_URL})..."
+    - |
       HTTP_STATUS=$(curl --silent --show-error --write-out "%{http_code}" --output /dev/null --header "JOB-TOKEN: ${CI_JOB_TOKEN}" --upload-file candidate.json "${CANDIDATE_UPLOAD_URL}")
       if [[ "${HTTP_STATUS}" != "200" && "${HTTP_STATUS}" != "201" ]]; then
         echo "❌ ERROR: Failed to upload ${CANDIDATE_FILE_NAME} to Generic Package Registry (HTTP ${HTTP_STATUS})."
         exit 1
       fi
-      echo "✅ Candidate manifest registered successfully."
-      cp candidate.json "${CI_PROJECT_DIR}/candidate.json" 2>/dev/null || true
+    - echo "✅ Candidate manifest registered successfully."
+    - cp candidate.json "${CI_PROJECT_DIR}/candidate.json" 2>/dev/null || true
   artifacts:
     name: Candidate Manifest
     when: always

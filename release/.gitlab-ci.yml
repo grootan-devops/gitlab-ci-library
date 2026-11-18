@@ -148,10 +148,10 @@ Release:Prepare:
         echo "Fast-track release strictly requires candidate identity from upstream MR verification."
         exit 1
       fi
+    - CANDIDATE_FILE_NAME="candidate-${DEV_CANDIDATE_VERSION}.json"
+    - CANDIDATE_URL="${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/packages/generic/candidates/${RELEASE_VERSION}/${CANDIDATE_FILE_NAME}"
+    - echo "📥 Downloading candidate manifest from ${CANDIDATE_URL}..."
     - |
-      CANDIDATE_FILE_NAME="candidate-${DEV_CANDIDATE_VERSION}.json"
-      CANDIDATE_URL="${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/packages/generic/candidates/${RELEASE_VERSION}/${CANDIDATE_FILE_NAME}"
-      echo "📥 Downloading candidate manifest from ${CANDIDATE_URL}..."
       if ! curl --silent --fail --location --header "JOB-TOKEN: ${CI_JOB_TOKEN}" -o candidate.json "${CANDIDATE_URL}"; then
         echo "ℹ️ Candidate not found at ${CANDIDATE_URL}, querying package registry files for release ${RELEASE_VERSION}..."
         PKG_ID=$(curl --silent --fail --header "JOB-TOKEN: ${CI_JOB_TOKEN}" \
@@ -172,6 +172,7 @@ Release:Prepare:
           fi
         fi
       fi
+    - |
       if [[ ! -s candidate.json ]]; then
         echo "ℹ️ Checking legacy candidate path..."
         LEGACY_URL="${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/packages/generic/candidates/${DEV_CANDIDATE_VERSION}/candidate.json"
@@ -186,8 +187,7 @@ Release:Prepare:
         echo "❌ ERROR: Downloaded candidate.json is empty or invalid JSON."
         exit 1
       fi
-    - >
-      echo "✅ Successfully retrieved and validated candidate manifest."
+    - echo "✅ Successfully retrieved and validated candidate manifest."
     - |
       # Render downstream child release pipeline YAML
       {
@@ -274,9 +274,8 @@ Release:Prepare:
               exit 1
             fi
             echo "✅ Candidate manifest verified for version ${TAG}."
+          - echo "🔍 Preflight: Verifying candidate deliverables before executing promotion..."
           - |
-            echo "🔍 Preflight: Verifying candidate deliverables before executing promotion..."
-
             # 1. Preflight Container Image
             DOCKER_ENABLED=$(jq -r '.artifacts.docker.enabled // false' candidate.json)
             if [[ "${DOCKER_ENABLED}" == "true" ]]; then
@@ -305,7 +304,7 @@ Release:Prepare:
               fi
               echo "   ✅ Preflight: Candidate image verified (${ACT_DIGEST})."
             fi
-
+          - |
             # 2. Preflight Helm Chart
             HELM_ENABLED=$(jq -r '.artifacts.helm.enabled // false' candidate.json)
             if [[ "${HELM_ENABLED}" == "true" ]]; then
@@ -325,7 +324,7 @@ Release:Prepare:
               fi
               echo "   ✅ Preflight: Candidate Helm chart '${CHART_NAME}-${RC_CHART_VER}.tgz' verified."
             fi
-
+          - |
             # 3. Preflight Generic Packages
             PKG_COUNT=$(jq '.artifacts.packages | length' candidate.json 2>/dev/null || echo "0")
             for ((i=0; i<PKG_COUNT; i++)); do
@@ -344,7 +343,7 @@ Release:Prepare:
               fi
             done
             echo "   ✅ Preflight: All candidate generic packages verified."
-            echo "🎉 All candidate deliverables preflighted successfully. Proceeding to promotion stage."
+          - echo "🎉 All candidate deliverables preflighted successfully. Proceeding to promotion stage."
         artifacts:
           when: on_success
           paths:
@@ -362,13 +361,15 @@ Release:Prepare:
             if [[ -z "${IMAGE_REGISTRY}" ]]; then
               IMAGE_REGISTRY="${CI_REGISTRY}"
             fi
+          - |
             DEV_IMAGE=$(jq -r '.artifacts.docker.dev_repository // empty' candidate.json 2>/dev/null)
             if [[ -z "${DEV_IMAGE}" ]]; then
               DEV_IMAGE="${IMAGE_REGISTRY}/${IMAGE_REPOSITORY}${IMAGE_DEV_REPOSITORY_SUFFIX}"
             fi
-            PROD_IMAGE="${IMAGE_REGISTRY}/${IMAGE_REPOSITORY}"
-            REGISTRY_USER="${IMAGE_REGISTRY_USERNAME:-${CI_REGISTRY_USER:-gitlab-ci-token}}"
-            REGISTRY_PASS="${IMAGE_REGISTRY_PASSWORD:-${CI_REGISTRY_PASSWORD:-${CI_JOB_TOKEN}}}"
+          - PROD_IMAGE="${IMAGE_REGISTRY}/${IMAGE_REPOSITORY}"
+          - REGISTRY_USER="${IMAGE_REGISTRY_USERNAME:-${CI_REGISTRY_USER:-gitlab-ci-token}}"
+          - REGISTRY_PASS="${IMAGE_REGISTRY_PASSWORD:-${CI_REGISTRY_PASSWORD:-${CI_JOB_TOKEN}}}"
+          - |
             if [[ -n "${IMAGE_REGISTRY}" && -n "${REGISTRY_USER}" && -n "${REGISTRY_PASS}" ]]; then
               crane auth login -u "${REGISTRY_USER}" -p "${REGISTRY_PASS}" "${IMAGE_REGISTRY}"
             fi
@@ -378,24 +379,23 @@ Release:Prepare:
               echo "ℹ️ Docker promotion not enabled in candidate manifest. Skipping."
               exit 0
             fi
-
-            RC_TAG=$(jq -r '.artifacts.docker.rc_tag' candidate.json)
-            EXP_DIGEST=$(jq -r '.artifacts.docker.digest' candidate.json)
-            DEV_IMAGE_SRC="${DEV_IMAGE}:${RC_TAG}"
-            echo "🔍 Inspecting candidate dev image ${DEV_IMAGE_SRC}..."
-
+          - RC_TAG=$(jq -r '.artifacts.docker.rc_tag' candidate.json)
+          - EXP_DIGEST=$(jq -r '.artifacts.docker.digest' candidate.json)
+          - DEV_IMAGE_SRC="${DEV_IMAGE}:${RC_TAG}"
+          - echo "🔍 Inspecting candidate dev image ${DEV_IMAGE_SRC}..."
+          - |
             if ! crane manifest "${DEV_IMAGE_SRC}" > /dev/null 2>&1; then
               echo "❌ ERROR: Candidate dev image '${DEV_IMAGE_SRC}' not found in registry."
               exit 1
             fi
-
+          - |
             ACT_DIGEST=$(crane digest "${DEV_IMAGE_SRC}")
             if [[ -n "${EXP_DIGEST}" && "${ACT_DIGEST}" != "${EXP_DIGEST}" ]]; then
               echo "❌ ERROR: Dev candidate image digest mismatch (${ACT_DIGEST} vs expected ${EXP_DIGEST})."
               exit 1
             fi
             echo "   ✅ Verified candidate digest: ${ACT_DIGEST}"
-
+          - |
             if crane manifest "${PROD_IMAGE}:${TAG}" > /dev/null 2>&1; then
               EXISTING_PROD_DIGEST=$(crane digest "${PROD_IMAGE}:${TAG}")
               if [[ "${EXISTING_PROD_DIGEST}" == "${ACT_DIGEST}" ]]; then
@@ -409,7 +409,7 @@ Release:Prepare:
               crane copy "${DEV_IMAGE_SRC}" "${PROD_IMAGE}:${TAG}"
               echo "✅ Production image promoted successfully via Crane."
             fi
-
+          - |
             if [[ "${RELEASE_FLOATING_TAGS:-true}" == "false" || "${TAG}" =~ - ]]; then
               echo "ℹ️ Skipping floating tag updates."
             else
@@ -467,56 +467,52 @@ Release:Prepare:
               echo "ℹ️ Helm promotion not enabled in candidate manifest. Skipping."
               exit 0
             fi
-
-            CHART_NAME=$(jq -r '.artifacts.helm.chart_name' candidate.json)
-            RC_CHART_VER=$(jq -r '.artifacts.helm.rc_version' candidate.json)
-            EXP_SHA=$(jq -r '.artifacts.helm.sha256' candidate.json)
-            echo "🔍 Promoting Helm chart ${CHART_NAME}:${TAG} from RC ${RC_CHART_VER}..."
-
-            TEMP_CHART=$(mktemp)
-            DOWNLOADED=false
+          - CHART_NAME=$(jq -r '.artifacts.helm.chart_name' candidate.json)
+          - RC_CHART_VER=$(jq -r '.artifacts.helm.rc_version' candidate.json)
+          - EXP_SHA=$(jq -r '.artifacts.helm.sha256' candidate.json)
+          - echo "🔍 Promoting Helm chart ${CHART_NAME}:${TAG} from RC ${RC_CHART_VER}..."
+          - TEMP_CHART=$(mktemp)
+          - DOWNLOADED=false
+          - |
             for CHANNEL in "dev" "stable"; do
               if curl --silent --fail --location -u "gitlab-ci-token:${CI_JOB_TOKEN}" --header "JOB-TOKEN: ${CI_JOB_TOKEN}" -o "${TEMP_CHART}" "${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/packages/helm/${CHANNEL}/charts/${CHART_NAME}-${RC_CHART_VER}.tgz"; then
                 DOWNLOADED=true
                 break
               fi
             done
+          - |
             if [[ "${DOWNLOADED}" != "true" ]]; then
               echo "❌ ERROR: Candidate Helm package '${CHART_NAME}-${RC_CHART_VER}.tgz' not found in registry (checked dev and stable channels)."
               exit 1
             fi
-
-            ACT_SHA=$(sha256sum "${TEMP_CHART}" | cut -d' ' -f1)
+          - ACT_SHA=$(sha256sum "${TEMP_CHART}" | cut -d' ' -f1)
+          - |
             if [[ -n "${EXP_SHA}" && "${ACT_SHA}" != "${EXP_SHA}" ]]; then
               echo "❌ ERROR: Helm package SHA256 mismatch (${ACT_SHA} vs expected ${EXP_SHA})."
               exit 1
             fi
-
-            # Package with release TAG
-            PROMOTE_DIR=$(mktemp -d)
-            tar -xzf "${TEMP_CHART}" -C "${PROMOTE_DIR}"
-            rm -f "${TEMP_CHART}"
-            helm package "${PROMOTE_DIR}/${CHART_NAME}" --version "${TAG}" --app-version "${TAG}"
-            rm -rf "${PROMOTE_DIR}"
-
-            STABLE_TGZ="${CHART_NAME}-${TAG}.tgz"
-            STABLE_SHA=$(sha256sum "${STABLE_TGZ}" | cut -d' ' -f1)
-
-            # Check if stable chart already exists
-            STABLE_URL="${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/packages/helm/api/stable/charts"
+          - PROMOTE_DIR=$(mktemp -d)
+          - tar -xzf "${TEMP_CHART}" -C "${PROMOTE_DIR}"
+          - rm -f "${TEMP_CHART}"
+          - helm package "${PROMOTE_DIR}/${CHART_NAME}" --version "${TAG}" --app-version "${TAG}"
+          - rm -rf "${PROMOTE_DIR}"
+          - STABLE_TGZ="${CHART_NAME}-${TAG}.tgz"
+          - STABLE_SHA=$(sha256sum "${STABLE_TGZ}" | cut -d' ' -f1)
+          - STABLE_URL="${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/packages/helm/api/stable/charts"
+          - |
             CHECK_HTTP=$(curl --silent --head --write-out "%{http_code}" --output /dev/null -u "gitlab-ci-token:${CI_JOB_TOKEN}" --header "JOB-TOKEN: ${CI_JOB_TOKEN}" "${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/packages/helm/stable/charts/${CHART_NAME}-${TAG}.tgz" || true)
             if [[ "${CHECK_HTTP}" == "200" ]]; then
               echo "✅ Stable chart ${CHART_NAME}:${TAG} already exists in registry. Skipping upload."
               exit 0
             fi
-
-            echo "🚀 Publishing stable chart package ${STABLE_TGZ}..."
+          - echo "🚀 Publishing stable chart package ${STABLE_TGZ}..."
+          - |
             HTTP_CODE=$(curl --silent --show-error --write-out "%{http_code}" --output /dev/null --request POST -u "gitlab-ci-token:${CI_JOB_TOKEN}" --header "JOB-TOKEN: ${CI_JOB_TOKEN}" --form "chart=@${STABLE_TGZ}" "${STABLE_URL}")
             if [[ "${HTTP_CODE}" != "200" && "${HTTP_CODE}" != "201" ]]; then
               echo "❌ ERROR: Failed to publish stable chart ${STABLE_TGZ} (HTTP ${HTTP_CODE})."
               exit 1
             fi
-            echo "✅ Helm chart ${CHART_NAME}:${TAG} published successfully."
+          - echo "✅ Helm chart ${CHART_NAME}:${TAG} published successfully."
         artifacts:
           when: on_success
           paths:
@@ -529,13 +525,13 @@ Release:Prepare:
           - job: Release:Verify
             artifacts: true
         script:
+          - PKG_COUNT=$(jq '.artifacts.packages | length' candidate.json 2>/dev/null || echo "0")
           - |
-            PKG_COUNT=$(jq '.artifacts.packages | length' candidate.json 2>/dev/null || echo "0")
             if [[ "${PKG_COUNT}" -eq 0 ]]; then
               echo "ℹ️ No declarative packages to promote."
               exit 0
             fi
-
+          - |
             for ((i=0; i<PKG_COUNT; i++)); do
               P_NAME=$(jq -r ".artifacts.packages[$i].package" candidate.json)
               P_FILE=$(jq -r ".artifacts.packages[$i].filename" candidate.json)
@@ -710,10 +706,12 @@ Release:Prepare:
               file_upload "${TRIVY_SCAN_REPORT_FILE_NAME:-trivy_scan_report.tar.gz}"
             fi
           - |
-            # 3. Installed packages / SBOM
+            # 3. Installed packages
             if [[ -f "${INSTALLED_PCKG_FILE_NAME:-installed_packages.txt}" ]]; then
               file_upload "${INSTALLED_PCKG_FILE_NAME:-installed_packages.txt}"
             fi
+          - |
+            # SBOM
             if [[ -f "sbom.cdx.json" ]]; then
               file_upload "sbom.cdx.json"
             fi
@@ -807,8 +805,8 @@ Release:Prepare:
                 echo "" >> "${CONSOLIDATED_RELEASE_CHANGELOG_FILE_NAME:-CONSOLIDATED_RELEASE_CHANGELOG.md}"
               fi
             done
+          - EXISTING_RELEASE=$(curl --silent --fail --header "JOB-TOKEN: ${CI_JOB_TOKEN}" "${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/releases/${TAG}" 2>/dev/null || true)
           - |
-            EXISTING_RELEASE=$(curl --silent --fail --header "JOB-TOKEN: ${CI_JOB_TOKEN}" "${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/releases/${TAG}" 2>/dev/null || true)
             if [[ -n "${EXISTING_RELEASE}" && "$(echo "${EXISTING_RELEASE}" | jq -r '.tag_name // empty' 2>/dev/null)" == "${TAG}" ]]; then
               echo "⚠️ Release ${TAG} already exists. Updating release description..."
               curl --silent --fail --request PUT --header "JOB-TOKEN: ${CI_JOB_TOKEN}" \
@@ -1031,8 +1029,8 @@ Release:Prepare:
               exit 0
             fi
           - IFS=',' read -r -a WEBHOOKS <<< "${RELEASE_MESSAGE_TEAMS_WORKFLOWS_URL}"
+          - SENT_COUNT=0
           - |
-            SENT_COUNT=0
             for URL in "${WEBHOOKS[@]}"; do
               CLEAN_URL="$(printf '%s' "${URL}" | xargs)"
               if [ -z "${CLEAN_URL}" ]; then
@@ -1062,6 +1060,7 @@ Release:Prepare:
                   ;;
               esac
             done
+          - |
             if [[ ${SENT_COUNT} -eq 0 ]]; then
               echo "⚠️ Notice: No valid webhook URLs provided in RELEASE_MESSAGE_TEAMS_WORKFLOWS_URL."
             fi
@@ -1073,9 +1072,9 @@ Release:Prepare:
           paths:
             - message.json
       CHILDEOF
-      echo "✅ Generated serialized child release pipeline specification."
-      cp candidate.json "${CI_PROJECT_DIR}/candidate.json" 2>/dev/null || true
-      cp release-pipeline.yml "${CI_PROJECT_DIR}/release-pipeline.yml" 2>/dev/null || true
+    - echo "✅ Generated serialized child release pipeline specification."
+    - cp candidate.json "${CI_PROJECT_DIR}/candidate.json" 2>/dev/null || true
+    - cp release-pipeline.yml "${CI_PROJECT_DIR}/release-pipeline.yml" 2>/dev/null || true
   artifacts:
     name: Release Pipeline Specification
     when: on_success
