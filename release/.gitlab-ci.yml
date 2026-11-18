@@ -213,8 +213,22 @@ Release:Prepare:
         echo "  ADDITIONAL_RELEASE_ARTIFACT: \"${ADDITIONAL_RELEASE_ARTIFACT}\""
         echo "  CONSOLIDATED_RELEASE_CHANGELOG_FILE_NAME: \"${CONSOLIDATED_RELEASE_CHANGELOG_FILE_NAME:-CONSOLIDATED_RELEASE_CHANGELOG.md}\""
         echo "  CONSOLIDATED_README_FILE_NAME: \"${CONSOLIDATED_README_FILE_NAME:-CONSOLIDATED_README.md}\""
+        echo "  IMAGE_README_MD_FILE_NAME: \"${IMAGE_README_MD_FILE_NAME:-IMAGE_README.md}\""
+        echo "  CHART_README_MD_FILE_NAME: \"${CHART_README_MD_FILE_NAME:-CHART_README.md}\""
+        echo "  TF_README_MD_FILE_NAME: \"${TF_README_MD_FILE_NAME:-TF_README.md}\""
+        echo "  IMAGE_INFO_FILE_NAME: \"${IMAGE_INFO_FILE_NAME:-IMAGE_INFO.md}\""
+        echo "  IMAGE_CVE_INFO_FILE_NAME: \"${IMAGE_CVE_INFO_FILE_NAME:-IMAGE_CVE.md}\""
+        echo "  IMAGE_CVE_REPORT_FILE_NAME: \"${IMAGE_CVE_REPORT_FILE_NAME:-image_trivy_scan_report.md}\""
+        echo "  CHART_INFO_FILE_NAME: \"${CHART_INFO_FILE_NAME:-CHART_INFO.md}\""
+        echo "  CHART_CVE_INFO_FILE_NAME: \"${CHART_CVE_INFO_FILE_NAME:-CHART_CVE.md}\""
+        echo "  TF_CVE_INFO_FILE_NAME: \"${TF_CVE_INFO_FILE_NAME:-TF_CVE.md}\""
+        echo "  LICENSE_INFO_FILE_NAME: \"${LICENSE_INFO_FILE_NAME:-LICENSE_CVE.md}\""
+        echo "  SBOM_CVE_INFO_FILE_NAME: \"${SBOM_CVE_INFO_FILE_NAME:-SBOM_CVE.md}\""
         echo "  RELEASE_CHANGELOG_FILE_NAME: \"${RELEASE_CHANGELOG_FILE_NAME:-RELEASE_CHANGELOG.md}\""
+        echo "  RELEASE_MIGRATION_FILE_NAME: \"${RELEASE_MIGRATION_FILE_NAME:-RELEASE_MIGRATION.md}\""
         echo "  RELEASE_CHANGELOG_CARD_FILE_NAME: \"${RELEASE_CHANGELOG_CARD_FILE_NAME:-RELEASE_CHANGELOG_CARD.json}\""
+        echo "  TRIVY_SCAN_REPORT_NAME_SUFFIX: \"${TRIVY_SCAN_REPORT_NAME_SUFFIX:-trivy_scan_report}\""
+        echo "  TRIVY_SCAN_REPORT_FILE_NAME: \"${TRIVY_SCAN_REPORT_FILE_NAME:-trivy_scan_report.tar.gz}\""
         echo ""
       } > release-pipeline.yml
       cat << 'CHILDEOF' >> release-pipeline.yml
@@ -650,9 +664,48 @@ Release:Prepare:
               fi
             done
 
-            # 2. Upload Trivy scan report bundle
-            TRIVY_REPORTS=( *_${TRIVY_SCAN_REPORT_NAME_SUFFIX:-trivy_report}.* )
-            if [[ -f "${TRIVY_REPORTS[0]}" ]]; then
+            # Restore Terraform scan artifacts from upstream pipeline if not recorded in candidate.json
+            TF_REPORTS_IN_CANDIDATE=$(jq '[.artifacts.reports[]? | select(.job_name | test("^Terraform:Scan"))] | length' candidate.json 2>/dev/null || echo "0")
+            if [[ "${TF_REPORTS_IN_CANDIDATE}" -eq 0 && -n "${UPSTREAM_PIPELINE_ID}" ]]; then
+              UPSTREAM_JOBS=$(curl --silent --fail --header "JOB-TOKEN: ${CI_JOB_TOKEN}" "${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/pipelines/${UPSTREAM_PIPELINE_ID}/jobs?per_page=100" 2>/dev/null || echo "[]")
+              for TF_JID in $(echo "${UPSTREAM_JOBS}" | jq -r '[.[] | select((.name | test("^Terraform:Scan")) and .status=="success")][].id // empty'); do
+                echo "📥 Restoring Terraform scan artifacts from job #${TF_JID}..."
+                if curl --silent --location --fail --header "JOB-TOKEN: ${CI_JOB_TOKEN}" --output "job_${TF_JID}_artifacts.zip" "${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/jobs/${TF_JID}/artifacts" 2>/dev/null; then
+                  unzip -o -q "job_${TF_JID}_artifacts.zip" 2>/dev/null || true
+                  rm -f "job_${TF_JID}_artifacts.zip"
+                  echo "   ✅ Restored artifacts from job #${TF_JID}"
+                fi
+              done
+            fi
+
+            # Matrix roots restore TF_CVE.md under their PROJECT_PATH; merge them into the root file the release notes read.
+            TF_ROOT_SUMMARIES=()
+            while IFS= read -r SUMMARY; do
+              TF_ROOT_SUMMARIES+=("${SUMMARY}")
+            done < <(find . -mindepth 2 \( -name .git -o -name node_modules \) -prune -o -type f -name "${TF_CVE_INFO_FILE_NAME:-TF_CVE.md}" -print | sed 's|^\./||' | sort)
+            if [[ ${#TF_ROOT_SUMMARIES[@]} -gt 0 ]]; then
+              {
+                if [[ -s "${TF_CVE_INFO_FILE_NAME:-TF_CVE.md}" ]]; then
+                  cat "${TF_CVE_INFO_FILE_NAME:-TF_CVE.md}"
+                  echo ""
+                fi
+                for SUMMARY in "${TF_ROOT_SUMMARIES[@]}"; do
+                  echo "### Terraform root \`$(dirname "${SUMMARY}")\`"
+                  echo ""
+                  cat "${SUMMARY}"
+                  echo ""
+                done
+              } > "${TF_CVE_INFO_FILE_NAME:-TF_CVE.md}.merged"
+              mv "${TF_CVE_INFO_FILE_NAME:-TF_CVE.md}.merged" "${TF_CVE_INFO_FILE_NAME:-TF_CVE.md}"
+              echo "📄 Merged ${#TF_ROOT_SUMMARIES[@]} Terraform root scan summaries into ${TF_CVE_INFO_FILE_NAME:-TF_CVE.md}"
+            fi
+
+            # 2. Upload Trivy scan report bundle: root reports keep flat names, matrix roots keep their PROJECT_PATH.
+            TRIVY_REPORTS=()
+            while IFS= read -r REPORT; do
+              TRIVY_REPORTS+=("${REPORT}")
+            done < <(find . \( -name .git -o -name node_modules \) -prune -o -type f -name "*_${TRIVY_SCAN_REPORT_NAME_SUFFIX:-trivy_scan_report}.*" -print | sed 's|^\./||' | sort)
+            if [[ ${#TRIVY_REPORTS[@]} -gt 0 ]]; then
               tar -czf "${TRIVY_SCAN_REPORT_FILE_NAME:-trivy_scan_report.tar.gz}" "${TRIVY_REPORTS[@]}" 2>/dev/null || true
               file_upload "${TRIVY_SCAN_REPORT_FILE_NAME:-trivy_scan_report.tar.gz}"
             fi
@@ -698,23 +751,94 @@ Release:Prepare:
               done
               exit 1
             fi
+        artifacts:
+          when: on_success
+          expire_in: 1 week
+          paths:
+            - "${IMAGE_INFO_FILE_NAME:-IMAGE_INFO.md}"
+            - "${IMAGE_CVE_INFO_FILE_NAME:-IMAGE_CVE.md}"
+            - "${IMAGE_CVE_REPORT_FILE_NAME:-image_trivy_scan_report.md}"
+            - "${CHART_INFO_FILE_NAME:-CHART_INFO.md}"
+            - "${CHART_CVE_INFO_FILE_NAME:-CHART_CVE.md}"
+            - "${TF_CVE_INFO_FILE_NAME:-TF_CVE.md}"
+            - "${LICENSE_INFO_FILE_NAME:-LICENSE_CVE.md}"
+            - "${SBOM_CVE_INFO_FILE_NAME:-SBOM_CVE.md}"
+            - "${RELEASE_CHANGELOG_FILE_NAME:-RELEASE_CHANGELOG.md}"
+            - "${RELEASE_MIGRATION_FILE_NAME:-RELEASE_MIGRATION.md}"
 
       Release:
         stage: release
-        image: registry.gitlab.com/gitlab-org/release-cli:latest
+        image: ${TOOLKIT_BUILD_IMAGE_REPO}:${TOOLKIT_BUILD_IMAGE_TAG}
         needs:
           - job: Release:Upload
-            artifacts: false
+            artifacts: true
         script:
+          - |
+            touch "${CONSOLIDATED_RELEASE_CHANGELOG_FILE_NAME:-CONSOLIDATED_RELEASE_CHANGELOG.md}"
+            touch "${CONSOLIDATED_README_FILE_NAME:-CONSOLIDATED_README.md}"
+            for FILE in "${IMAGE_INFO_FILE_NAME:-IMAGE_INFO.md}" "${IMAGE_CVE_INFO_FILE_NAME:-IMAGE_CVE.md}" "${IMAGE_CVE_REPORT_FILE_NAME:-image_trivy_scan_report.md}"; do
+              if [[ -f "${FILE}" ]]; then
+                cat "${FILE}" >> "${IMAGE_README_MD_FILE_NAME:-IMAGE_README.md}"
+              fi
+            done
+            for FILE in "${CHART_INFO_FILE_NAME:-CHART_INFO.md}" "${CHART_CVE_INFO_FILE_NAME:-CHART_CVE.md}"; do
+              if [[ -f "${FILE}" ]]; then
+                cat "${FILE}" >> "${CHART_README_MD_FILE_NAME:-CHART_README.md}"
+              fi
+            done
+            for FILE in "${TF_CVE_INFO_FILE_NAME:-TF_CVE.md}"; do
+              if [[ -f "${FILE}" ]]; then
+                cat "${FILE}" >> "${TF_README_MD_FILE_NAME:-TF_README.md}"
+              fi
+            done
+            for FILE in "${IMAGE_README_MD_FILE_NAME:-IMAGE_README.md}" "${CHART_README_MD_FILE_NAME:-CHART_README.md}" "${TF_README_MD_FILE_NAME:-TF_README.md}" "${LICENSE_INFO_FILE_NAME:-LICENSE_CVE.md}" "${SBOM_CVE_INFO_FILE_NAME:-SBOM_CVE.md}"; do
+              if [[ -f "${FILE}" ]]; then
+                cat "${FILE}" >> "${CONSOLIDATED_README_FILE_NAME:-CONSOLIDATED_README.md}"
+              fi
+            done
+            for FILE in "${RELEASE_CHANGELOG_FILE_NAME:-RELEASE_CHANGELOG.md}" "${RELEASE_MIGRATION_FILE_NAME:-RELEASE_MIGRATION.md}" "${CONSOLIDATED_README_FILE_NAME:-CONSOLIDATED_README.md}"; do
+              if [[ -f "${FILE}" && -s "${FILE}" ]]; then
+                echo "" >> "${CONSOLIDATED_RELEASE_CHANGELOG_FILE_NAME:-CONSOLIDATED_RELEASE_CHANGELOG.md}"
+                cat "${FILE}" >> "${CONSOLIDATED_RELEASE_CHANGELOG_FILE_NAME:-CONSOLIDATED_RELEASE_CHANGELOG.md}"
+                echo "" >> "${CONSOLIDATED_RELEASE_CHANGELOG_FILE_NAME:-CONSOLIDATED_RELEASE_CHANGELOG.md}"
+              fi
+            done
           - |
             EXISTING_RELEASE=$(curl --silent --fail --header "JOB-TOKEN: ${CI_JOB_TOKEN}" "${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/releases/${TAG}" 2>/dev/null || true)
             if [[ -n "${EXISTING_RELEASE}" && "$(echo "${EXISTING_RELEASE}" | jq -r '.tag_name // empty' 2>/dev/null)" == "${TAG}" ]]; then
-              echo "⚠️ Release ${TAG} already exists. Leaving description intact."
+              echo "⚠️ Release ${TAG} already exists. Updating release description..."
+              curl --silent --fail --request PUT --header "JOB-TOKEN: ${CI_JOB_TOKEN}" \
+                --header "Content-Type: application/json" \
+                --data "{\"description\": $(jq -Rs . < "${CONSOLIDATED_RELEASE_CHANGELOG_FILE_NAME:-CONSOLIDATED_RELEASE_CHANGELOG.md}")}" \
+                "${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/releases/${TAG}" >/dev/null 2>&1 || true
+              echo "✅ Release ${TAG} updated successfully."
             else
-              ASSET_LINK="{\"name\":\"📦 Release Package\",\"url\":\"${CI_PROJECT_URL}/-/packages?version=${TAG}&orderBy=created_at&sort=desc\"}"
-              release-cli create --name "Release ${TAG}" --description "Release ${TAG} for commit ${CI_COMMIT_SHA}" --tag-name "${TAG}" --ref "${CI_COMMIT_SHA}" --assets-link "${ASSET_LINK}"
+              ASSET_LINKS=()
+              ASSET_LINKS+=(--assets-link "{\"name\":\"📦 Release Package\",\"url\":\"${CI_PROJECT_URL}/-/packages?version=${TAG}&orderBy=created_at&sort=desc\"}")
+              SONAR_LINK_URL="${SONAR_EXTERNAL_URL:-${SONAR_URL}}"
+              if [[ "${SONAR_LINK_URL}" =~ ^https?:// ]]; then
+                ASSET_LINKS+=(--assets-link "{\"name\":\"🔍 SonarQube\",\"url\":\"${SONAR_LINK_URL%/}/dashboard?id=${CI_PROJECT_PATH_SLUG}\"}")
+              fi
+              RELEASE_DESC="Release ${TAG} for commit ${CI_COMMIT_SHA}"
+              if [[ -s "${CONSOLIDATED_RELEASE_CHANGELOG_FILE_NAME:-CONSOLIDATED_RELEASE_CHANGELOG.md}" ]]; then
+                RELEASE_DESC="$(cat "${CONSOLIDATED_RELEASE_CHANGELOG_FILE_NAME:-CONSOLIDATED_RELEASE_CHANGELOG.md}")"
+              fi
+              release-cli create --name "Release ${TAG}" --description "${RELEASE_DESC}" --tag-name "${TAG}" --ref "${CI_COMMIT_SHA}" "${ASSET_LINKS[@]}"
               echo "✅ Release ${TAG} created successfully."
             fi
+        artifacts:
+          name: Release Descriptions
+          expose_as: Release Descriptions
+          when: always
+          expire_in: 1 week
+          paths:
+            - ${IMAGE_README_MD_FILE_NAME:-IMAGE_README.md}
+            - ${CHART_README_MD_FILE_NAME:-CHART_README.md}
+            - ${TF_README_MD_FILE_NAME:-TF_README.md}
+            - ${RELEASE_CHANGELOG_FILE_NAME:-RELEASE_CHANGELOG.md}
+            - ${RELEASE_MIGRATION_FILE_NAME:-RELEASE_MIGRATION.md}
+            - ${RELEASE_CHANGELOG_CARD_FILE_NAME:-RELEASE_CHANGELOG_CARD.json}
+            - ${CONSOLIDATED_RELEASE_CHANGELOG_FILE_NAME:-CONSOLIDATED_RELEASE_CHANGELOG.md}
 
       .teams-adaptivecard-notification-vars:
         variables:
@@ -839,7 +963,7 @@ Release:Prepare:
           - .teams-adaptivecard-notification-vars
         needs:
           - job: Release
-            artifacts: false
+            artifacts: true
         script:
           - echo "${MESSAGE_TEMPLATE_ADAPTIVE_CARD}" > message_template.json
           - |
@@ -944,7 +1068,8 @@ Release:Prepare:
           expire_in: 1 week
           paths:
             - message.json
-      CHILDEOF
+CHILDEOF
+      sed 's/^      //' release-pipeline.yml > release-pipeline.yml.tmp && mv release-pipeline.yml.tmp release-pipeline.yml
       echo "✅ Generated serialized child release pipeline specification."
       cp candidate.json "${CI_PROJECT_DIR}/candidate.json" 2>/dev/null || true
       cp release-pipeline.yml "${CI_PROJECT_DIR}/release-pipeline.yml" 2>/dev/null || true

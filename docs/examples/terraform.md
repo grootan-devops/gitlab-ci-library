@@ -29,6 +29,12 @@ root gets its own `PROJECT_PATH` and `PROJECT_CACHE_KEY`, so it restores only it
 `.terraform`, and keeps its own README for `Terraform:Check:README`. The release jobs keep the
 project's `PROJECT_PATH`.
 
+Each root's `Terraform:Scan` reaches the release with no extra job: `Release:Upload` bundles
+every root's Trivy reports in `trivy_scan_report.tar.gz` under that root's path
+(`stacks/network/terraform_trivy_scan_report.json`), and merges each root's `TF_CVE.md` into the
+release notes under a "Terraform root `stacks/network`" heading. A project that copied scan
+reports to the repository root with a job of its own drops that job.
+
 ```yaml
 .terraform-roots: &terraform-roots
   matrix:

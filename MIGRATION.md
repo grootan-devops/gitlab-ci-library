@@ -26,6 +26,21 @@ Newer sections are split into **Required** (the upgrade breaks or misbehaves wit
 - Master release pipelines run `Release:Prepare` and `Release:Transaction` under `resource_group: production-release`.
 - Declarative packages are promoted to stable Generic Packages with matching SHA256 without compiling on master.
 
+## 1.12.1
+
+No required action.
+
+### Recommended
+
+- A project that runs the Terraform jobs as a `parallel:matrix` and added a job of its own to copy
+  each root's scan reports to the repository root removes that job: the release now collects them
+  itself.
+
+### Verify
+
+- The release's `trivy_scan_report.tar.gz` contains each root's reports under its `PROJECT_PATH`,
+  and the release notes carry a "Terraform root" section per root.
+
 ## 1.12.0
 
 ### Required

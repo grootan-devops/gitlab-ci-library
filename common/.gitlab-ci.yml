@@ -2239,6 +2239,29 @@ Candidate:Register:
           --arg id "${CHART_SCAN_JOB_ID}" \
           '. + [{ name: "chart_trivy_report", job_id: ($id | tonumber), job_name: "Chart:Scan", path: "chart_trivy_report.json", required: false }]')
       fi
+
+      for TF_JOB_ROW in $(echo "${PIPELINE_JOBS}" | jq -r '[.[] | select((.name | test("^Terraform:Scan")) and .status=="success")] | .[] | "\(.id):\(.name)"'); do
+        TF_JID=$(echo "${TF_JOB_ROW}" | cut -d: -f1)
+        TF_JNAME=$(echo "${TF_JOB_ROW}" | cut -d: -f2-)
+        REPORTS_JSON=$(echo "${REPORTS_JSON}" | jq \
+          --arg id "${TF_JID}" \
+          --arg name "${TF_JNAME}" \
+          '. + [{ name: $name, job_id: ($id | tonumber), job_name: $name, path: "terraform_scan", required: false }]')
+      done
+
+      LICENSE_JOB_ID=$(echo "${PIPELINE_JOBS}" | jq -r '[.[] | select(.name=="License:Scan" and .status=="success")][0].id // empty')
+      if [[ -n "${LICENSE_JOB_ID}" ]]; then
+        REPORTS_JSON=$(echo "${REPORTS_JSON}" | jq \
+          --arg id "${LICENSE_JOB_ID}" \
+          '. + [{ name: "license_scan", job_id: ($id | tonumber), job_name: "License:Scan", path: "license_scan", required: false }]')
+      fi
+
+      SBOM_SCAN_JOB_ID=$(echo "${PIPELINE_JOBS}" | jq -r '[.[] | select(.name=="SBOM:Scan" and .status=="success")][0].id // empty')
+      if [[ -n "${SBOM_SCAN_JOB_ID}" ]]; then
+        REPORTS_JSON=$(echo "${REPORTS_JSON}" | jq \
+          --arg id "${SBOM_SCAN_JOB_ID}" \
+          '. + [{ name: "sbom_scan", job_id: ($id | tonumber), job_name: "SBOM:Scan", path: "sbom_scan", required: false }]')
+      fi
     - |
       mkdir -p .release
       if [[ -n "${PROJECT_PATH}" && -d "${PROJECT_PATH}/.release" ]]; then

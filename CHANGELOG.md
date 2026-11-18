@@ -15,6 +15,7 @@ this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Downstream release pipeline serialization: `Release:Prepare` validates MR provenance and generates `release-pipeline.yml`, which `Release:Transaction` executes atomically under `resource_group: production-release` with `strategy: depend`.
 - Mandatory Artifact Preflight Probes: `Release:Verify` validates candidate dev container images (`crane manifest`), Helm charts, and declared generic packages before entering the promote stage, guaranteeing fail-closed zero-write safety on missing deliverables.
 - Multi-Strategy Merge Support: `Common:Init` authoritatively resolves MR provenance and latest verification pipelines across standard merge commits, squash merges, and fast-forward merges.
+- Monorepo Multi-Service Resolution: `Common:Init` dynamically discovers downstream child verification pipelines across monorepo services by matching parent bridge names.
 
 ### Fixed
 
@@ -27,6 +28,14 @@ this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Image Digest Mutation: `Image:Promote` promotes container images via `crane copy` without label mutation, preserving source digest and configuration.
 - Generic Package Duplication: `Release:Upload` and `Release:Packages:Promote` check SHA256 before uploading to Generic Package Registry, skipping duplicate uploads idempotently.
 - Dotenv Limit Optimization: streamlined `Common:Init` dotenv exports to $\le 16$ core variables.
+- Matrix Terraform Scan Reports: adapted 1.12.1 fix where Terraform scan reports and TF_CVE summaries from `parallel:matrix` roots are bundled and merged into the release notes.
+
+## [1.12.1] - 2026-11-18
+
+### Fixed
+
+- Terraform scan reports from a `parallel:matrix` of roots reach the release. Each root's `Terraform:Scan` saves its reports under its `PROJECT_PATH`, and `Release:Upload` only looked in the repository root, so a multi-root project released without its Trivy bundle and without a Terraform section in the release notes. `Release:Upload` now bundles the reports of every root under its path in `trivy_scan_report.tar.gz` and merges each root's `TF_CVE.md` into the release notes under a heading naming the root. A project with a single root gets the same bundle and notes as before.
+- `docs/examples/terraform.md`, `docs/modules/terraform.md` and `docs/modules/release-notify.md` describe how a multi-root project's scans reach the release.
 
 ## [1.12.0] - 2026-11-01
 
