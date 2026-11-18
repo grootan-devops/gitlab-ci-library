@@ -211,6 +211,28 @@ Release:Upload:
         fi
         echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
       fi
+    - |
+      # Matrix roots restore TF_CVE.md under their PROJECT_PATH; merge them into the root file the release notes read.
+      TF_ROOT_SUMMARIES=()
+      while IFS= read -r SUMMARY; do
+        TF_ROOT_SUMMARIES+=("${SUMMARY}")
+      done < <(find . -mindepth 2 \( -name .git -o -name node_modules \) -prune -o -type f -name "${TF_CVE_INFO_FILE_NAME}" -print | sed 's|^\./||' | sort)
+      if [[ ${#TF_ROOT_SUMMARIES[@]} -gt 0 ]]; then
+        {
+          if [[ -s "${TF_CVE_INFO_FILE_NAME}" ]]; then
+            cat "${TF_CVE_INFO_FILE_NAME}"
+            echo ""
+          fi
+          for SUMMARY in "${TF_ROOT_SUMMARIES[@]}"; do
+            echo "### Terraform root \`$(dirname "${SUMMARY}")\`"
+            echo ""
+            cat "${SUMMARY}"
+            echo ""
+          done
+        } > "${TF_CVE_INFO_FILE_NAME}.merged"
+        mv "${TF_CVE_INFO_FILE_NAME}.merged" "${TF_CVE_INFO_FILE_NAME}"
+        echo "📄 Merged ${#TF_ROOT_SUMMARIES[@]} Terraform root scan summaries into ${TF_CVE_INFO_FILE_NAME}"
+      fi
     - FAILED_UPLOADS=()
     - |
       file_upload () {
@@ -231,9 +253,12 @@ Release:Upload:
         fi
       }
     - |
-      # 1. Trivy scan report bundle
-      TRIVY_REPORTS=( *_${TRIVY_SCAN_REPORT_NAME_SUFFIX}.* )
-      if [[ -f "${TRIVY_REPORTS[0]}" ]]; then
+      # 1. Trivy scan report bundle: root reports keep flat names, matrix roots keep their PROJECT_PATH.
+      TRIVY_REPORTS=()
+      while IFS= read -r REPORT; do
+        TRIVY_REPORTS+=("${REPORT}")
+      done < <(find . \( -name .git -o -name node_modules \) -prune -o -type f -name "*_${TRIVY_SCAN_REPORT_NAME_SUFFIX}.*" -print | sed 's|^\./||' | sort)
+      if [[ ${#TRIVY_REPORTS[@]} -gt 0 ]]; then
         tar -czf "${TRIVY_SCAN_REPORT_FILE_NAME}" "${TRIVY_REPORTS[@]}" 2>/dev/null || true
         file_upload "${TRIVY_SCAN_REPORT_FILE_NAME}"
       fi

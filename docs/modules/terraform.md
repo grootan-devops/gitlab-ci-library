@@ -22,7 +22,8 @@ state, so the pipeline needs no backend credentials and works with any backend.
 `Terraform:Validate`, `Terraform:Lint` and `Terraform:Scan` restore the cache it fills under
 `PROJECT_CACHE_KEY`, so the modules the root calls are already installed. A repository with several
 roots gives each one its own `PROJECT_PATH` and `PROJECT_CACHE_KEY`
-([example](../examples/terraform.md#several-terraform-roots)).
+([example](../examples/terraform.md#several-terraform-roots)); the release bundles every root's scan
+report and lists every root's scan summary.
 
 ## Consuming a module — no packaging step
 

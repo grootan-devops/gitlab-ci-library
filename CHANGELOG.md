@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.12.1] - 2026-11-18
+
+### Fixed
+
+- Terraform scan reports from a `parallel:matrix` of roots reach the release. Each root's `Terraform:Scan` saves its reports under its `PROJECT_PATH`, and `Release:Upload` only looked in the repository root, so a multi-root project released without its Trivy bundle and without a Terraform section in the release notes. `Release:Upload` now bundles the reports of every root under its path in `trivy_scan_report.tar.gz` and merges each root's `TF_CVE.md` into the release notes under a heading naming the root. A project with a single root gets the same bundle and notes as before.
+- `docs/examples/terraform.md`, `docs/modules/terraform.md` and `docs/modules/release-notify.md` describe how a multi-root project's scans reach the release.
+
 ## [1.12.0] - 2026-11-01
 
 ### Changed
