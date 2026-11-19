@@ -13,7 +13,7 @@ when changing a template.
 Keep public job names, `extends` relationships, inputs, and artifact paths
 compatible with the selected migration guide. Shell commands live in YAML
 `script`, `before_script`, or `after_script` blocks; keep them valid Bash and
-do not print credentials. Write a command that contains `: ` (a header such as
+do not print credentials. Write a command that contains a colon followed by a space (a header such as
 `"JOB-TOKEN: ${CI_JOB_TOKEN}"`) as a `- |` block or a quoted string: unquoted, YAML reads it
 as a mapping and GitLab rejects the whole include. New standalone `.sh` files are checked by
 ShellCheck.

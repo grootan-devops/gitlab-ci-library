@@ -9,7 +9,7 @@ this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
-- `Candidate:Register` in `common/.gitlab-ci.yml` no longer breaks every consumer pipeline. Its unquoted `PIPELINE_JOBS=$(curl ... --header "JOB-TOKEN: ...")` script line contained `: `, so YAML read it as a mapping and GitLab lint rejected the include with `jobs:candidate:register:script config should be a string or a nested array of strings`, leaving pipelines with no jobs. The line is now a block scalar.
+- `Candidate:Register` in `common/.gitlab-ci.yml` no longer breaks every consumer pipeline. Its unquoted `PIPELINE_JOBS=$(curl ... --header "JOB-TOKEN: ...")` script line contained a colon followed by a space, so YAML read it as a mapping and GitLab lint rejected the include with `jobs:candidate:register:script config should be a string or a nested array of strings`, leaving pipelines with no jobs. The line is now a block scalar.
 
 ### Added
 
