@@ -30,6 +30,16 @@ jobs:
     with:
       lint-md-files: "**/*.md"
 
+  script-types:
+    runs-on: ${{ vars.CI_RUNNER || 'ubuntu-26.04' }}
+    steps:
+      - uses: actions/checkout@v7
+      - name: Check GitLab script entries are strings
+        run: |
+          set -euo pipefail
+          /usr/bin/python3 -c 'import yaml' 2>/dev/null || sudo apt-get install -y python3-yaml
+          git ls-files -z '*.yml' '*.yaml' ':!:.github/**' | xargs -0 /usr/bin/python3 .github/scripts/check_script_types.py
+
   check:
     needs: init
     uses: grootan-devops/github-ci-library/.github/workflows/check.yml@1.7.0

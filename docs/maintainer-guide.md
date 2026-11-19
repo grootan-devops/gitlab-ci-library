@@ -13,7 +13,10 @@ when changing a template.
 Keep public job names, `extends` relationships, inputs, and artifact paths
 compatible with the selected migration guide. Shell commands live in YAML
 `script`, `before_script`, or `after_script` blocks; keep them valid Bash and
-do not print credentials. New standalone `.sh` files are checked by ShellCheck.
+do not print credentials. Write a command that contains a colon followed by a space (a header such as
+`"JOB-TOKEN: ${CI_JOB_TOKEN}"`) as a `- |` block or a quoted string: unquoted, YAML reads it
+as a mapping and GitLab rejects the whole include. New standalone `.sh` files are checked by
+ShellCheck.
 
 A job extends a rule anchor from `common/` when one admits the workflows it needs. A new
 rule set starts with `- !reference [.verify-rules, rules]` (merge requests to a protected
@@ -28,7 +31,10 @@ anchors that no library job uses, such as `.mr-only-rules`, `.master-fast-track-
 `.github/workflows/pr.yml` runs Actionlint and ShellCheck for repository-owned
 workflows and standalone shell scripts. Its reusable lint job runs Yamllint on
 tracked YAML and Markdownlint on Markdown, including changelog and migration
-notes. The reusable release check verifies the required changelog and migration
+notes. Its `script-types` job runs
+[`check_script_types.py`](../.github/scripts/check_script_types.py), which fails when a
+`script`, `before_script` or `after_script` item in a template does not parse as a string or a
+`!reference`. The reusable release check verifies the required changelog and migration
 sections. The same lint and check workflows can be dispatched separately.
 
 ## Releases and versioning
