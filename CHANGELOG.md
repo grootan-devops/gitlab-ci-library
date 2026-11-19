@@ -5,6 +5,16 @@ All notable changes to this project will be documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.13.1] - 2026-11-20
+
+### Fixed
+
+- `Candidate:Register` in `common/.gitlab-ci.yml` no longer breaks every consumer pipeline. Its unquoted `PIPELINE_JOBS=$(curl ... --header "JOB-TOKEN: ...")` script line contained `: `, so YAML read it as a mapping and GitLab lint rejected the include with `jobs:candidate:register:script config should be a string or a nested array of strings`, leaving pipelines with no jobs. The line is now a block scalar.
+
+### Added
+
+- `.github/scripts/check_script_types.py` and a `script-types` job in the PR and lint workflows: every `script`, `before_script` and `after_script` item in the templates must parse as a string, a `!reference` or a list of them, so an entry Yamllint accepts but GitLab rejects fails the PR.
+
 ## [1.13.0] - 2026-11-17
 
 ### Added

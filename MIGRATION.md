@@ -7,6 +7,19 @@ To upgrade, apply every section after your pinned version up to the target, olde
 Newer sections are split into **Required** (the upgrade breaks or misbehaves without it),
 **Recommended** (aligns an existing project with the current standards) and **Verify**.
 
+## 1.13.1
+
+No required action. Projects pinned to 1.13.0 fail GitLab lint and run no jobs; move to 1.13.1.
+Projects still on 1.12.x apply the 1.13.0 section with this release.
+
+### Recommended
+
+- Update every `include` of this library from `1.13.0` to `1.13.1`.
+
+### Verify
+
+- GitLab CI lint accepts the project's `.gitlab-ci.yml`, and MR pipelines run `Candidate:Register`.
+
 ## 1.13.0
 
 ### Required

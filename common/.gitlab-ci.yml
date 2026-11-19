@@ -2197,7 +2197,8 @@ Candidate:Register:
         fi
       fi
     - REPORTS_JSON="[]"
-    - PIPELINE_JOBS=$(curl --silent --fail --header "JOB-TOKEN: ${CI_JOB_TOKEN}" "${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/pipelines/${CI_PIPELINE_ID}/jobs?per_page=100" 2>/dev/null || echo "[]")
+    - |
+      PIPELINE_JOBS=$(curl --silent --fail --header "JOB-TOKEN: ${CI_JOB_TOKEN}" "${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/pipelines/${CI_PIPELINE_ID}/jobs?per_page=100" 2>/dev/null || echo "[]")
     - |
       SBOM_JOB_ID=$(echo "${PIPELINE_JOBS}" | jq -r '[.[] | select(.name=="SBOM:Generate")][0].id // empty')
       if [[ -n "${SBOM_JOB_ID}" ]]; then
