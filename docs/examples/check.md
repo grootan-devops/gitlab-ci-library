@@ -5,6 +5,7 @@ Pre-flight dry-run guard to verify release availability, tag uniqueness, contain
 ```yaml
 # .gitlab-ci.yml
 variables:
+  RELEASE_VERSION: 1.0.0
   IMAGE_REPOSITORY: myorg/web-app
   CHART_REPOSITORY: myorg/helm
 

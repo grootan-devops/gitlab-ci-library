@@ -88,6 +88,14 @@
         "lint",
         "check"
       ]
+    },
+    "release/.gitlab-ci.yml": {
+      "provides": [
+        "release"
+      ],
+      "signature_jobs": {
+        "release": "Release:Transaction"
+      }
     }
   }
 }

@@ -1,6 +1,3 @@
-include:
-  - local: 'common/.gitlab-ci.yml'
-
 workflow:
   name: "📦 Child: ${PROJECT_PATH}"
   auto_cancel:

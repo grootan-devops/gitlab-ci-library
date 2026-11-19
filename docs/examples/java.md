@@ -3,6 +3,7 @@
 ```yaml
 # .gitlab-ci.yml
 variables:
+  RELEASE_VERSION: 1.0.0
   PROJECT_CACHE_KEY: java
   IMAGE_REPOSITORY: myorg/payment-service
   CHART_REPOSITORY: myorg/helm

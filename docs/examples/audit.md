@@ -5,6 +5,7 @@ For repositories wanting lightweight security and quality gates without packagin
 ```yaml
 # .gitlab-ci.yml
 variables:
+  RELEASE_VERSION: 1.0.0
   PROJECT_CACHE_KEY: node-audit
 
 include:

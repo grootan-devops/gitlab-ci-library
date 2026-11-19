@@ -30,7 +30,7 @@ flowchart LR
 | `Chart:Build` | `build` | Packages chart into `.tgz` artifact using `helm package`. |
 | `Chart:Push` | `push` | Publishes to OCI when configured, otherwise GitLab packages (`dev` for candidates, `stable` for releases). Stable pushes optionally mirror to dev. |
 | `Chart:Scan` | `security` | Renders templates and runs Trivy. Remote charts (`TARGET_VERSION`) come from the selected backend; pull failures never substitute a local chart. |
-| `Chart:Promote` | `release` | Pulls a candidate from the selected backend, repackages at the release tag and publishes to production. |
+| `Chart:Promote` | `release` | Pulls a verified candidate from the selected backend, verifies SHA256 against candidate.json, repackages at the release tag and publishes to production. Fails closed if the candidate is missing. |
 
 ## Chart-only repositories
 

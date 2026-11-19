@@ -209,6 +209,10 @@ Image:Promote:
     - .release-rules
     - .image-common
     - .image-registry-login
+  rules:
+    - if: '$RELEASE_PIPELINE_ORCHESTRATED == "true"'
+      when: never
+    - !reference [.release-rules, rules]
   needs:
     - job: Common:Init
       artifacts: true
@@ -216,40 +220,98 @@ Image:Promote:
   script:
     - DEV_IMAGE="${IMAGE_REGISTRY}/${IMAGE_REPOSITORY}${IMAGE_DEV_REPOSITORY_SUFFIX}"
     - PROD_IMAGE="${IMAGE_REGISTRY}/${IMAGE_REPOSITORY}"
-    - echo "🔍 Looking for candidate image in dev registry -> ${DEV_IMAGE} (target version ${TAG})..."
+    - >
+      echo "🔍 Looking for candidate image in dev registry -> ${DEV_IMAGE} (target version ${TAG})..."
     - |
       DEV_IMAGE_SRC=""
-      # 1. Try explicit dev candidate version from upstream MR verification pipeline
       if [[ -n "${DEV_CANDIDATE_VERSION}" ]] && crane manifest "${DEV_IMAGE}:${DEV_CANDIDATE_VERSION}" > /dev/null 2>&1; then
         DEV_IMAGE_SRC="${DEV_IMAGE}:${DEV_CANDIDATE_VERSION}"
-      # 2. Try candidate tag with ${TAG}-rc.${UPSTREAM_PIPELINE_ID}
+      elif [[ -n "${UPSTREAM_PIPELINE_ID}" && -n "${MR_IID}" ]] && crane manifest "${DEV_IMAGE}:${TAG}-rc.${UPSTREAM_PIPELINE_ID}-${MR_IID}" > /dev/null 2>&1; then
+        DEV_IMAGE_SRC="${DEV_IMAGE}:${TAG}-rc.${UPSTREAM_PIPELINE_ID}-${MR_IID}"
       elif [[ -n "${UPSTREAM_PIPELINE_ID}" ]] && crane manifest "${DEV_IMAGE}:${TAG}-rc.${UPSTREAM_PIPELINE_ID}" > /dev/null 2>&1; then
         DEV_IMAGE_SRC="${DEV_IMAGE}:${TAG}-rc.${UPSTREAM_PIPELINE_ID}"
-      # 3. Dynamic lookup for latest RC tag for this version in dev registry
-      else
-        RC_TAG=$(crane ls "${DEV_IMAGE}" 2>/dev/null | grep -E "^${TAG}-rc" | sort -V | tail -n1 || true)
-        if [[ -n "${RC_TAG}" ]] && crane manifest "${DEV_IMAGE}:${RC_TAG}" > /dev/null 2>&1; then
-          DEV_IMAGE_SRC="${DEV_IMAGE}:${RC_TAG}"
-        elif crane manifest "${DEV_IMAGE}:${TAG}" > /dev/null 2>&1; then
-          DEV_IMAGE_SRC="${DEV_IMAGE}:${TAG}"
+      fi
+    - |
+      if [[ -z "${DEV_IMAGE_SRC}" ]]; then
+        echo "❌ ERROR: Candidate dev image not found for target release ${TAG} in ${DEV_IMAGE}."
+        echo "Fail-closed: A verified candidate image is strictly required for production release."
+        exit 1
+      fi
+    - >
+      echo "📦 Found verified candidate dev image: ${DEV_IMAGE_SRC}"
+    - DEV_DIGEST=$(crane digest "${DEV_IMAGE_SRC}")
+    - 'echo "   Candidate Digest: ${DEV_DIGEST}"'
+    - |
+      # Check if production tag already exists with matching or conflicting digest
+      PROD_EXISTS=false
+      if crane manifest "${PROD_IMAGE}:${TAG}" > /dev/null 2>&1; then
+        PROD_EXISTS=true
+        EXISTING_PROD_DIGEST=$(crane digest "${PROD_IMAGE}:${TAG}")
+        if [[ "${EXISTING_PROD_DIGEST}" == "${DEV_DIGEST}" ]]; then
+          echo "✅ Production image ${PROD_IMAGE}:${TAG} already exists with identical digest (${DEV_DIGEST}). Skipping copy."
+        else
+          echo "❌ ERROR: Production image ${PROD_IMAGE}:${TAG} already exists with a different digest!"
+          echo "   Existing production digest: ${EXISTING_PROD_DIGEST}"
+          echo "   Candidate dev image digest: ${DEV_DIGEST}"
+          exit 1
         fi
       fi
     - |
-      if [[ -n "${DEV_IMAGE_SRC}" ]]; then
-        echo "📦 Found candidate dev image: ${DEV_IMAGE_SRC}"
-        echo "🏷️ Mutating label 'org.opencontainers.image.version=${TAG}' and promoting to ${PROD_IMAGE}:${TAG}..."
-        crane mutate "${DEV_IMAGE_SRC}" --label "org.opencontainers.image.version=${TAG}" --tag "${PROD_IMAGE}:${TAG}"
-        echo "🚀 Tagging release aliases in production registry..."
-        crane tag "${PROD_IMAGE}:${TAG}" latest
+      # Promote candidate dev image to production repository via crane copy
+      if [[ "${PROD_EXISTS}" != "true" ]]; then
+        echo "🚀 Promoting ${DEV_IMAGE_SRC} directly to ${PROD_IMAGE}:${TAG} via crane copy..."
+        crane copy "${DEV_IMAGE_SRC}" "${PROD_IMAGE}:${TAG}"
+        echo "✅ Production image promoted successfully via Crane (source digest preserved)."
+      fi
+    - |
+      # SemVer-aware floating tag updates (latest, MAJOR, MINOR)
+      if [[ "${RELEASE_FLOATING_TAGS:-true}" == "false" ]]; then
+        echo "ℹ️ RELEASE_FLOATING_TAGS is disabled. Skipping alias tagging."
+      elif [[ "${TAG}" =~ - ]]; then
+        echo "ℹ️ Prerelease version '${TAG}' detected. Prereleases never update stable floating aliases."
+      else
+        echo "🏷️ Evaluating floating tag updates for production image..."
+        semver_ge() {
+          local v1="$1"
+          local v2="$2"
+          [[ "${v1}" == "${v2}" ]] && return 0
+          local lowest
+          lowest=$(printf "%s\n%s\n" "${v1}" "${v2}" | sort -V | head -n1)
+          [[ "${lowest}" == "${v2}" ]]
+        }
+
+        EXISTING_TAGS=$(crane ls "${PROD_IMAGE}" 2>/dev/null || true)
         MAJOR_VERSION=$(echo "${TAG}" | grep -Eo '^([0-9]+)')
         MINOR_VERSION=$(echo "${TAG}" | grep -Eo '^([0-9]+)\.([0-9]+)')
+
+        # 1. Update 'latest' alias
+        HIGHEST_OVERALL=$(echo "${EXISTING_TAGS}" | grep -E '^[0-9]+\.[0-9]+\.[0-9]+$' | sort -V | tail -n1 || true)
+        if [[ -z "${HIGHEST_OVERALL}" ]] || semver_ge "${TAG}" "${HIGHEST_OVERALL}"; then
+          echo "   🚀 Tagging 'latest' -> ${PROD_IMAGE}:${TAG}"
+          crane tag "${PROD_IMAGE}:${TAG}" latest
+        else
+          echo "   ℹ️ Existing version ${HIGHEST_OVERALL} is newer than ${TAG}. Preserving 'latest' alias."
+        fi
+
+        # 2. Update MAJOR alias (e.g. '1')
         if [[ -n "${MAJOR_VERSION}" ]]; then
-          crane tag "${PROD_IMAGE}:${TAG}" "${MAJOR_VERSION}"
+          HIGHEST_MAJOR=$(echo "${EXISTING_TAGS}" | grep -E "^${MAJOR_VERSION}\.[0-9]+\.[0-9]+$" | sort -V | tail -n1 || true)
+          if [[ -z "${HIGHEST_MAJOR}" ]] || semver_ge "${TAG}" "${HIGHEST_MAJOR}"; then
+            echo "   🚀 Tagging '${MAJOR_VERSION}' -> ${PROD_IMAGE}:${TAG}"
+            crane tag "${PROD_IMAGE}:${TAG}" "${MAJOR_VERSION}"
+          else
+            echo "   ℹ️ Existing version ${HIGHEST_MAJOR} in major ${MAJOR_VERSION} is newer than ${TAG}. Preserving '${MAJOR_VERSION}' alias."
+          fi
         fi
+
+        # 3. Update MINOR alias (e.g. '1.4')
         if [[ -n "${MINOR_VERSION}" ]]; then
-          crane tag "${PROD_IMAGE}:${TAG}" "${MINOR_VERSION}"
+          HIGHEST_MINOR=$(echo "${EXISTING_TAGS}" | grep -E "^${MINOR_VERSION//./\\.}\.[0-9]+$" | sort -V | tail -n1 || true)
+          if [[ -z "${HIGHEST_MINOR}" ]] || semver_ge "${TAG}" "${HIGHEST_MINOR}"; then
+            echo "   🚀 Tagging '${MINOR_VERSION}' -> ${PROD_IMAGE}:${TAG}"
+            crane tag "${PROD_IMAGE}:${TAG}" "${MINOR_VERSION}"
+          else
+            echo "   ℹ️ Existing version ${HIGHEST_MINOR} in minor ${MINOR_VERSION} is newer than ${TAG}. Preserving '${MINOR_VERSION}' alias."
+          fi
         fi
-        echo "✅ Production image promoted successfully via Crane."
-      else
-        echo "⚠️ Notice: No candidate dev image found. Skipping image promotion."
       fi

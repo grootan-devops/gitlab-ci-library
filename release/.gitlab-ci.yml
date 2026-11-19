@@ -1,4 +1,11 @@
+# release/.gitlab-ci.yml — Production Release Transaction & Promotion Engine
+#
+# Part of gitlab-ci-library (1.13.0+)
+# Serializes the production release transaction under resource_group: production-release,
+# eliminates floating tag regressions, and executes declarative package promotion.
+
 variables:
+  RELEASE_PIPELINE_ORCHESTRATED: "true"
   CONSOLIDATED_RELEASE_CHANGELOG_FILE_NAME: CONSOLIDATED_RELEASE_CHANGELOG.md
   CONSOLIDATED_README_FILE_NAME: CONSOLIDATED_README.md
 
@@ -120,415 +127,983 @@ variables:
           }
         ]
       }
+  allow_failure: true
 
-    allow_failure: true
-
-Release:Upload:
-  variables:
-    GIT_DEPTH: 2
+# Top-level orchestrator: Release:Prepare
+Release:Prepare:
+  stage: release
   extends:
     - .release-rules
     - .release-common
-  allow_failure: true
+  image: ${TOOLKIT_BUILD_IMAGE_REPO}:${TOOLKIT_BUILD_IMAGE_TAG}
   needs:
     - job: Common:Init
       artifacts: true
-      optional: true
-    - job: Image:Promote
-      artifacts: false
-      optional: true
-    - job: Chart:Promote
-      artifacts: false
-      optional: true
   script:
-    - echo "🔍 Searching for upstream verification artifacts for commit ${CI_COMMIT_SHA}..."
-    - RESTORED_COUNT=0
+    - >
+      echo "📋 Preparing production release transaction for version ${TAG}..."
     - |
-      # 1. Use upstream pipeline resolved from Common:Init if present
-      if [[ -z "${UPSTREAM_PIPELINE_ID}" ]]; then
-        COMMIT_MSG=$(git log -1 --pretty=%B || true)
-        MR_IID=$(echo "${COMMIT_MSG}" | grep -oE "MR [0-9]+" | head -n1 | tr -d 'MR ' || true)
-        if [[ -z "${MR_IID}" ]]; then
-          MR_IID=$(echo "${COMMIT_MSG}" | grep -oE "![0-9]+" | head -n1 | tr -d '!' || true)
-        fi
-        if [[ -z "${MR_IID}" ]]; then
-          MR_IID=$(echo "${COMMIT_MSG}" | grep -oE "merge_requests/[0-9]+" | head -n1 | tr -d 'merge_requests/' || true)
-        fi
-        if [[ -z "${MR_IID}" ]]; then
-          MR_JSON=$(curl --silent --fail --header "JOB-TOKEN: ${CI_JOB_TOKEN}" "${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/repository/commits/${CI_COMMIT_SHA}/merge_requests" 2>/dev/null || true)
-          MR_IID=$(echo "${MR_JSON}" | jq -r '.[0].iid // empty' 2>/dev/null || true)
-          MR_SRC_SHA=$(echo "${MR_JSON}" | jq -r '.[0].sha // empty' 2>/dev/null || true)
-        fi
-        if [[ -n "${MR_IID}" ]]; then
-          MR_REF_PIPES=$(curl --silent --fail --header "JOB-TOKEN: ${CI_JOB_TOKEN}" "${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/pipelines?ref=refs/merge-requests/${MR_IID}/head&status=success" 2>/dev/null || true)
-          UPSTREAM_PIPELINE_ID=$(echo "${MR_REF_PIPES}" | jq -r '.[0].id // empty' 2>/dev/null || true)
-        fi
-        if [[ -z "${UPSTREAM_PIPELINE_ID}" && -n "${MR_SRC_SHA}" ]]; then
-          SRC_PIPES_JSON=$(curl --silent --fail --header "JOB-TOKEN: ${CI_JOB_TOKEN}" "${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/pipelines?sha=${MR_SRC_SHA}&status=success" 2>/dev/null || true)
-          UPSTREAM_PIPELINE_ID=$(echo "${SRC_PIPES_JSON}" | jq -r '.[0].id // empty' 2>/dev/null || true)
-        fi
-        if [[ -z "${UPSTREAM_PIPELINE_ID}" ]]; then
-          RECENT_PIPES=$(curl --silent --fail --header "JOB-TOKEN: ${CI_JOB_TOKEN}" "${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/pipelines?status=success&per_page=10" 2>/dev/null || true)
-          UPSTREAM_PIPELINE_ID=$(echo "${RECENT_PIPES}" | jq -r '[.[] | select(.source=="merge_request_event")][0].id // empty' 2>/dev/null || true)
-        fi
-      fi
-    - |
-      # 2. If an upstream pipeline is identified, inspect jobs and download artifacts
-      if [[ -n "${UPSTREAM_PIPELINE_ID}" ]]; then
-        echo "📥 Found upstream verification pipeline #${UPSTREAM_PIPELINE_ID}: ${CI_PROJECT_URL}/-/pipelines/${UPSTREAM_PIPELINE_ID}"
-        JOBS_JSON=$(curl --silent --fail --header "JOB-TOKEN: ${CI_JOB_TOKEN}" "${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/pipelines/${UPSTREAM_PIPELINE_ID}/jobs?per_page=100" 2>/dev/null || true)
-
-        if [[ -n "${JOBS_JSON}" ]]; then
-          JOB_ROWS=$(echo "${JOBS_JSON}" | jq -r '.[] | "\(.id)|\(.name)|\(.stage)|\(.status)|\(if .artifacts_file != null then "yes" else "no" end)"')
-          while IFS='|' read -r JOB_ID JOB_NAME JOB_STAGE JOB_STATUS HAS_ARTIFACTS; do
-            if [[ -z "${JOB_ID}" ]]; then
-              continue
-            fi
-            JOB_URL="${CI_PROJECT_URL}/-/jobs/${JOB_ID}"
-
-            if [[ "${HAS_ARTIFACTS}" == "yes" ]]; then
-              if curl --silent --location --fail --header "JOB-TOKEN: ${CI_JOB_TOKEN}" --output "job_${JOB_ID}_artifacts.zip" "${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/jobs/${JOB_ID}/artifacts" 2>/dev/null; then
-                if unzip -o -q "job_${JOB_ID}_artifacts.zip" 2>/dev/null; then
-                  RESTORED_COUNT=$((RESTORED_COUNT + 1))
-                  echo "  ✅ [${JOB_STAGE}] ${JOB_NAME} (#${JOB_ID}) - Artifacts restored: ${JOB_URL}"
-                fi
-                rm -f "job_${JOB_ID}_artifacts.zip"
-              fi
-            else
-              echo "  ⚠️ [${JOB_STAGE}] ${JOB_NAME} (#${JOB_ID}) status='${JOB_STATUS}' (no artifacts)"
-            fi
-          done <<< "${JOB_ROWS}"
-        fi
-        echo "✅ Restored artifacts from ${RESTORED_COUNT} upstream jobs."
-      fi
-    - |
-      if [[ ${RESTORED_COUNT} -eq 0 ]]; then
-        echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-        if [[ -n "${UPSTREAM_PIPELINE_ID}" ]]; then
-          echo "⚠️  WARNING: Upstream pipeline #${UPSTREAM_PIPELINE_ID} has no downloadable artifacts!"
-        else
-          echo "⚠️  WARNING: No upstream verification pipeline found for commit ${CI_COMMIT_SHA}."
-        fi
-        echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-      fi
-    - |
-      # Matrix roots restore TF_CVE.md under their PROJECT_PATH; merge them into the root file the release notes read.
-      TF_ROOT_SUMMARIES=()
-      while IFS= read -r SUMMARY; do
-        TF_ROOT_SUMMARIES+=("${SUMMARY}")
-      done < <(find . -mindepth 2 \( -name .git -o -name node_modules \) -prune -o -type f -name "${TF_CVE_INFO_FILE_NAME}" -print | sed 's|^\./||' | sort)
-      if [[ ${#TF_ROOT_SUMMARIES[@]} -gt 0 ]]; then
-        {
-          if [[ -s "${TF_CVE_INFO_FILE_NAME}" ]]; then
-            cat "${TF_CVE_INFO_FILE_NAME}"
-            echo ""
-          fi
-          for SUMMARY in "${TF_ROOT_SUMMARIES[@]}"; do
-            echo "### Terraform root \`$(dirname "${SUMMARY}")\`"
-            echo ""
-            cat "${SUMMARY}"
-            echo ""
-          done
-        } > "${TF_CVE_INFO_FILE_NAME}.merged"
-        mv "${TF_CVE_INFO_FILE_NAME}.merged" "${TF_CVE_INFO_FILE_NAME}"
-        echo "📄 Merged ${#TF_ROOT_SUMMARIES[@]} Terraform root scan summaries into ${TF_CVE_INFO_FILE_NAME}"
-      fi
-    - FAILED_UPLOADS=()
-    - |
-      file_upload () {
-        local FILE=$1
-
-        if [[ ! -f "${FILE}" ]]; then
-          echo "⚠️ WARNING: ${FILE} does not exist."
-          FAILED_UPLOADS+=("${FILE}")
-          return 1
-        fi
-
-        echo "📦 Uploading ${FILE} to generic package registry..."
-        if ! curl --fail -L --header "JOB-TOKEN: ${CI_JOB_TOKEN}" --upload-file "${FILE}" "${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/packages/generic/release-assets/${TAG}/${FILE}" ; then
-          echo "❌ ERROR: Failed to upload ${FILE}"
-          FAILED_UPLOADS+=("${FILE}")
-        else
-          echo "✅ Uploaded ${FILE} successfully to package registry (version ${TAG})"
-        fi
-      }
-    - |
-      # 1. Trivy scan report bundle: root reports keep flat names, matrix roots keep their PROJECT_PATH.
-      TRIVY_REPORTS=()
-      while IFS= read -r REPORT; do
-        TRIVY_REPORTS+=("${REPORT}")
-      done < <(find . \( -name .git -o -name node_modules \) -prune -o -type f -name "*_${TRIVY_SCAN_REPORT_NAME_SUFFIX}.*" -print | sed 's|^\./||' | sort)
-      if [[ ${#TRIVY_REPORTS[@]} -gt 0 ]]; then
-        tar -czf "${TRIVY_SCAN_REPORT_FILE_NAME}" "${TRIVY_REPORTS[@]}" 2>/dev/null || true
-        file_upload "${TRIVY_SCAN_REPORT_FILE_NAME}"
-      fi
-    - |
-      # 2. Installed packages / SBOM
-      if [[ -f "${INSTALLED_PCKG_FILE_NAME}" ]]; then
-        file_upload "${INSTALLED_PCKG_FILE_NAME}"
-      fi
-      if [[ -f "sbom.cdx.json" ]]; then
-        file_upload "sbom.cdx.json"
-      fi
-    - |
-      # 3. Helm chart package
-      CHART_TGZ_FILES=( ${CHART_NAME}-*.tgz )
-      if [[ -f "${CHART_TGZ_FILES[0]}" ]]; then
-        if [[ ! -f "${CHART_NAME}-${TAG}.tgz" ]]; then
-          cp "${CHART_TGZ_FILES[0]}" "${CHART_NAME}-${TAG}.tgz"
-        fi
-        file_upload "${CHART_NAME}-${TAG}.tgz"
-      fi
-    - |
-      # 4. Test reports directory
-      if [[ -d "${TEST_REPORT_DIR}" ]]; then
-        tar -czf "${TEST_REPORT_DIR}.tar.gz" "${TEST_REPORT_DIR}"
-        file_upload "${TEST_REPORT_DIR}.tar.gz"
-      fi
-    - |
-      # 5. Additional release artifacts
-      for ITEM in ${ADDITIONAL_RELEASE_ARTIFACT}; do
-        if [[ "${ITEM}" == "${RELEASE_MIGRATION_FILE_NAME:-RELEASE_MIGRATION.md}" || "${ITEM}" == "RELEASE_MIGRATION.md" ]]; then
-          echo "ℹ️ Skipping ${ITEM} from package upload (migration notes are reserved for release description)."
-          continue
-        fi
-        if [[ -f "${ITEM}" ]]; then
-          file_upload "${ITEM}"
-        elif [[ -d "${ITEM}" ]]; then
-          TAR_FILE="${ITEM}.tar.gz"
-          tar -czf "${TAR_FILE}" -C "$(dirname "${ITEM}")" "$(basename "${ITEM}")"
-          file_upload "${TAR_FILE}"
-        fi
-      done
-    - |
-      if [[ ${#FAILED_UPLOADS[@]} -gt 0 ]]; then
-        echo "❌ The following files failed to upload:"
-        for FILE in "${FAILED_UPLOADS[@]}"; do
-          echo "- ${FILE}"
-        done
+      if [[ -z "${UPSTREAM_PIPELINE_ID}" || -z "${DEV_CANDIDATE_VERSION}" ]]; then
+        echo "❌ ERROR: UPSTREAM_PIPELINE_ID or DEV_CANDIDATE_VERSION is not set."
+        echo "Fast-track release strictly requires candidate identity from upstream MR verification."
         exit 1
       fi
+    - CANDIDATE_FILE_NAME="candidate-${DEV_CANDIDATE_VERSION}.json"
+    - CANDIDATE_URL="${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/packages/generic/candidates/${RELEASE_VERSION}/${CANDIDATE_FILE_NAME}"
+    - echo "📥 Downloading candidate manifest from ${CANDIDATE_URL}..."
+    - |
+      if ! curl --silent --fail --location --header "JOB-TOKEN: ${CI_JOB_TOKEN}" -o candidate.json "${CANDIDATE_URL}"; then
+        echo "ℹ️ Candidate not found at ${CANDIDATE_URL}, querying package registry files for release ${RELEASE_VERSION}..."
+        PKG_ID=$(curl --silent --fail --header "JOB-TOKEN: ${CI_JOB_TOKEN}" \
+          "${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/packages?package_name=candidates&package_version=${RELEASE_VERSION}" | jq -r '.[0].id // empty')
+        if [[ -n "${PKG_ID}" ]]; then
+          PKG_FILES=$(curl --silent --fail --header "JOB-TOKEN: ${CI_JOB_TOKEN}" \
+            "${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/packages/${PKG_ID}/package_files")
+          MATCHED_FILE=$(echo "${PKG_FILES}" | jq -r --arg pipe "${UPSTREAM_PIPELINE_ID}" --arg mr "${MR_IID}" '
+            [.[] | select(.file_name | test("^candidate-.*\\.json$"))] |
+            (map(select(.file_name | contains($pipe)))[0].file_name) //
+            (map(select(.file_name | contains($mr)))[0].file_name) //
+            (sort_by(.created_at) | reverse | .[0].file_name) // empty
+          ')
+          if [[ -n "${MATCHED_FILE}" ]]; then
+            echo "   Found matching candidate file in package: ${MATCHED_FILE}"
+            RESOLVED_URL="${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/packages/generic/candidates/${RELEASE_VERSION}/${MATCHED_FILE}"
+            curl --silent --fail --location --header "JOB-TOKEN: ${CI_JOB_TOKEN}" -o candidate.json "${RESOLVED_URL}" || true
+          fi
+        fi
+      fi
+    - |
+      if [[ ! -s candidate.json ]]; then
+        echo "ℹ️ Checking legacy candidate path..."
+        LEGACY_URL="${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/packages/generic/candidates/${DEV_CANDIDATE_VERSION}/candidate.json"
+        if ! curl --silent --fail --location --header "JOB-TOKEN: ${CI_JOB_TOKEN}" -o candidate.json "${LEGACY_URL}"; then
+          echo "❌ ERROR: Candidate manifest '${CANDIDATE_FILE_NAME}' not found for version '${DEV_CANDIDATE_VERSION}'."
+          echo "MR verification pipeline #${UPSTREAM_PIPELINE_ID} did not publish a valid candidate manifest."
+          exit 1
+        fi
+      fi
+    - |
+      if [[ ! -s candidate.json ]] || ! jq . candidate.json >/dev/null 2>&1; then
+        echo "❌ ERROR: Downloaded candidate.json is empty or invalid JSON."
+        exit 1
+      fi
+    - echo "✅ Successfully retrieved and validated candidate manifest."
+    - |
+      # Render downstream child release pipeline YAML
+      {
+        echo "stages:"
+        echo "  - verify"
+        echo "  - promote"
+        echo "  - upload"
+        echo "  - release"
+        echo "  - notify"
+        echo ""
+        echo "variables:"
+        echo "  DEV_CANDIDATE_VERSION: \"${DEV_CANDIDATE_VERSION}\""
+        echo "  UPSTREAM_PIPELINE_ID: \"${UPSTREAM_PIPELINE_ID}\""
+        echo "  TAG: \"${TAG}\""
+        echo "  RELEASE_VERSION: \"${RELEASE_VERSION}\""
+        echo "  MR_IID: \"${MR_IID}\""
+        echo "  CHART_NAME: \"${CHART_NAME}\""
+        echo "  IMAGE_REPOSITORY: \"${IMAGE_REPOSITORY:-${CI_PROJECT_PATH}}\""
+        echo "  IMAGE_REGISTRY: \"${IMAGE_REGISTRY}\""
+        echo "  IMAGE_DEV_REPOSITORY_SUFFIX: \"${IMAGE_DEV_REPOSITORY_SUFFIX}\""
+        echo "  RELEASE_FLOATING_TAGS: \"${RELEASE_FLOATING_TAGS:-true}\""
+        echo "  TEST_REPORT_DIR: \"${TEST_REPORT_DIR:-test-reports}\""
+        echo "  ADDITIONAL_RELEASE_ARTIFACT: \"${ADDITIONAL_RELEASE_ARTIFACT}\""
+        echo "  CONSOLIDATED_RELEASE_CHANGELOG_FILE_NAME: \"${CONSOLIDATED_RELEASE_CHANGELOG_FILE_NAME:-CONSOLIDATED_RELEASE_CHANGELOG.md}\""
+        echo "  CONSOLIDATED_README_FILE_NAME: \"${CONSOLIDATED_README_FILE_NAME:-CONSOLIDATED_README.md}\""
+        echo "  IMAGE_README_MD_FILE_NAME: \"${IMAGE_README_MD_FILE_NAME:-IMAGE_README.md}\""
+        echo "  CHART_README_MD_FILE_NAME: \"${CHART_README_MD_FILE_NAME:-CHART_README.md}\""
+        echo "  TF_README_MD_FILE_NAME: \"${TF_README_MD_FILE_NAME:-TF_README.md}\""
+        echo "  IMAGE_INFO_FILE_NAME: \"${IMAGE_INFO_FILE_NAME:-IMAGE_INFO.md}\""
+        echo "  IMAGE_CVE_INFO_FILE_NAME: \"${IMAGE_CVE_INFO_FILE_NAME:-IMAGE_CVE.md}\""
+        echo "  IMAGE_CVE_REPORT_FILE_NAME: \"${IMAGE_CVE_REPORT_FILE_NAME:-image_trivy_scan_report.md}\""
+        echo "  CHART_INFO_FILE_NAME: \"${CHART_INFO_FILE_NAME:-CHART_INFO.md}\""
+        echo "  CHART_CVE_INFO_FILE_NAME: \"${CHART_CVE_INFO_FILE_NAME:-CHART_CVE.md}\""
+        echo "  TF_CVE_INFO_FILE_NAME: \"${TF_CVE_INFO_FILE_NAME:-TF_CVE.md}\""
+        echo "  LICENSE_INFO_FILE_NAME: \"${LICENSE_INFO_FILE_NAME:-LICENSE_CVE.md}\""
+        echo "  SBOM_CVE_INFO_FILE_NAME: \"${SBOM_CVE_INFO_FILE_NAME:-SBOM_CVE.md}\""
+        echo "  RELEASE_CHANGELOG_FILE_NAME: \"${RELEASE_CHANGELOG_FILE_NAME:-RELEASE_CHANGELOG.md}\""
+        echo "  RELEASE_MIGRATION_FILE_NAME: \"${RELEASE_MIGRATION_FILE_NAME:-RELEASE_MIGRATION.md}\""
+        echo "  RELEASE_CHANGELOG_CARD_FILE_NAME: \"${RELEASE_CHANGELOG_CARD_FILE_NAME:-RELEASE_CHANGELOG_CARD.json}\""
+        echo "  TRIVY_SCAN_REPORT_NAME_SUFFIX: \"${TRIVY_SCAN_REPORT_NAME_SUFFIX:-trivy_scan_report}\""
+        echo "  TRIVY_SCAN_REPORT_FILE_NAME: \"${TRIVY_SCAN_REPORT_FILE_NAME:-trivy_scan_report.tar.gz}\""
+        echo ""
+      } > release-pipeline.yml
+      cat << 'CHILDEOF' >> release-pipeline.yml
+      Release:Verify:
+        stage: verify
+        image: ${TOOLKIT_BUILD_IMAGE_REPO}:${TOOLKIT_BUILD_IMAGE_TAG}
+        script:
+          - echo "🔍 Authoritatively verifying release candidate for version ${TAG} (commit ${CI_COMMIT_SHA})..."
+          - |
+            TAG_CHECK_HTTP=$(curl --silent --write-out "%{http_code}" --output /dev/null --header "JOB-TOKEN: ${CI_JOB_TOKEN}" "${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/releases/${TAG}")
+            if [[ "${TAG_CHECK_HTTP}" == "200" ]]; then
+              EXISTING_RELEASE=$(curl --silent --fail --header "JOB-TOKEN: ${CI_JOB_TOKEN}" "${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/releases/${TAG}")
+              EXISTING_COMMIT=$(echo "${EXISTING_RELEASE}" | jq -r '.commit.id // empty')
+              if [[ "${EXISTING_COMMIT}" == "${CI_COMMIT_SHA}" ]]; then
+                echo "ℹ️ Release '${TAG}' already exists at the same commit (${CI_COMMIT_SHA}). Treating as intentional re-run/retry."
+              else
+                echo "❌ ERROR: Version Collision! Release '${TAG}' already exists at commit '${EXISTING_COMMIT}', which differs from '${CI_COMMIT_SHA}'."
+                echo "Production release tags are immutable. Bump RELEASE_VERSION before merging."
+                exit 1
+              fi
+            elif [[ "${TAG_CHECK_HTTP}" == "404" ]]; then
+              echo "✅ Tag '${TAG}' is available for new release."
+            else
+              echo "⚠️ Warning: Tag existence check returned HTTP ${TAG_CHECK_HTTP}."
+            fi
+          - |
+            if [[ ! -f "candidate.json" ]]; then
+              echo "📥 Fetching candidate manifest from Generic Package Registry..."
+              CANDIDATE_FILE_NAME="candidate-${DEV_CANDIDATE_VERSION}.json"
+              CANDIDATE_URL="${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/packages/generic/candidates/${RELEASE_VERSION}/${CANDIDATE_FILE_NAME}"
+              if ! curl --silent --fail --location --header "JOB-TOKEN: ${CI_JOB_TOKEN}" -o candidate.json "${CANDIDATE_URL}"; then
+                LEGACY_URL="${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/packages/generic/candidates/${DEV_CANDIDATE_VERSION}/candidate.json"
+                curl --silent --fail --location --header "JOB-TOKEN: ${CI_JOB_TOKEN}" -o candidate.json "${LEGACY_URL}" || true
+              fi
+            fi
+            if [[ ! -f "candidate.json" ]]; then
+              echo "❌ ERROR: candidate.json is missing in Release:Verify."
+              exit 1
+            fi
+            CAND_VER=$(jq -r '.release_version // empty' candidate.json)
+            if [[ "${CAND_VER}" != "${RELEASE_VERSION}" ]]; then
+              echo "❌ ERROR: Candidate manifest version (${CAND_VER}) does not match RELEASE_VERSION (${RELEASE_VERSION})."
+              exit 1
+            fi
+            echo "✅ Candidate manifest verified for version ${TAG}."
+          - echo "🔍 Preflight: Verifying candidate deliverables before executing promotion..."
+          - |
+            # 1. Preflight Container Image
+            DOCKER_ENABLED=$(jq -r '.artifacts.docker.enabled // false' candidate.json)
+            if [[ "${DOCKER_ENABLED}" == "true" ]]; then
+              DEV_IMAGE=$(jq -r '.artifacts.docker.dev_repository // empty' candidate.json 2>/dev/null)
+              if [[ -z "${DEV_IMAGE}" ]]; then
+                DEV_IMAGE="${IMAGE_REGISTRY}/${IMAGE_REPOSITORY}${IMAGE_DEV_REPOSITORY_SUFFIX}"
+              fi
+              RC_TAG=$(jq -r '.artifacts.docker.rc_tag' candidate.json)
+              EXP_DIGEST=$(jq -r '.artifacts.docker.digest' candidate.json)
+              DEV_IMAGE_SRC="${DEV_IMAGE}:${RC_TAG}"
+
+              REGISTRY_USER="${IMAGE_REGISTRY_USERNAME:-${CI_REGISTRY_USER:-gitlab-ci-token}}"
+              REGISTRY_PASS="${IMAGE_REGISTRY_PASSWORD:-${CI_REGISTRY_PASSWORD:-${CI_JOB_TOKEN}}}"
+              if [[ -n "${IMAGE_REGISTRY}" && -n "${REGISTRY_USER}" && -n "${REGISTRY_PASS}" ]]; then
+                crane auth login -u "${REGISTRY_USER}" -p "${REGISTRY_PASS}" "${IMAGE_REGISTRY}" >/dev/null 2>&1 || true
+              fi
+
+              if ! crane manifest "${DEV_IMAGE_SRC}" > /dev/null 2>&1; then
+                echo "❌ PREFLIGHT ERROR: Candidate image '${DEV_IMAGE_SRC}' does not exist in registry!"
+                exit 1
+              fi
+              ACT_DIGEST=$(crane digest "${DEV_IMAGE_SRC}" 2>/dev/null || true)
+              if [[ -n "${EXP_DIGEST}" && "${ACT_DIGEST}" != "${EXP_DIGEST}" ]]; then
+                echo "❌ PREFLIGHT ERROR: Candidate image digest mismatch (${ACT_DIGEST} vs expected ${EXP_DIGEST})!"
+                exit 1
+              fi
+              echo "   ✅ Preflight: Candidate image verified (${ACT_DIGEST})."
+            fi
+          - |
+            # 2. Preflight Helm Chart
+            HELM_ENABLED=$(jq -r '.artifacts.helm.enabled // false' candidate.json)
+            if [[ "${HELM_ENABLED}" == "true" ]]; then
+              CHART_NAME=$(jq -r '.artifacts.helm.chart_name' candidate.json)
+              RC_CHART_VER=$(jq -r '.artifacts.helm.rc_version' candidate.json)
+              CHART_FOUND=false
+              for CHANNEL in "dev" "stable"; do
+                CHART_CHECK=$(curl --silent --head --write-out "%{http_code}" --output /dev/null -u "gitlab-ci-token:${CI_JOB_TOKEN}" --header "JOB-TOKEN: ${CI_JOB_TOKEN}" "${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/packages/helm/${CHANNEL}/charts/${CHART_NAME}-${RC_CHART_VER}.tgz" || true)
+                if [[ "${CHART_CHECK}" == "200" ]]; then
+                  CHART_FOUND=true
+                  break
+                fi
+              done
+              if [[ "${CHART_FOUND}" != "true" ]]; then
+                echo "❌ PREFLIGHT ERROR: Candidate Helm chart '${CHART_NAME}-${RC_CHART_VER}.tgz' not found in registry (dev or stable)!"
+                exit 1
+              fi
+              echo "   ✅ Preflight: Candidate Helm chart '${CHART_NAME}-${RC_CHART_VER}.tgz' verified."
+            fi
+          - |
+            # 3. Preflight Generic Packages
+            PKG_COUNT=$(jq '.artifacts.packages | length' candidate.json 2>/dev/null || echo "0")
+            for ((i=0; i<PKG_COUNT; i++)); do
+              P_NAME=$(jq -r ".artifacts.packages[$i].package" candidate.json)
+              P_FILE=$(jq -r ".artifacts.packages[$i].filename" candidate.json)
+              P_REQ=$(jq -r ".artifacts.packages[$i].required // true" candidate.json)
+              P_URL=$(jq -r ".artifacts.packages[$i].source_url" candidate.json)
+              if [[ -n "${P_URL}" ]]; then
+                PKG_CHECK=$(curl --silent --head --write-out "%{http_code}" --output /dev/null --header "JOB-TOKEN: ${CI_JOB_TOKEN}" "${P_URL}" || true)
+                if [[ "${PKG_CHECK}" != "200" ]]; then
+                  echo "❌ PREFLIGHT ERROR: Candidate package '${P_FILE}' not found at ${P_URL} (HTTP ${PKG_CHECK})!"
+                  if [[ "${P_REQ}" == "true" ]]; then
+                    exit 1
+                  fi
+                fi
+              fi
+            done
+            echo "   ✅ Preflight: All candidate generic packages verified."
+          - echo "🎉 All candidate deliverables preflighted successfully. Proceeding to promotion stage."
+        artifacts:
+          when: on_success
+          paths:
+            - candidate.json
+
+      Image:Promote:
+        stage: promote
+        image: ${TOOLKIT_BUILD_IMAGE_REPO}:${TOOLKIT_BUILD_IMAGE_TAG}
+        needs:
+          - job: Release:Verify
+            artifacts: true
+        script:
+          - |
+            IMAGE_REPOSITORY="${IMAGE_REPOSITORY:-$(jq -r '.project_path // empty' candidate.json 2>/dev/null || echo "${CI_PROJECT_PATH}")}"
+            if [[ -z "${IMAGE_REGISTRY}" ]]; then
+              IMAGE_REGISTRY="${CI_REGISTRY}"
+            fi
+          - |
+            DEV_IMAGE=$(jq -r '.artifacts.docker.dev_repository // empty' candidate.json 2>/dev/null)
+            if [[ -z "${DEV_IMAGE}" ]]; then
+              DEV_IMAGE="${IMAGE_REGISTRY}/${IMAGE_REPOSITORY}${IMAGE_DEV_REPOSITORY_SUFFIX}"
+            fi
+          - PROD_IMAGE="${IMAGE_REGISTRY}/${IMAGE_REPOSITORY}"
+          - REGISTRY_USER="${IMAGE_REGISTRY_USERNAME:-${CI_REGISTRY_USER:-gitlab-ci-token}}"
+          - REGISTRY_PASS="${IMAGE_REGISTRY_PASSWORD:-${CI_REGISTRY_PASSWORD:-${CI_JOB_TOKEN}}}"
+          - |
+            if [[ -n "${IMAGE_REGISTRY}" && -n "${REGISTRY_USER}" && -n "${REGISTRY_PASS}" ]]; then
+              crane auth login -u "${REGISTRY_USER}" -p "${REGISTRY_PASS}" "${IMAGE_REGISTRY}"
+            fi
+          - |
+            DOCKER_ENABLED=$(jq -r '.artifacts.docker.enabled // false' candidate.json)
+            if [[ "${DOCKER_ENABLED}" != "true" ]]; then
+              echo "ℹ️ Docker promotion not enabled in candidate manifest. Skipping."
+              exit 0
+            fi
+          - RC_TAG=$(jq -r '.artifacts.docker.rc_tag' candidate.json)
+          - EXP_DIGEST=$(jq -r '.artifacts.docker.digest' candidate.json)
+          - DEV_IMAGE_SRC="${DEV_IMAGE}:${RC_TAG}"
+          - echo "🔍 Inspecting candidate dev image ${DEV_IMAGE_SRC}..."
+          - |
+            if ! crane manifest "${DEV_IMAGE_SRC}" > /dev/null 2>&1; then
+              echo "❌ ERROR: Candidate dev image '${DEV_IMAGE_SRC}' not found in registry."
+              exit 1
+            fi
+          - |
+            ACT_DIGEST=$(crane digest "${DEV_IMAGE_SRC}")
+            if [[ -n "${EXP_DIGEST}" && "${ACT_DIGEST}" != "${EXP_DIGEST}" ]]; then
+              echo "❌ ERROR: Dev candidate image digest mismatch (${ACT_DIGEST} vs expected ${EXP_DIGEST})."
+              exit 1
+            fi
+            echo "   ✅ Verified candidate digest: ${ACT_DIGEST}"
+          - |
+            if crane manifest "${PROD_IMAGE}:${TAG}" > /dev/null 2>&1; then
+              EXISTING_PROD_DIGEST=$(crane digest "${PROD_IMAGE}:${TAG}")
+              if [[ "${EXISTING_PROD_DIGEST}" == "${ACT_DIGEST}" ]]; then
+                echo "✅ Production image ${PROD_IMAGE}:${TAG} already exists with identical digest. Skipping copy."
+              else
+                echo "❌ ERROR: Production image ${PROD_IMAGE}:${TAG} already exists with differing digest!"
+                exit 1
+              fi
+            else
+              echo "🚀 Promoting ${DEV_IMAGE_SRC} to ${PROD_IMAGE}:${TAG} via crane copy..."
+              crane copy "${DEV_IMAGE_SRC}" "${PROD_IMAGE}:${TAG}"
+              echo "✅ Production image promoted successfully via Crane."
+            fi
+          - |
+            if [[ "${RELEASE_FLOATING_TAGS:-true}" == "false" || "${TAG}" =~ - ]]; then
+              echo "ℹ️ Skipping floating tag updates."
+            else
+              semver_ge() {
+                local v1="$1"
+                local v2="$2"
+                [[ "${v1}" == "${v2}" ]] && return 0
+                local lowest
+                lowest=$(printf "%s\n%s\n" "${v1}" "${v2}" | sort -V | head -n1)
+                [[ "${lowest}" == "${v2}" ]]
+              }
+              EXISTING_TAGS=$(crane ls "${PROD_IMAGE}" 2>/dev/null || true)
+              MAJOR_VERSION=$(echo "${TAG}" | grep -Eo '^([0-9]+)')
+              MINOR_VERSION=$(echo "${TAG}" | grep -Eo '^([0-9]+)\.([0-9]+)')
+
+              HIGHEST_OVERALL=$(echo "${EXISTING_TAGS}" | grep -E '^[0-9]+\.[0-9]+\.[0-9]+$' | sort -V | tail -n1 || true)
+              if [[ -z "${HIGHEST_OVERALL}" ]] || semver_ge "${TAG}" "${HIGHEST_OVERALL}"; then
+                echo "   🚀 Tagging 'latest' -> ${PROD_IMAGE}:${TAG}"
+                crane tag "${PROD_IMAGE}:${TAG}" latest
+              else
+                echo "   ℹ️ Existing version ${HIGHEST_OVERALL} is newer than ${TAG}. Preserving 'latest' alias."
+              fi
+
+              if [[ -n "${MAJOR_VERSION}" ]]; then
+                HIGHEST_MAJOR=$(echo "${EXISTING_TAGS}" | grep -E "^${MAJOR_VERSION}\.[0-9]+\.[0-9]+$" | sort -V | tail -n1 || true)
+                if [[ -z "${HIGHEST_MAJOR}" ]] || semver_ge "${TAG}" "${HIGHEST_MAJOR}"; then
+                  echo "   🚀 Tagging '${MAJOR_VERSION}' -> ${PROD_IMAGE}:${TAG}"
+                  crane tag "${PROD_IMAGE}:${TAG}" "${MAJOR_VERSION}"
+                else
+                  echo "   ℹ️ Preserving major tag '${MAJOR_VERSION}'."
+                fi
+              fi
+
+              if [[ -n "${MINOR_VERSION}" ]]; then
+                HIGHEST_MINOR=$(echo "${EXISTING_TAGS}" | grep -E "^${MINOR_VERSION//./\\.}\.[0-9]+$" | sort -V | tail -n1 || true)
+                if [[ -z "${HIGHEST_MINOR}" ]] || semver_ge "${TAG}" "${HIGHEST_MINOR}"; then
+                  echo "   🚀 Tagging '${MINOR_VERSION}' -> ${PROD_IMAGE}:${TAG}"
+                  crane tag "${PROD_IMAGE}:${TAG}" "${MINOR_VERSION}"
+                else
+                  echo "   ℹ️ Preserving minor tag '${MINOR_VERSION}'."
+                fi
+              fi
+            fi
+
+      Chart:Promote:
+        stage: promote
+        image: ${TOOLKIT_BUILD_IMAGE_REPO}:${TOOLKIT_BUILD_IMAGE_TAG}
+        needs:
+          - job: Release:Verify
+            artifacts: true
+        script:
+          - |
+            HELM_ENABLED=$(jq -r '.artifacts.helm.enabled // false' candidate.json)
+            if [[ "${HELM_ENABLED}" != "true" ]]; then
+              echo "ℹ️ Helm promotion not enabled in candidate manifest. Skipping."
+              exit 0
+            fi
+          - CHART_NAME=$(jq -r '.artifacts.helm.chart_name' candidate.json)
+          - RC_CHART_VER=$(jq -r '.artifacts.helm.rc_version' candidate.json)
+          - EXP_SHA=$(jq -r '.artifacts.helm.sha256' candidate.json)
+          - echo "🔍 Promoting Helm chart ${CHART_NAME}:${TAG} from RC ${RC_CHART_VER}..."
+          - TEMP_CHART=$(mktemp)
+          - DOWNLOADED=false
+          - |
+            for CHANNEL in "dev" "stable"; do
+              if curl --silent --fail --location -u "gitlab-ci-token:${CI_JOB_TOKEN}" --header "JOB-TOKEN: ${CI_JOB_TOKEN}" -o "${TEMP_CHART}" "${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/packages/helm/${CHANNEL}/charts/${CHART_NAME}-${RC_CHART_VER}.tgz"; then
+                DOWNLOADED=true
+                break
+              fi
+            done
+          - |
+            if [[ "${DOWNLOADED}" != "true" ]]; then
+              echo "❌ ERROR: Candidate Helm package '${CHART_NAME}-${RC_CHART_VER}.tgz' not found in registry (checked dev and stable channels)."
+              exit 1
+            fi
+          - ACT_SHA=$(sha256sum "${TEMP_CHART}" | cut -d' ' -f1)
+          - |
+            if [[ -n "${EXP_SHA}" && "${ACT_SHA}" != "${EXP_SHA}" ]]; then
+              echo "❌ ERROR: Helm package SHA256 mismatch (${ACT_SHA} vs expected ${EXP_SHA})."
+              exit 1
+            fi
+          - PROMOTE_DIR=$(mktemp -d)
+          - tar -xzf "${TEMP_CHART}" -C "${PROMOTE_DIR}"
+          - rm -f "${TEMP_CHART}"
+          - helm package "${PROMOTE_DIR}/${CHART_NAME}" --version "${TAG}" --app-version "${TAG}"
+          - rm -rf "${PROMOTE_DIR}"
+          - STABLE_TGZ="${CHART_NAME}-${TAG}.tgz"
+          - STABLE_SHA=$(sha256sum "${STABLE_TGZ}" | cut -d' ' -f1)
+          - STABLE_URL="${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/packages/helm/api/stable/charts"
+          - |
+            CHECK_HTTP=$(curl --silent --head --write-out "%{http_code}" --output /dev/null -u "gitlab-ci-token:${CI_JOB_TOKEN}" --header "JOB-TOKEN: ${CI_JOB_TOKEN}" "${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/packages/helm/stable/charts/${CHART_NAME}-${TAG}.tgz" || true)
+            if [[ "${CHECK_HTTP}" == "200" ]]; then
+              echo "✅ Stable chart ${CHART_NAME}:${TAG} already exists in registry. Skipping upload."
+              exit 0
+            fi
+          - echo "🚀 Publishing stable chart package ${STABLE_TGZ}..."
+          - |
+            HTTP_CODE=$(curl --silent --show-error --write-out "%{http_code}" --output /dev/null --request POST -u "gitlab-ci-token:${CI_JOB_TOKEN}" --header "JOB-TOKEN: ${CI_JOB_TOKEN}" --form "chart=@${STABLE_TGZ}" "${STABLE_URL}")
+            if [[ "${HTTP_CODE}" != "200" && "${HTTP_CODE}" != "201" ]]; then
+              echo "❌ ERROR: Failed to publish stable chart ${STABLE_TGZ} (HTTP ${HTTP_CODE})."
+              exit 1
+            fi
+          - echo "✅ Helm chart ${CHART_NAME}:${TAG} published successfully."
+        artifacts:
+          when: on_success
+          paths:
+            - "*.tgz"
+
+      Release:Packages:Promote:
+        stage: promote
+        image: ${TOOLKIT_BUILD_IMAGE_REPO}:${TOOLKIT_BUILD_IMAGE_TAG}
+        needs:
+          - job: Release:Verify
+            artifacts: true
+        script:
+          - PKG_COUNT=$(jq '.artifacts.packages | length' candidate.json 2>/dev/null || echo "0")
+          - |
+            if [[ "${PKG_COUNT}" -eq 0 ]]; then
+              echo "ℹ️ No declarative packages to promote."
+              exit 0
+            fi
+          - |
+            for ((i=0; i<PKG_COUNT; i++)); do
+              P_NAME=$(jq -r ".artifacts.packages[$i].package" candidate.json)
+              P_FILE=$(jq -r ".artifacts.packages[$i].filename" candidate.json)
+              P_STABLE=$(jq -r ".artifacts.packages[$i].stable // true" candidate.json)
+              P_REQ=$(jq -r ".artifacts.packages[$i].required // true" candidate.json)
+              P_ASSET=$(jq -r ".artifacts.packages[$i].release_asset // false" candidate.json)
+              P_SHA=$(jq -r ".artifacts.packages[$i].sha256" candidate.json)
+              P_URL=$(jq -r ".artifacts.packages[$i].source_url" candidate.json)
+
+              if [[ "${P_STABLE}" != "true" ]]; then
+                continue
+              fi
+
+              echo "📦 Promoting package '${P_NAME}' (${P_FILE}) to stable version '${RELEASE_VERSION}'..."
+              TEMP_FILE=$(mktemp)
+              if ! curl --silent --fail --location --header "JOB-TOKEN: ${CI_JOB_TOKEN}" -o "${TEMP_FILE}" "${P_URL}"; then
+                echo "❌ ERROR: Failed to download RC package from ${P_URL}"
+                if [[ "${P_REQ}" == "true" ]]; then
+                  exit 1
+                fi
+                rm -f "${TEMP_FILE}"
+                continue
+              fi
+
+              ACT_SHA=$(sha256sum "${TEMP_FILE}" | cut -d' ' -f1)
+              if [[ -n "${P_SHA}" && "${ACT_SHA}" != "${P_SHA}" ]]; then
+                echo "❌ ERROR: Checksum mismatch for RC package '${P_FILE}' (${ACT_SHA} vs expected ${P_SHA})!"
+                exit 1
+              fi
+
+              STABLE_URL="${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/packages/generic/${P_NAME}/${RELEASE_VERSION}/${P_FILE}"
+              CHECK_HTTP=$(curl --silent --head --write-out "%{http_code}" --output /dev/null --header "JOB-TOKEN: ${CI_JOB_TOKEN}" "${STABLE_URL}" || true)
+              if [[ "${CHECK_HTTP}" == "200" ]]; then
+                CHECK_TEMP=$(mktemp)
+                curl --silent --fail --header "JOB-TOKEN: ${CI_JOB_TOKEN}" -o "${CHECK_TEMP}" "${STABLE_URL}" || true
+                EXISTING_SHA=$(sha256sum "${CHECK_TEMP}" | cut -d' ' -f1 || true)
+                rm -f "${CHECK_TEMP}"
+                if [[ "${EXISTING_SHA}" == "${ACT_SHA}" ]]; then
+                  echo "   ✅ Stable package '${P_NAME}:${RELEASE_VERSION}' already exists with identical SHA256. Skipping upload."
+                  rm -f "${TEMP_FILE}"
+                  continue
+                else
+                  echo "❌ ERROR: Stable package '${P_NAME}:${RELEASE_VERSION}' already exists with differing SHA256 (${EXISTING_SHA} vs ${ACT_SHA})!"
+                  exit 1
+                fi
+              fi
+
+              HTTP_CODE=$(curl --silent --show-error --write-out "%{http_code}" --output /dev/null --header "JOB-TOKEN: ${CI_JOB_TOKEN}" --upload-file "${TEMP_FILE}" "${STABLE_URL}")
+              if [[ "${HTTP_CODE}" != "200" && "${HTTP_CODE}" != "201" ]]; then
+                echo "❌ ERROR: Failed to upload stable package '${P_FILE}' (HTTP ${HTTP_CODE})."
+                exit 1
+              fi
+              echo "   ✅ Successfully promoted package '${P_NAME}' to stable version ${RELEASE_VERSION}."
+              rm -f "${TEMP_FILE}"
+            done
+
+      Release:Upload:
+        stage: upload
+        image: ${TOOLKIT_BUILD_IMAGE_REPO}:${TOOLKIT_BUILD_IMAGE_TAG}
+        needs:
+          - job: Release:Verify
+            artifacts: true
+          - job: Image:Promote
+            artifacts: false
+            optional: true
+          - job: Chart:Promote
+            artifacts: true
+            optional: true
+          - job: Release:Packages:Promote
+            artifacts: false
+            optional: true
+        script:
+          - echo "🔍 Restoring reports and uploading release assets for version ${TAG}..."
+          - FAILED_UPLOADS=()
+          - |
+            file_upload () {
+              local FILE=$1
+              local ASSET_NAME="${2:-$(basename "${FILE}")}"
+              if [[ ! -f "${FILE}" ]]; then
+                echo "⚠️ WARNING: ${FILE} does not exist."
+                FAILED_UPLOADS+=("${ASSET_NAME}")
+                return 1
+              fi
+              local ASSET_URL="${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/packages/generic/release-assets/${TAG}/${ASSET_NAME}"
+              local LOCAL_SHA=$(sha256sum "${FILE}" | cut -d' ' -f1)
+
+              local EXISTING_STATUS=$(curl --silent --head --write-out "%{http_code}" --output /dev/null --header "JOB-TOKEN: ${CI_JOB_TOKEN}" "${ASSET_URL}" || true)
+              if [[ "${EXISTING_STATUS}" == "200" ]]; then
+                local TEMP_CHECK=$(mktemp)
+                curl --silent --fail --header "JOB-TOKEN: ${CI_JOB_TOKEN}" -o "${TEMP_CHECK}" "${ASSET_URL}" 2>/dev/null || true
+                local REMOTE_SHA=$(sha256sum "${TEMP_CHECK}" | cut -d' ' -f1 || true)
+                rm -f "${TEMP_CHECK}"
+                if [[ "${REMOTE_SHA}" == "${LOCAL_SHA}" ]]; then
+                  echo "   ✅ Asset '${ASSET_NAME}' already exists in release-assets/${TAG} with identical SHA256. Skipping upload."
+                  return 0
+                fi
+              fi
+
+              echo "📦 Uploading ${ASSET_NAME} to generic package registry..."
+              local HTTP_CODE=$(curl --silent --show-error --write-out "%{http_code}" --output /dev/null --header "JOB-TOKEN: ${CI_JOB_TOKEN}" --upload-file "${FILE}" "${ASSET_URL}")
+              if [[ "${HTTP_CODE}" != "200" && "${HTTP_CODE}" != "201" ]]; then
+                echo "❌ ERROR: Failed to upload ${ASSET_NAME} (HTTP ${HTTP_CODE})."
+                FAILED_UPLOADS+=("${ASSET_NAME}")
+                return 1
+              else
+                echo "   ✅ Uploaded ${ASSET_NAME} successfully to package registry (version ${TAG})"
+              fi
+            }
+          - |
+            # 1. Restore reports from candidate job IDs
+            REPORT_COUNT=$(jq '.artifacts.reports | length' candidate.json 2>/dev/null || echo "0")
+            for ((i=0; i<REPORT_COUNT; i++)); do
+              JOB_ID=$(jq -r ".artifacts.reports[$i].job_id" candidate.json)
+              JOB_NAME=$(jq -r ".artifacts.reports[$i].job_name" candidate.json)
+              REQ=$(jq -r ".artifacts.reports[$i].required // true" candidate.json)
+              echo "📥 Restoring artifacts from producer job #${JOB_ID} (${JOB_NAME})..."
+              if curl --silent --location --fail --header "JOB-TOKEN: ${CI_JOB_TOKEN}" --output "job_${JOB_ID}_artifacts.zip" "${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/jobs/${JOB_ID}/artifacts" 2>/dev/null; then
+                unzip -o -q "job_${JOB_ID}_artifacts.zip" 2>/dev/null || true
+                rm -f "job_${JOB_ID}_artifacts.zip"
+                echo "   ✅ Restored artifacts from job #${JOB_ID}"
+              else
+                if [[ "${REQ}" == "true" ]]; then
+                  echo "❌ ERROR: Failed to restore required artifacts from job #${JOB_ID}."
+                  FAILED_UPLOADS+=("job_${JOB_ID}_artifacts")
+                fi
+              fi
+            done
+          - |
+            # Restore Terraform scan artifacts from upstream pipeline if not recorded in candidate.json
+            TF_REPORTS_IN_CANDIDATE=$(jq '[.artifacts.reports[]? | select(.job_name | test("^Terraform:Scan"))] | length' candidate.json 2>/dev/null || echo "0")
+            if [[ "${TF_REPORTS_IN_CANDIDATE}" -eq 0 && -n "${UPSTREAM_PIPELINE_ID}" ]]; then
+              UPSTREAM_JOBS=$(curl --silent --fail --header "JOB-TOKEN: ${CI_JOB_TOKEN}" "${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/pipelines/${UPSTREAM_PIPELINE_ID}/jobs?per_page=100" 2>/dev/null || echo "[]")
+              for TF_JID in $(echo "${UPSTREAM_JOBS}" | jq -r '[.[] | select((.name | test("^Terraform:Scan")) and .status=="success")][].id // empty'); do
+                echo "📥 Restoring Terraform scan artifacts from job #${TF_JID}..."
+                if curl --silent --location --fail --header "JOB-TOKEN: ${CI_JOB_TOKEN}" --output "job_${TF_JID}_artifacts.zip" "${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/jobs/${TF_JID}/artifacts" 2>/dev/null; then
+                  unzip -o -q "job_${TF_JID}_artifacts.zip" 2>/dev/null || true
+                  rm -f "job_${TF_JID}_artifacts.zip"
+                  echo "   ✅ Restored artifacts from job #${TF_JID}"
+                fi
+              done
+            fi
+          - |
+            # Matrix roots restore TF_CVE.md under their PROJECT_PATH; merge them into the root file the release notes read.
+            TF_ROOT_SUMMARIES=()
+            while IFS= read -r SUMMARY; do
+              TF_ROOT_SUMMARIES+=("${SUMMARY}")
+            done < <(find . -mindepth 2 \( -name .git -o -name node_modules \) -prune -o -type f -name "${TF_CVE_INFO_FILE_NAME:-TF_CVE.md}" -print | sed 's|^\./||' | sort)
+            if [[ ${#TF_ROOT_SUMMARIES[@]} -gt 0 ]]; then
+              {
+                if [[ -s "${TF_CVE_INFO_FILE_NAME:-TF_CVE.md}" ]]; then
+                  cat "${TF_CVE_INFO_FILE_NAME:-TF_CVE.md}"
+                  echo ""
+                fi
+                for SUMMARY in "${TF_ROOT_SUMMARIES[@]}"; do
+                  echo "### Terraform root \`$(dirname "${SUMMARY}")\`"
+                  echo ""
+                  cat "${SUMMARY}"
+                  echo ""
+                done
+              } > "${TF_CVE_INFO_FILE_NAME:-TF_CVE.md}.merged"
+              mv "${TF_CVE_INFO_FILE_NAME:-TF_CVE.md}.merged" "${TF_CVE_INFO_FILE_NAME:-TF_CVE.md}"
+              echo "📄 Merged ${#TF_ROOT_SUMMARIES[@]} Terraform root scan summaries into ${TF_CVE_INFO_FILE_NAME:-TF_CVE.md}"
+            fi
+          - |
+            # 2. Upload Trivy scan report bundle: root reports keep flat names, matrix roots keep their PROJECT_PATH.
+            TRIVY_REPORTS=()
+            while IFS= read -r REPORT; do
+              TRIVY_REPORTS+=("${REPORT}")
+            done < <(find . \( -name .git -o -name node_modules \) -prune -o -type f -name "*_${TRIVY_SCAN_REPORT_NAME_SUFFIX:-trivy_scan_report}.*" -print | sed 's|^\./||' | sort)
+            if [[ ${#TRIVY_REPORTS[@]} -gt 0 ]]; then
+              tar -czf "${TRIVY_SCAN_REPORT_FILE_NAME:-trivy_scan_report.tar.gz}" "${TRIVY_REPORTS[@]}" 2>/dev/null || true
+              file_upload "${TRIVY_SCAN_REPORT_FILE_NAME:-trivy_scan_report.tar.gz}"
+            fi
+          - |
+            # 3. Installed packages
+            if [[ -f "${INSTALLED_PCKG_FILE_NAME:-installed_packages.txt}" ]]; then
+              file_upload "${INSTALLED_PCKG_FILE_NAME:-installed_packages.txt}"
+            fi
+          - |
+            # SBOM
+            if [[ -f "sbom.cdx.json" ]]; then
+              file_upload "sbom.cdx.json"
+            fi
+          - |
+            # 4. Helm chart package
+            CHART_TGZ_FILES=( ${CHART_NAME:-app}-*.tgz )
+            if [[ -f "${CHART_TGZ_FILES[0]}" ]]; then
+              file_upload "${CHART_TGZ_FILES[0]}"
+            fi
+          - |
+            # 5. Test reports directory
+            if [[ -d "${TEST_REPORT_DIR:-test-reports}" ]]; then
+              tar -czf "${TEST_REPORT_DIR:-test-reports}.tar.gz" "${TEST_REPORT_DIR:-test-reports}"
+              file_upload "${TEST_REPORT_DIR:-test-reports}.tar.gz"
+            fi
+          - |
+            # 6. Additional release artifacts
+            for ITEM in ${ADDITIONAL_RELEASE_ARTIFACT:-}; do
+              if [[ "${ITEM}" == "RELEASE_MIGRATION.md" ]]; then
+                continue
+              fi
+              if [[ -f "${ITEM}" ]]; then
+                file_upload "${ITEM}"
+              elif [[ -d "${ITEM}" ]]; then
+                TAR_FILE="${ITEM}.tar.gz"
+                tar -czf "${TAR_FILE}" -C "$(dirname "${ITEM}")" "$(basename "${ITEM}")"
+                file_upload "${TAR_FILE}"
+              fi
+            done
+          - |
+            if [[ ${#FAILED_UPLOADS[@]} -gt 0 ]]; then
+              echo "❌ The following files failed to upload:"
+              for FILE in "${FAILED_UPLOADS[@]}"; do
+                echo "- ${FILE}"
+              done
+              exit 1
+            fi
+        artifacts:
+          when: on_success
+          expire_in: 1 week
+          paths:
+            - "${IMAGE_INFO_FILE_NAME:-IMAGE_INFO.md}"
+            - "${IMAGE_CVE_INFO_FILE_NAME:-IMAGE_CVE.md}"
+            - "${IMAGE_CVE_REPORT_FILE_NAME:-image_trivy_scan_report.md}"
+            - "${CHART_INFO_FILE_NAME:-CHART_INFO.md}"
+            - "${CHART_CVE_INFO_FILE_NAME:-CHART_CVE.md}"
+            - "${TF_CVE_INFO_FILE_NAME:-TF_CVE.md}"
+            - "${LICENSE_INFO_FILE_NAME:-LICENSE_CVE.md}"
+            - "${SBOM_CVE_INFO_FILE_NAME:-SBOM_CVE.md}"
+            - "${RELEASE_CHANGELOG_FILE_NAME:-RELEASE_CHANGELOG.md}"
+            - "${RELEASE_MIGRATION_FILE_NAME:-RELEASE_MIGRATION.md}"
+
+      Release:
+        stage: release
+        image: ${TOOLKIT_BUILD_IMAGE_REPO}:${TOOLKIT_BUILD_IMAGE_TAG}
+        needs:
+          - job: Release:Upload
+            artifacts: true
+        script:
+          - touch "${CONSOLIDATED_RELEASE_CHANGELOG_FILE_NAME:-CONSOLIDATED_RELEASE_CHANGELOG.md}"
+          - touch "${CONSOLIDATED_README_FILE_NAME:-CONSOLIDATED_README.md}"
+          - |
+            for FILE in "${IMAGE_INFO_FILE_NAME:-IMAGE_INFO.md}" "${IMAGE_CVE_INFO_FILE_NAME:-IMAGE_CVE.md}" "${IMAGE_CVE_REPORT_FILE_NAME:-image_trivy_scan_report.md}"; do
+              if [[ -f "${FILE}" ]]; then
+                cat "${FILE}" >> "${IMAGE_README_MD_FILE_NAME:-IMAGE_README.md}"
+              fi
+            done
+          - |
+            for FILE in "${CHART_INFO_FILE_NAME:-CHART_INFO.md}" "${CHART_CVE_INFO_FILE_NAME:-CHART_CVE.md}"; do
+              if [[ -f "${FILE}" ]]; then
+                cat "${FILE}" >> "${CHART_README_MD_FILE_NAME:-CHART_README.md}"
+              fi
+            done
+          - |
+            for FILE in "${TF_CVE_INFO_FILE_NAME:-TF_CVE.md}"; do
+              if [[ -f "${FILE}" ]]; then
+                cat "${FILE}" >> "${TF_README_MD_FILE_NAME:-TF_README.md}"
+              fi
+            done
+          - |
+            for FILE in "${IMAGE_README_MD_FILE_NAME:-IMAGE_README.md}" "${CHART_README_MD_FILE_NAME:-CHART_README.md}" "${TF_README_MD_FILE_NAME:-TF_README.md}" "${LICENSE_INFO_FILE_NAME:-LICENSE_CVE.md}" "${SBOM_CVE_INFO_FILE_NAME:-SBOM_CVE.md}"; do
+              if [[ -f "${FILE}" ]]; then
+                cat "${FILE}" >> "${CONSOLIDATED_README_FILE_NAME:-CONSOLIDATED_README.md}"
+              fi
+            done
+          - |
+            for FILE in "${RELEASE_CHANGELOG_FILE_NAME:-RELEASE_CHANGELOG.md}" "${RELEASE_MIGRATION_FILE_NAME:-RELEASE_MIGRATION.md}" "${CONSOLIDATED_README_FILE_NAME:-CONSOLIDATED_README.md}"; do
+              if [[ -f "${FILE}" && -s "${FILE}" ]]; then
+                echo "" >> "${CONSOLIDATED_RELEASE_CHANGELOG_FILE_NAME:-CONSOLIDATED_RELEASE_CHANGELOG.md}"
+                cat "${FILE}" >> "${CONSOLIDATED_RELEASE_CHANGELOG_FILE_NAME:-CONSOLIDATED_RELEASE_CHANGELOG.md}"
+                echo "" >> "${CONSOLIDATED_RELEASE_CHANGELOG_FILE_NAME:-CONSOLIDATED_RELEASE_CHANGELOG.md}"
+              fi
+            done
+          - EXISTING_RELEASE=$(curl --silent --fail --header "JOB-TOKEN: ${CI_JOB_TOKEN}" "${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/releases/${TAG}" 2>/dev/null || true)
+          - |
+            if [[ -n "${EXISTING_RELEASE}" && "$(echo "${EXISTING_RELEASE}" | jq -r '.tag_name // empty' 2>/dev/null)" == "${TAG}" ]]; then
+              echo "⚠️ Release ${TAG} already exists. Updating release description..."
+              curl --silent --fail --request PUT --header "JOB-TOKEN: ${CI_JOB_TOKEN}" \
+                --header "Content-Type: application/json" \
+                --data "{\"description\": $(jq -Rs . < "${CONSOLIDATED_RELEASE_CHANGELOG_FILE_NAME:-CONSOLIDATED_RELEASE_CHANGELOG.md}")}" \
+                "${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/releases/${TAG}" >/dev/null 2>&1 || true
+              echo "✅ Release ${TAG} updated successfully."
+            else
+              ASSET_LINKS=()
+              ASSET_LINKS+=(--assets-link "{\"name\":\"📦 Release Package\",\"url\":\"${CI_PROJECT_URL}/-/packages?version=${TAG}&orderBy=created_at&sort=desc\"}")
+              SONAR_LINK_URL="${SONAR_EXTERNAL_URL:-${SONAR_URL}}"
+              if [[ "${SONAR_LINK_URL}" =~ ^https?:// ]]; then
+                ASSET_LINKS+=(--assets-link "{\"name\":\"🔍 SonarQube\",\"url\":\"${SONAR_LINK_URL%/}/dashboard?id=${CI_PROJECT_PATH_SLUG}\"}")
+              fi
+              RELEASE_DESC="Release ${TAG} for commit ${CI_COMMIT_SHA}"
+              if [[ -s "${CONSOLIDATED_RELEASE_CHANGELOG_FILE_NAME:-CONSOLIDATED_RELEASE_CHANGELOG.md}" ]]; then
+                RELEASE_DESC="$(cat "${CONSOLIDATED_RELEASE_CHANGELOG_FILE_NAME:-CONSOLIDATED_RELEASE_CHANGELOG.md}")"
+              fi
+              release-cli create --name "Release ${TAG}" --description "${RELEASE_DESC}" --tag-name "${TAG}" --ref "${CI_COMMIT_SHA}" "${ASSET_LINKS[@]}"
+              echo "✅ Release ${TAG} created successfully."
+            fi
+        artifacts:
+          name: Release Descriptions
+          expose_as: Release Descriptions
+          when: always
+          expire_in: 1 week
+          paths:
+            - ${IMAGE_README_MD_FILE_NAME:-IMAGE_README.md}
+            - ${CHART_README_MD_FILE_NAME:-CHART_README.md}
+            - ${TF_README_MD_FILE_NAME:-TF_README.md}
+            - ${RELEASE_CHANGELOG_FILE_NAME:-RELEASE_CHANGELOG.md}
+            - ${RELEASE_MIGRATION_FILE_NAME:-RELEASE_MIGRATION.md}
+            - ${RELEASE_CHANGELOG_CARD_FILE_NAME:-RELEASE_CHANGELOG_CARD.json}
+            - ${CONSOLIDATED_RELEASE_CHANGELOG_FILE_NAME:-CONSOLIDATED_RELEASE_CHANGELOG.md}
+
+      .teams-adaptivecard-notification-vars:
+        variables:
+          MESSAGE_TEMPLATE_ADAPTIVE_CARD: |
+            {
+              "$schema": "http://adaptivecards.io/schemas/adaptive-card.json",
+              "type": "AdaptiveCard",
+              "version": "1.4",
+              "fallbackText": "Release notification: $CI_PROJECT_TITLE version $TAG.",
+              "speak": "Release notification for $CI_PROJECT_TITLE, version $TAG. Published by $CI_COMMIT_AUTHOR on $CI_COMMIT_TIMESTAMP. Release notes are included in this card.",
+              "msteams": {
+                "width": "Full"
+              },
+              "body": [
+                {
+                  "type": "TextBlock",
+                  "text": "🚀 $CI_PROJECT_TITLE · $TAG",
+                  "weight": "Bolder",
+                  "size": "Large",
+                  "wrap": true,
+                  "maxLines": 2
+                },
+                {
+                  "type": "ColumnSet",
+                  "spacing": "Medium",
+                  "columns": [
+                    {
+                      "type": "Column",
+                      "width": "auto",
+                      "items": [
+                        {
+                          "type": "Image",
+                          "url": "https://about.gitlab.com/images/press/gitlab-logo-500-rgb.png",
+                          "size": "Small",
+                          "altText": "GitLab"
+                        }
+                      ]
+                    },
+                    {
+                      "type": "Column",
+                      "width": "stretch",
+                      "items": [
+                        {
+                          "type": "TextBlock",
+                          "text": "$CI_COMMIT_AUTHOR",
+                          "weight": "Bolder",
+                          "size": "Default",
+                          "spacing": "None",
+                          "wrap": true
+                        },
+                        {
+                          "type": "TextBlock",
+                          "text": "$CI_COMMIT_TIMESTAMP",
+                          "isSubtle": true,
+                          "size": "Small",
+                          "spacing": "None",
+                          "wrap": true
+                        }
+                      ]
+                    }
+                  ]
+                },
+                {
+                  "type": "FactSet",
+                  "spacing": "Small",
+                  "facts": [
+                    {
+                      "title": "🔖 Commit",
+                      "value": "$CI_COMMIT_SHA"
+                    },
+                    {
+                      "title": "🌿 Branch",
+                      "value": "$CI_COMMIT_REF_NAME"
+                    }
+                  ]
+                },
+                {
+                  "type": "TextBlock",
+                  "text": "📋 Release Notes",
+                  "weight": "Bolder",
+                  "size": "Medium",
+                  "spacing": "Medium",
+                  "separator": true
+                },
+                {
+                  "type": "Container",
+                  "id": "release-notes",
+                  "spacing": "Small",
+                  "items": []
+                }
+              ],
+              "actions": [
+                {
+                  "type": "Action.OpenUrl",
+                  "title": "🚀 Release Page",
+                  "url": "$CI_PROJECT_URL/-/releases/$TAG",
+                  "style": "positive"
+                },
+                {
+                  "type": "Action.OpenUrl",
+                  "title": "📂 Source Code",
+                  "url": "$CI_PROJECT_URL/-/tree/$TAG"
+                },
+                {
+                  "type": "Action.OpenUrl",
+                  "title": "📦 Release Assets",
+                  "url": "$CI_PROJECT_URL/-/packages?version=$TAG&orderBy=created_at&sort=desc"
+                },
+                {
+                  "type": "Action.OpenUrl",
+                  "title": "🔍 SonarQube",
+                  "url": "$SONAR_EXTERNAL_URL/dashboard?id=$CI_PROJECT_PATH_SLUG"
+                }
+              ]
+            }
+        allow_failure: true
+
+      Release:Notification:Teams:
+        stage: notify
+        image: ${TOOLKIT_BUILD_IMAGE_REPO}:${TOOLKIT_BUILD_IMAGE_TAG}
+        extends:
+          - .teams-adaptivecard-notification-vars
+        needs:
+          - job: Release
+            artifacts: true
+        script:
+          - echo "${MESSAGE_TEMPLATE_ADAPTIVE_CARD}" > message_template.json
+          - |
+            if [[ ! -s "${RELEASE_CHANGELOG_CARD_FILE_NAME}" ]]; then
+              if [[ -f "${RELEASE_CHANGELOG_FILE_NAME}" ]]; then
+                jq -R -s -c '
+                  def clean_text: sub("\r$"; "") | gsub("[ \t]+"; " ") | sub("^ +"; "") | sub(" +$"; "");
+                  split("\n") | reduce .[] as $LINE (
+                    [];
+                    if ($LINE | startswith("### ")) then
+                      . + [{
+                        type: "TextBlock",
+                        text: ($LINE | sub("^### +"; "") | clean_text),
+                        weight: "Bolder",
+                        size: "Default",
+                        spacing: "Medium",
+                        wrap: true
+                      }]
+                    elif ($LINE | startswith("- ")) then
+                      . + [{
+                        type: "TextBlock",
+                        text: ("• " + ($LINE | sub("^- +"; "") | clean_text)),
+                        spacing: "Small",
+                        wrap: true
+                      }]
+                    elif ($LINE | length == 0) then .
+                    else
+                      . + [{
+                        type: "TextBlock",
+                        text: ($LINE | clean_text),
+                        spacing: "Small",
+                        wrap: true
+                      }]
+                    end
+                  )
+                ' "${RELEASE_CHANGELOG_FILE_NAME}" > "${RELEASE_CHANGELOG_CARD_FILE_NAME}" 2>/dev/null || echo "[]" > "${RELEASE_CHANGELOG_CARD_FILE_NAME}"
+              else
+                echo "[]" > "${RELEASE_CHANGELOG_CARD_FILE_NAME}"
+              fi
+            fi
+          - |
+            jq --slurpfile RELEASE_NOTES "${RELEASE_CHANGELOG_CARD_FILE_NAME}" '
+              .["$schema"] = "http://adaptivecards.io/schemas/adaptive-card.json"
+              | del(.[""])
+              | (.body[] | select(.id == "release-notes") | .items) = ($RELEASE_NOTES[0] // [])
+              # Teams refuses to post a card whose button URL is not absolute, e.g. SonarQube without a URL.
+              | .actions |= map(select((.url // "") | test("^https?://[^/]")))
+              | {
+                  type: "message",
+                  attachments: [
+                    {
+                      contentType: "application/vnd.microsoft.card.adaptive",
+                      content: .
+                    }
+                  ]
+                }
+            ' message_template.json > message.json
+          - |
+            if [[ -z "${RELEASE_MESSAGE_TEAMS_WORKFLOWS_URL}" ]]; then
+              echo "⚠️ Notice: RELEASE_MESSAGE_TEAMS_WORKFLOWS_URL is not set or empty. Skipping sending notification."
+              exit 0
+            fi
+          - IFS=',' read -r -a WEBHOOKS <<< "${RELEASE_MESSAGE_TEAMS_WORKFLOWS_URL}"
+          - SENT_COUNT=0
+          - |
+            for URL in "${WEBHOOKS[@]}"; do
+              CLEAN_URL="$(printf '%s' "${URL}" | xargs)"
+              if [ -z "${CLEAN_URL}" ]; then
+                continue
+              fi
+              echo "Sending notification to Teams Workflow..."
+              if ! HTTP_CODE="$(
+                curl -sS \
+                  -o /dev/null \
+                  -w "%{http_code}" \
+                  -X POST \
+                  -H "Content-Type: application/json" \
+                  --data-binary @message.json \
+                  "${CLEAN_URL}"
+              )"; then
+                echo "ERROR: Could not reach Teams Workflow endpoint."
+                exit 1
+              fi
+              case "${HTTP_CODE}" in
+                2??)
+                  echo "✅ Teams Workflow accepted the payload: HTTP ${HTTP_CODE}"
+                  SENT_COUNT=$((SENT_COUNT + 1))
+                  ;;
+                *)
+                  echo "ERROR: Teams Workflow rejected the payload: HTTP ${HTTP_CODE}"
+                  exit 1
+                  ;;
+              esac
+            done
+          - |
+            if [[ ${SENT_COUNT} -eq 0 ]]; then
+              echo "⚠️ Notice: No valid webhook URLs provided in RELEASE_MESSAGE_TEAMS_WORKFLOWS_URL."
+            fi
+        artifacts:
+          name: Teams Notification Adaptive Card JSON Body
+          expose_as: Teams Notification Adaptive Card JSON Body
+          when: always
+          expire_in: 1 week
+          paths:
+            - message.json
+      CHILDEOF
+    - echo "✅ Generated serialized child release pipeline specification."
+    - cp candidate.json "${CI_PROJECT_DIR}/candidate.json" 2>/dev/null || true
+    - cp release-pipeline.yml "${CI_PROJECT_DIR}/release-pipeline.yml" 2>/dev/null || true
   artifacts:
+    name: Release Pipeline Specification
     when: on_success
     expire_in: 1 week
     paths:
-      - "${IMAGE_INFO_FILE_NAME}"
-      - "${IMAGE_CVE_INFO_FILE_NAME}"
-      - "${IMAGE_CVE_REPORT_FILE_NAME}"
-      - "${CHART_INFO_FILE_NAME}"
-      - "${CHART_CVE_INFO_FILE_NAME}"
-      - "${TF_CVE_INFO_FILE_NAME}"
-      - "${LICENSE_INFO_FILE_NAME}"
-      - "${SBOM_CVE_INFO_FILE_NAME}"
-      - "${RELEASE_CHANGELOG_FILE_NAME}"
-      - "${RELEASE_MIGRATION_FILE_NAME}"
+      - candidate.json
+      - release-pipeline.yml
+      - ${PROJECT_PATH}/candidate.json
+      - ${PROJECT_PATH}/release-pipeline.yml
+      - ${RELEASE_CHANGELOG_FILE_NAME:-RELEASE_CHANGELOG.md}
+      - ${RELEASE_CHANGELOG_CARD_FILE_NAME:-RELEASE_CHANGELOG_CARD.json}
+      - ${PROJECT_PATH}/${RELEASE_CHANGELOG_FILE_NAME:-RELEASE_CHANGELOG.md}
+      - ${PROJECT_PATH}/${RELEASE_CHANGELOG_CARD_FILE_NAME:-RELEASE_CHANGELOG_CARD.json}
 
-Release:
+# Downstream trigger holding the release transaction lock
+Release:Transaction:
+  stage: release
   extends:
     - .release-rules
     - .release-common
+  resource_group: production-release
   needs:
-    - job: Release:Upload
+    - job: Release:Prepare
       artifacts: true
-      optional: false
-    - job: Common:Init
-      artifacts: true
-      optional: true
-    - job: Migration:Check Existence
-      artifacts: true
-      optional: true
-  script:
-    - |
-      asset_json () {
-        echo "{\"name\":\"${1}\",\"url\":\"${2}\"}"
-      }
-    - ASSET_LINKS=()
-    - |
-      touch "${CONSOLIDATED_RELEASE_CHANGELOG_FILE_NAME}"
-      for FILE in "${IMAGE_INFO_FILE_NAME}" "${IMAGE_CVE_INFO_FILE_NAME}" "${IMAGE_CVE_REPORT_FILE_NAME}"; do
-        if [[ -f "${FILE}" ]]; then
-          cat "${FILE}" >> "${IMAGE_README_MD_FILE_NAME}"
-        fi
-      done
-    - |
-      for FILE in "${CHART_INFO_FILE_NAME}" "${CHART_CVE_INFO_FILE_NAME}"; do
-        if [[ -f "${FILE}" ]]; then
-          cat "${FILE}" >> "${CHART_README_MD_FILE_NAME}"
-        fi
-      done
-    - |
-      for FILE in "${TF_CVE_INFO_FILE_NAME}"; do
-        if [[ -f "${FILE}" ]]; then
-          cat "${FILE}" >> "${TF_README_MD_FILE_NAME}"
-        fi
-      done
-    - |
-      for FILE in "${IMAGE_README_MD_FILE_NAME}" "${CHART_README_MD_FILE_NAME}" "${TF_README_MD_FILE_NAME}" "${LICENSE_INFO_FILE_NAME}" "${SBOM_CVE_INFO_FILE_NAME}"; do
-        if [[ -f "${FILE}" ]]; then
-          cat "${FILE}" >> ${CONSOLIDATED_README_FILE_NAME}
-        fi
-      done
-    - |
-      for FILE in "${RELEASE_CHANGELOG_FILE_NAME}" "${RELEASE_MIGRATION_FILE_NAME}" "${CONSOLIDATED_README_FILE_NAME}"; do
-        if [[ -f "${FILE}" && -s "${FILE}" ]]; then
-          echo "" >> "${CONSOLIDATED_RELEASE_CHANGELOG_FILE_NAME}"
-          cat "${FILE}" >> "${CONSOLIDATED_RELEASE_CHANGELOG_FILE_NAME}"
-          echo "" >> "${CONSOLIDATED_RELEASE_CHANGELOG_FILE_NAME}"
-        fi
-      done
-    - |
-      EXISTING_RELEASE=$(curl --silent --fail --header "JOB-TOKEN: ${CI_JOB_TOKEN}" "${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/releases/${TAG}" 2>/dev/null || true)
-      if [[ -n "${EXISTING_RELEASE}" && "$(echo "${EXISTING_RELEASE}" | jq -r '.tag_name // empty' 2>/dev/null)" == "${TAG}" ]]; then
-        echo "⚠️ Release ${TAG} already exists. Updating release description..."
-        curl --silent --fail --request PUT --header "JOB-TOKEN: ${CI_JOB_TOKEN}" \
-          --header "Content-Type: application/json" \
-          --data "{\"description\": $(jq -Rs . < "${CONSOLIDATED_RELEASE_CHANGELOG_FILE_NAME}")}" \
-          "${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/releases/${TAG}" >/dev/null 2>&1 || true
-        echo "✅ Release ${TAG} updated successfully."
-      else
-        ASSET_LINKS+=(--assets-link "$(asset_json "📦 Release Package" "${CI_PROJECT_URL}/-/packages?version=${TAG}&orderBy=created_at&sort=desc")")
-        # GitLab rejects a link without a scheme, so the SonarQube link needs a configured URL.
-        SONAR_LINK_URL="${SONAR_EXTERNAL_URL:-${SONAR_URL}}"
-        if [[ "${SONAR_LINK_URL}" =~ ^https?:// ]]; then
-          ASSET_LINKS+=(--assets-link "$(asset_json "🔍 SonarQube" "${SONAR_LINK_URL%/}/dashboard?id=${CI_PROJECT_PATH_SLUG}")")
-        fi
-        release-cli create --name "Release ${TAG}" --description "$(cat ${CONSOLIDATED_RELEASE_CHANGELOG_FILE_NAME})" --tag-name "${TAG}" --ref "${CI_COMMIT_SHA}" "${ASSET_LINKS[@]}"
-      fi
-  artifacts:
-    name: Release Descriptions
-    expose_as: Release Descriptions
-    when: always
-    expire_in: 1 week
-    paths:
-      - ${PROJECT_PATH}/${IMAGE_README_MD_FILE_NAME}
-      - ${PROJECT_PATH}/${CHART_README_MD_FILE_NAME}
-      - ${PROJECT_PATH}/${TF_README_MD_FILE_NAME}
-      - ${PROJECT_PATH}/${RELEASE_CHANGELOG_FILE_NAME}
-      - ${PROJECT_PATH}/${RELEASE_MIGRATION_FILE_NAME}
-      - ${PROJECT_PATH}/${RELEASE_CHANGELOG_CARD_FILE_NAME}
-      - ${PROJECT_PATH}/${CONSOLIDATED_RELEASE_CHANGELOG_FILE_NAME}
-
-Release:Notification:Teams:
-  stage: notify
-  script:
-    - echo "${MESSAGE_TEMPLATE_ADAPTIVE_CARD}" > message_template.json
-    - |
-      if [[ ! -s "${RELEASE_CHANGELOG_CARD_FILE_NAME}" ]]; then
-        if [[ -f "${RELEASE_CHANGELOG_FILE_NAME}" ]]; then
-          jq -R -s -c '
-            def clean_text: sub("\r$"; "") | gsub("[ \t]+"; " ") | sub("^ +"; "") | sub(" +$"; "");
-            split("\n") | reduce .[] as $LINE (
-              [];
-              if ($LINE | startswith("### ")) then
-                . + [{
-                  type: "TextBlock",
-                  text: ($LINE | sub("^### +"; "") | clean_text),
-                  weight: "Bolder",
-                  size: "Default",
-                  spacing: "Medium",
-                  wrap: true
-                }]
-              elif ($LINE | startswith("- ")) then
-                . + [{
-                  type: "TextBlock",
-                  text: ("• " + ($LINE | sub("^- +"; "") | clean_text)),
-                  spacing: "Small",
-                  wrap: true
-                }]
-              elif ($LINE | length == 0) then .
-              else
-                . + [{
-                  type: "TextBlock",
-                  text: ($LINE | clean_text),
-                  spacing: "Small",
-                  wrap: true
-                }]
-              end
-            )
-          ' "${RELEASE_CHANGELOG_FILE_NAME}" > "${RELEASE_CHANGELOG_CARD_FILE_NAME}" 2>/dev/null || echo "[]" > "${RELEASE_CHANGELOG_CARD_FILE_NAME}"
-        else
-          echo "[]" > "${RELEASE_CHANGELOG_CARD_FILE_NAME}"
-        fi
-      fi
-    - |
-      jq --slurpfile RELEASE_NOTES "${RELEASE_CHANGELOG_CARD_FILE_NAME}" '
-        .["$schema"] = "http://adaptivecards.io/schemas/adaptive-card.json"
-        | del(.[""])
-        | (.body[] | select(.id == "release-notes") | .items) = ($RELEASE_NOTES[0] // [])
-        # Teams refuses to post a card whose button URL is not absolute, e.g. SonarQube without a URL.
-        | .actions |= map(select((.url // "") | test("^https?://[^/]")))
-        | {
-            type: "message",
-            attachments: [
-              {
-                contentType: "application/vnd.microsoft.card.adaptive",
-                content: .
-              }
-            ]
-          }
-      ' message_template.json > message.json
-    - |
-      if [[ -z "${RELEASE_MESSAGE_TEAMS_WORKFLOWS_URL}" ]]; then
-        echo "⚠️ Notice: RELEASE_MESSAGE_TEAMS_WORKFLOWS_URL is not set or empty. Skipping sending notification."
-        exit 0
-      fi
-    - IFS=',' read -r -a WEBHOOKS <<< "${RELEASE_MESSAGE_TEAMS_WORKFLOWS_URL}"
-    - |
-      SENT_COUNT=0
-      for URL in "${WEBHOOKS[@]}"; do
-        CLEAN_URL="$(printf '%s' "${URL}" | xargs)"
-
-        if [ -z "${CLEAN_URL}" ]; then
-          continue
-        fi
-
-        echo "Sending notification to Teams Workflow..."
-
-        if ! HTTP_CODE="$(
-          curl -sS \
-            -o /dev/null \
-            -w "%{http_code}" \
-            -X POST \
-            -H "Content-Type: application/json" \
-            --data-binary @message.json \
-            "${CLEAN_URL}"
-        )"; then
-          echo "ERROR: Could not reach Teams Workflow endpoint."
-          exit 1
-        fi
-
-        case "${HTTP_CODE}" in
-          2??)
-            echo "✅ Teams Workflow accepted the payload: HTTP ${HTTP_CODE}"
-            SENT_COUNT=$((SENT_COUNT + 1))
-            ;;
-          *)
-            echo "ERROR: Teams Workflow rejected the payload: HTTP ${HTTP_CODE}"
-            exit 1
-            ;;
-        esac
-      done
-      if [[ ${SENT_COUNT} -eq 0 ]]; then
-        echo "⚠️ Notice: No valid webhook URLs provided in RELEASE_MESSAGE_TEAMS_WORKFLOWS_URL."
-      fi
-  extends:
-    - .release-rules
-    - .teams-adaptivecard-notification-vars
-    - .release-common
-  artifacts:
-    name: Teams Notification Adaptive Card JSON Body
-    expose_as: Teams Notification Adaptive Card JSON Body
-    when: always
-    expire_in: 1 week
-    paths:
-      - ${PROJECT_PATH}/message.json
-  needs:
-    - job: Release
-      artifacts: true
-      optional: true
-    - job: Release:Upload
-      artifacts: true
-      optional: true
-    - job: Common:Init
-      artifacts: true
-      optional: false
+  trigger:
+    include:
+      - artifact: release-pipeline.yml
+        job: Release:Prepare
+    strategy: depend
+    forward:
+      yaml_variables: true
+      pipeline_variables: false

@@ -7,6 +7,26 @@ To upgrade, apply every section after your pinned version up to the target, olde
 Newer sections are split into **Required** (the upgrade breaks or misbehaves without it),
 **Recommended** (aligns an existing project with the current standards) and **Verify**.
 
+## 1.13.0
+
+### Required
+
+- **Declarative Package Publishing:** Custom jobs for uploading RC binaries (`Go:Package:Upload:RC`) and promoting stable packages (`Go:Package:Promote`) should be retired. Add `.gitlab/release-packages.yml` and append `!reference [.release-packages-publish-rc, script]` to your existing build job script.
+- **Fail-Closed Release Verification:** Fast-track release now strictly requires an authoritatively verified merged Merge Request. Direct pushes to protected release branches are rejected immediately. Supports Merge Commit, Squash Merge, and Fast-Forward Merge strategies.
+- **Strict Candidate Integrity & Preflight Probes:** Missing Docker images, Helm charts, SBOMs, or declared packages will cause the release pipeline to fail during preflight before any production writes. The previous fallback of repackaging un-scanned working trees has been removed.
+
+### Recommended
+
+- Remove custom `Common:Init` `after_script` dotenv filtering workarounds. `Common:Init` exports $\le 16$ variables.
+- Remove application binaries from `ADDITIONAL_RELEASE_ARTIFACT` if they are declared in `.gitlab/release-packages.yml` to avoid duplicating packages as release assets.
+- A project that overrides an image variable (`TOOLKIT_IMAGE_TAG`, `*_BUILD_IMAGE_TAG`, `DOCKER_DIND_IMAGE_TAG`, `BUILDKIT_IMAGE_TAG` or `SONAR_SCANNER_CLI_IMAGE_TAG`) keeps its pinned value; drop the override to take the new defaults (`toolkit:2.1.0`, `docker:29.10.0-dind`, `buildkit:v0.35.0`, `sonar-scanner-cli:12.4.0.4321_8.4.0`).
+
+### Verify
+
+- MR pipelines run `Candidate:Register` in the report stage and publish `candidate.json`.
+- Master release pipelines run `Release:Prepare` and `Release:Transaction` under `resource_group: production-release`.
+- Declarative packages are promoted to stable Generic Packages with matching SHA256 without compiling on master.
+
 ## 1.12.1
 
 No required action.

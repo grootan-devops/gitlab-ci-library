@@ -3,6 +3,7 @@
 ```yaml
 # .gitlab-ci.yml
 variables:
+  RELEASE_VERSION: 1.0.0
   IMAGE_REPOSITORY: "myorg/web-app"
   CHART_REPOSITORY: "myorg/helm"
   PROJECT_CACHE_KEY: "node"
