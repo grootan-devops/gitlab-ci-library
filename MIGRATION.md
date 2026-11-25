@@ -7,6 +7,14 @@ To upgrade, apply every section after your pinned version up to the target, olde
 Newer sections are split into **Required** (the upgrade breaks or misbehaves without it),
 **Recommended** (aligns an existing project with the current standards) and **Verify**.
 
+## 1.13.2
+
+No required action.
+
+### Recommended
+
+- Update every `include` of this library from `1.13.1` to `1.13.2` to pick up the `NGINX_MICRO_BASE_IMAGE_TAG` bump to `1.2.2` (RHEL 9.9 rebuild, clears the fixable CVEs tracked in ZA-881).
+
 ## 1.13.1
 
 No required action. Projects pinned to 1.13.0 fail GitLab lint and run no jobs; move to 1.13.1.
