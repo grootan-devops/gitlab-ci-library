@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.13.2] - 2026-11-25
+
+### Changed
+
+- Bumped `NGINX_MICRO_BASE_IMAGE_TAG` to `1.2.2`, picking up the RHEL 9.9 rebuild of `grootantech/micro-nginx` that clears the fixable CVEs tracked in ZA-881.
+
 ## [1.13.1] - 2026-11-20
 
 ### Fixed
