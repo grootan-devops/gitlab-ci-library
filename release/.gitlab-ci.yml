@@ -148,6 +148,10 @@ Release:Prepare:
         echo "Fast-track release strictly requires candidate identity from upstream MR verification."
         exit 1
       fi
+    - |
+      if [[ "${DEV_CANDIDATE_VERSION}" == -* && -n "${RELEASE_VERSION:-}" ]]; then
+        DEV_CANDIDATE_VERSION="${RELEASE_VERSION}${DEV_CANDIDATE_VERSION}"
+      fi
     - CANDIDATE_FILE_NAME="candidate-${DEV_CANDIDATE_VERSION}.json"
     - CANDIDATE_URL="${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/packages/generic/candidates/${RELEASE_VERSION}/${CANDIDATE_FILE_NAME}"
     - echo "📥 Downloading candidate manifest from ${CANDIDATE_URL}..."
@@ -168,7 +172,13 @@ Release:Prepare:
           if [[ -n "${MATCHED_FILE}" ]]; then
             echo "   Found matching candidate file in package: ${MATCHED_FILE}"
             RESOLVED_URL="${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/packages/generic/candidates/${RELEASE_VERSION}/${MATCHED_FILE}"
-            curl --silent --fail --location --header "JOB-TOKEN: ${CI_JOB_TOKEN}" -o candidate.json "${RESOLVED_URL}" || true
+            if curl --silent --fail --location --header "JOB-TOKEN: ${CI_JOB_TOKEN}" -o candidate.json "${RESOLVED_URL}"; then
+              MATCHED_VER="${MATCHED_FILE#candidate-}"
+              MATCHED_VER="${MATCHED_VER%.json}"
+              if [[ -n "${MATCHED_VER}" ]]; then
+                DEV_CANDIDATE_VERSION="${MATCHED_VER}"
+              fi
+            fi
           fi
         fi
       fi
@@ -274,7 +284,8 @@ Release:Prepare:
               exit 1
             fi
             echo "✅ Candidate manifest verified for version ${TAG}."
-          - echo "🔍 Preflight: Verifying candidate deliverables before executing promotion..."
+          - |
+            echo "🔍 Preflight: Verifying candidate deliverables before executing promotion..."
           - |
             # 1. Preflight Container Image
             DOCKER_ENABLED=$(jq -r '.artifacts.docker.enabled // false' candidate.json)
@@ -330,14 +341,16 @@ Release:Prepare:
             for ((i=0; i<PKG_COUNT; i++)); do
               P_NAME=$(jq -r ".artifacts.packages[$i].package" candidate.json)
               P_FILE=$(jq -r ".artifacts.packages[$i].filename" candidate.json)
-              P_REQ=$(jq -r ".artifacts.packages[$i].required // true" candidate.json)
+              P_REQ=$(jq -r ".artifacts.packages[$i].required | if . == null then true else . end" candidate.json)
               P_URL=$(jq -r ".artifacts.packages[$i].source_url" candidate.json)
               if [[ -n "${P_URL}" ]]; then
                 PKG_CHECK=$(curl --silent --head --write-out "%{http_code}" --output /dev/null --header "JOB-TOKEN: ${CI_JOB_TOKEN}" "${P_URL}" || true)
                 if [[ "${PKG_CHECK}" != "200" ]]; then
-                  echo "❌ PREFLIGHT ERROR: Candidate package '${P_FILE}' not found at ${P_URL} (HTTP ${PKG_CHECK})!"
                   if [[ "${P_REQ}" == "true" ]]; then
+                    echo "❌ PREFLIGHT ERROR: Candidate package '${P_FILE}' not found at ${P_URL} (HTTP ${PKG_CHECK})!"
                     exit 1
+                  else
+                    echo "⚠️ WARNING: Optional candidate package '${P_FILE}' not found at ${P_URL} (HTTP ${PKG_CHECK}). Skipping."
                   fi
                 fi
               fi
@@ -535,8 +548,8 @@ Release:Prepare:
             for ((i=0; i<PKG_COUNT; i++)); do
               P_NAME=$(jq -r ".artifacts.packages[$i].package" candidate.json)
               P_FILE=$(jq -r ".artifacts.packages[$i].filename" candidate.json)
-              P_STABLE=$(jq -r ".artifacts.packages[$i].stable // true" candidate.json)
-              P_REQ=$(jq -r ".artifacts.packages[$i].required // true" candidate.json)
+              P_STABLE=$(jq -r ".artifacts.packages[$i].stable | if . == null then true else . end" candidate.json)
+              P_REQ=$(jq -r ".artifacts.packages[$i].required | if . == null then true else . end" candidate.json)
               P_ASSET=$(jq -r ".artifacts.packages[$i].release_asset // false" candidate.json)
               P_SHA=$(jq -r ".artifacts.packages[$i].sha256" candidate.json)
               P_URL=$(jq -r ".artifacts.packages[$i].source_url" candidate.json)
@@ -548,9 +561,11 @@ Release:Prepare:
               echo "📦 Promoting package '${P_NAME}' (${P_FILE}) to stable version '${RELEASE_VERSION}'..."
               TEMP_FILE=$(mktemp)
               if ! curl --silent --fail --location --header "JOB-TOKEN: ${CI_JOB_TOKEN}" -o "${TEMP_FILE}" "${P_URL}"; then
-                echo "❌ ERROR: Failed to download RC package from ${P_URL}"
                 if [[ "${P_REQ}" == "true" ]]; then
+                  echo "❌ ERROR: Failed to download RC package from ${P_URL}"
                   exit 1
+                else
+                  echo "⚠️ WARNING: Optional RC package '${P_FILE}' not found at ${P_URL}. Skipping."
                 fi
                 rm -f "${TEMP_FILE}"
                 continue
@@ -646,7 +661,7 @@ Release:Prepare:
             for ((i=0; i<REPORT_COUNT; i++)); do
               JOB_ID=$(jq -r ".artifacts.reports[$i].job_id" candidate.json)
               JOB_NAME=$(jq -r ".artifacts.reports[$i].job_name" candidate.json)
-              REQ=$(jq -r ".artifacts.reports[$i].required // true" candidate.json)
+              REQ=$(jq -r ".artifacts.reports[$i].required | if . == null then true else . end" candidate.json)
               echo "📥 Restoring artifacts from producer job #${JOB_ID} (${JOB_NAME})..."
               if curl --silent --location --fail --header "JOB-TOKEN: ${CI_JOB_TOKEN}" --output "job_${JOB_ID}_artifacts.zip" "${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/jobs/${JOB_ID}/artifacts" 2>/dev/null; then
                 unzip -o -q "job_${JOB_ID}_artifacts.zip" 2>/dev/null || true
@@ -656,6 +671,8 @@ Release:Prepare:
                 if [[ "${REQ}" == "true" ]]; then
                   echo "❌ ERROR: Failed to restore required artifacts from job #${JOB_ID}."
                   FAILED_UPLOADS+=("job_${JOB_ID}_artifacts")
+                else
+                  echo "⚠️ WARNING: Optional artifacts from job #${JOB_ID} (${JOB_NAME}) not found. Skipping."
                 fi
               fi
             done
@@ -805,7 +822,8 @@ Release:Prepare:
                 echo "" >> "${CONSOLIDATED_RELEASE_CHANGELOG_FILE_NAME:-CONSOLIDATED_RELEASE_CHANGELOG.md}"
               fi
             done
-          - EXISTING_RELEASE=$(curl --silent --fail --header "JOB-TOKEN: ${CI_JOB_TOKEN}" "${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/releases/${TAG}" 2>/dev/null || true)
+          - |
+            EXISTING_RELEASE=$(curl --silent --fail --header "JOB-TOKEN: ${CI_JOB_TOKEN}" "${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/releases/${TAG}" 2>/dev/null || true)
           - |
             if [[ -n "${EXISTING_RELEASE}" && "$(echo "${EXISTING_RELEASE}" | jq -r '.tag_name // empty' 2>/dev/null)" == "${TAG}" ]]; then
               echo "⚠️ Release ${TAG} already exists. Updating release description..."
@@ -815,17 +833,36 @@ Release:Prepare:
                 "${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/releases/${TAG}" >/dev/null 2>&1 || true
               echo "✅ Release ${TAG} updated successfully."
             else
-              ASSET_LINKS=()
-              ASSET_LINKS+=(--assets-link "{\"name\":\"📦 Release Package\",\"url\":\"${CI_PROJECT_URL}/-/packages?version=${TAG}&orderBy=created_at&sort=desc\"}")
+              LINKS_JSON="[]"
+              LINKS_JSON=$(echo "${LINKS_JSON}" | jq \
+                --arg name "📦 Release Package" \
+                --arg url "${CI_PROJECT_URL}/-/packages?version=${TAG}&orderBy=created_at&sort=desc" \
+                '. + [{name: $name, url: $url}]')
               SONAR_LINK_URL="${SONAR_EXTERNAL_URL:-${SONAR_URL}}"
               if [[ "${SONAR_LINK_URL}" =~ ^https?:// ]]; then
-                ASSET_LINKS+=(--assets-link "{\"name\":\"🔍 SonarQube\",\"url\":\"${SONAR_LINK_URL%/}/dashboard?id=${CI_PROJECT_PATH_SLUG}\"}")
+                LINKS_JSON=$(echo "${LINKS_JSON}" | jq \
+                  --arg name "🔍 SonarQube" \
+                  --arg url "${SONAR_LINK_URL%/}/dashboard?id=${CI_PROJECT_PATH_SLUG}" \
+                  '. + [{name: $name, url: $url}]')
               fi
-              RELEASE_DESC="Release ${TAG} for commit ${CI_COMMIT_SHA}"
-              if [[ -s "${CONSOLIDATED_RELEASE_CHANGELOG_FILE_NAME:-CONSOLIDATED_RELEASE_CHANGELOG.md}" ]]; then
-                RELEASE_DESC="$(cat "${CONSOLIDATED_RELEASE_CHANGELOG_FILE_NAME:-CONSOLIDATED_RELEASE_CHANGELOG.md}")"
+              RELEASE_DESC_FILE="${CONSOLIDATED_RELEASE_CHANGELOG_FILE_NAME:-CONSOLIDATED_RELEASE_CHANGELOG.md}"
+              if [[ ! -s "${RELEASE_DESC_FILE}" ]]; then
+                echo "Release ${TAG} for commit ${CI_COMMIT_SHA}" > release_desc.tmp.md
+                RELEASE_DESC_FILE="release_desc.tmp.md"
               fi
-              release-cli create --name "Release ${TAG}" --description "${RELEASE_DESC}" --tag-name "${TAG}" --ref "${CI_COMMIT_SHA}" "${ASSET_LINKS[@]}"
+              jq -n \
+                --arg name "Release ${TAG}" \
+                --arg tag_name "${TAG}" \
+                --arg ref "${CI_COMMIT_SHA}" \
+                --rawfile description "${RELEASE_DESC_FILE}" \
+                --argjson links "${LINKS_JSON}" \
+                '{name: $name, tag_name: $tag_name, ref: $ref, description: $description, assets: {links: $links}}' > release_payload.json
+              curl --silent --show-error --fail --request POST \
+                --header "JOB-TOKEN: ${CI_JOB_TOKEN}" \
+                --header "Content-Type: application/json" \
+                --data-binary @release_payload.json \
+                "${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/releases" >/dev/null
+              rm -f release_payload.json release_desc.tmp.md
               echo "✅ Release ${TAG} created successfully."
             fi
         artifacts:
