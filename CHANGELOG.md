@@ -5,6 +5,15 @@ All notable changes to this project will be documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.13.3] - 2026-11-28
+
+### Fixed
+
+- `Release:Verify` and `Release` in `release/.gitlab-ci.yml` no longer fail child release pipeline creation on `Release:Transaction` (`downstream_pipeline_creation_failed`). Their unquoted `echo "🔍 Preflight: ..."` and `EXISTING_RELEASE=$(curl ... --header "JOB-TOKEN: ...")` script lines in the generated `release-pipeline.yml` each contained a colon followed by a space, so YAML parsed them as mappings and GitLab lint rejected the child pipeline with `jobs:release:verify:script config should be a string or a nested array of strings` and `jobs:release:script config should be a string or a nested array of strings`. Both lines are now block scalars.
+- `Release:Prepare` in `release/.gitlab-ci.yml` now prepends `RELEASE_VERSION` when `DEV_CANDIDATE_VERSION` starts with `-` (for repositories whose `RELEASE_VERSION` is read from `Chart.yaml`) and carries a matched candidate package version into `release-pipeline.yml`, ensuring `Release:Verify` fetches the verified candidate manifest cleanly.
+- `Release:Verify`, `Release:Packages:Promote`, and `Release:Upload` in `release/.gitlab-ci.yml` no longer coerce `false` `required` or `stable` flags in `candidate.json` to `true` via `jq`'s `// true` fallback; missing optional reports or packages now log a warning and skip instead of failing the pipeline.
+- `Release` in `release/.gitlab-ci.yml` now creates GitLab releases via `curl --data-binary @release_payload.json` instead of passing `CONSOLIDATED_RELEASE_CHANGELOG.md` on the `release-cli` command line, avoiding `Argument list too long` failures on large vulnerability reports.
+
 ## [1.13.2] - 2026-11-25
 
 ### Changed

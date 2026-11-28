@@ -7,6 +7,19 @@ To upgrade, apply every section after your pinned version up to the target, olde
 Newer sections are split into **Required** (the upgrade breaks or misbehaves without it),
 **Recommended** (aligns an existing project with the current standards) and **Verify**.
 
+## 1.13.3
+
+No required action. Projects on 1.13.0–1.13.2 fail child release pipeline creation on `Release:Transaction` (`downstream_pipeline_creation_failed`); move to 1.13.3.
+Projects still on 1.12.x apply the 1.13.0 section with this release.
+
+### Recommended
+
+- Update every `include` of this library from `1.13.1` or `1.13.2` to `1.13.3`.
+
+### Verify
+
+- Release pipelines run `Release:Prepare` and trigger `Release:Transaction` successfully, with `Release:Verify`, promotion jobs, `Release:Upload`, `Release`, and `Release:Notification:Teams` created and executing in the child pipeline.
+
 ## 1.13.2
 
 No required action.
